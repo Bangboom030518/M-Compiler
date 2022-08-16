@@ -1,4 +1,5 @@
 use lexer::{Input, Reader, ReaderResult, Readers, State, TokenMeta};
+use crate::{Token, TokenError, TokenValue};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct StringReader;

@@ -47,9 +47,6 @@ impl fmt::Display for TokenValue {
 pub type Token = lexer::Token<TokenValue>;
 pub type TokenError = lexer::TokenError<&'static str>;
 
-fn is_closer(ch: char) -> bool {
-  ch == ')'
-}
 
 pub fn readers() -> lexer::Readers<Token, TokenError> {
   ReadersBuilder::new()

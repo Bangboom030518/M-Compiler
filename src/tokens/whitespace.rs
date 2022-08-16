@@ -1,8 +1,6 @@
-use lexer::{Input, Reader, ReaderResult, Readers, State, TokenMeta};
-
-fn is_whitespace(ch: char) -> bool {
-    ch.is_whitespace() || ch == ','
-}
+use lexer::{Input, Reader, ReaderResult, Readers, State};
+use crate::{Token, TokenError};
+use crate::tokens::utils::{is_closer, is_whitespace};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct WhitespaceReader;

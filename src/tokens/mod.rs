@@ -4,6 +4,7 @@ mod whitespace;
 mod keyword;
 mod list;
 mod identifier;
+pub mod utils;
 
 pub use string::StringReader;
 pub use number::NumberReader;
