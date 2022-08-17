@@ -3,6 +3,7 @@ extern crate lexer;
 use lexer::ReadersBuilder;
 use std::fmt::{self, Debug, Write};
 mod tokens;
+mod tokenizer;
 use tokens::{
     IdentifierReader, KeywordReader, ListReader, NumberReader, StringReader, WhitespaceReader,
 };
