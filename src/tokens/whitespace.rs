@@ -1,6 +1,6 @@
 use lexer::{Input, Reader, ReaderResult, Readers, State};
 use crate::{Token, TokenError};
-use crate::tokens::utils::{is_closer, is_whitespace};
+use crate::tokens::utils::is_whitespace;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct WhitespaceReader;
