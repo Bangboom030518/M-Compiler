@@ -108,7 +108,7 @@ fn number_reader(current: char, chars: &mut Chars) -> Option<Token> {
     if !current.is_numeric() {
         return None;
     };
-    let mut contents = String::from(ch);
+    let mut contents = String::from(current);
     let mut decimal = false;
     while let Some(ch) = chars.next() {
         if ch == '.' {
@@ -135,7 +135,7 @@ fn number_reader(current: char, chars: &mut Chars) -> Option<Token> {
     })
 }
 
-fn backup_reader(current: char, chars: &mut Chars) -> Option<Token> {
+fn backup_reader(current: char, _: &mut Chars) -> Option<Token> {
     if !current.is_whitespace() {
         println!("Couldn't tokenize '{}'", current);
     };
@@ -145,7 +145,7 @@ fn backup_reader(current: char, chars: &mut Chars) -> Option<Token> {
 fn tokenize(input: &str) -> Vec<Token> {
     let input = remove_comments(input);
     let readers: Vec<fn(char, &mut Chars) -> Option<Token>> =
-        vec![operator_reader, string_reader, char_reader, word_reader, backup_reader];
+        vec![operator_reader, string_reader, char_reader, word_reader, number_reader, backup_reader];
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars();
     while let Some(ch) = chars.next() {
