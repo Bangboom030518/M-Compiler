@@ -63,12 +63,13 @@ fn readers() -> lexer::Readers<Token, TokenError> {
 }
 
 fn main() {
-    let readers = readers();
+    tokenizer::main();
+    // let readers = readers();
 
-    let string = "def-fn hello () (println :Hello, \"World!\")";
+    // let string = "def-fn hello () (println :Hello, \"World!\")";
 
-    let tokens = readers.read(string.chars());
-    print_tokens(tokens.map(Result::unwrap).collect());
+    // let tokens = readers.read(string.chars());
+    // print_tokens(tokens.map(Result::unwrap).collect());
 }
 
 fn print_tokens(tokens: Vec<Token>) {
