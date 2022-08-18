@@ -21,13 +21,16 @@ pub enum Token {
     String(String),
     Integer(usize),
     Char(char),
-    List(Vec<Token>),
     Keyword(Keyword),
     Decimal(f64),
     Identifier(String),
     OpenBracket,
     CloseBracket,
     Assignment,
+    Plus,
+    Minus,
+    Asterisk,
+    Slash,
     OpenBrace,
     CloseBrace,
     Semicolon,
@@ -45,7 +48,11 @@ fn operator_reader(current: char, _: &mut Chars) -> Option<Token> {
         '{' => Some(Token::OpenBrace),
         '}' => Some(Token::CloseBrace),
         ';' => Some(Token::Semicolon),
-        _ => None,
+        '+' => Some(Token::Plus),
+        '-' => Some(Token::Minus),
+        '*' => Some(Token::Asterisk),
+        '/' => Some(Token::Slash),
+        _ => None
     }
 }
 
@@ -144,8 +151,14 @@ fn backup_reader(current: char, _: &mut Chars) -> Option<Token> {
 
 fn tokenize(input: &str) -> Vec<Token> {
     let input = remove_comments(input);
-    let readers: Vec<fn(char, &mut Chars) -> Option<Token>> =
-        vec![operator_reader, string_reader, char_reader, word_reader, number_reader, backup_reader];
+    let readers: Vec<fn(char, &mut Chars) -> Option<Token>> = vec![
+        operator_reader,
+        string_reader,
+        char_reader,
+        word_reader,
+        number_reader,
+        backup_reader,
+    ];
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars();
     while let Some(ch) = chars.next() {
