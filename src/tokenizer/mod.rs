@@ -1,6 +1,5 @@
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::fs;
 use std::str::Chars;
 
 lazy_static! {
@@ -149,7 +148,7 @@ fn backup_reader(current: char, _: &mut Chars) -> Option<Token> {
     None
 }
 
-fn tokenize(input: &str) -> Vec<Token> {
+pub fn tokenize(input: &str) -> Vec<Token> {
     let input = remove_comments(input);
     let readers: Vec<fn(char, &mut Chars) -> Option<Token>> = vec![
         operator_reader,
@@ -172,9 +171,3 @@ fn tokenize(input: &str) -> Vec<Token> {
     tokens
 }
 
-pub fn main() {
-    let input = fs::read_to_string("input.txt").expect("Failed to read file 'input.txt'");
-    for token in tokenize(&input) {
-        println!("{:?}", token)
-    }
-}
