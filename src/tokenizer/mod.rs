@@ -44,6 +44,8 @@ fn tokenize(input: &str) -> Vec<Token> {
             '(' => tokens.push(Token::OpenBracket),
             ')' => tokens.push(Token::CloseBracket),
             '=' => tokens.push(Token::Assignment),
+            '{' => tokens.push(Token::OpenBrace),
+            '}' => tokens.push(Token::CloseBrace),
             '"' => {
                 let mut contents = String::new();
 
