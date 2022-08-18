@@ -29,6 +29,7 @@ pub enum Token {
     Assignment,
     OpenBrace,
     CloseBrace,
+    Semicolon
 }
 
 fn remove_comments(input: &str) -> String {
@@ -46,6 +47,7 @@ fn tokenize(input: &str) -> Vec<Token> {
             '=' => tokens.push(Token::Assignment),
             '{' => tokens.push(Token::OpenBrace),
             '}' => tokens.push(Token::CloseBrace),
+            ';' => tokens.push(Token::Semicolon),
             '"' => {
                 let mut contents = String::new();
 
@@ -119,8 +121,8 @@ fn tokenize(input: &str) -> Vec<Token> {
             }
             _ if ch.is_whitespace() => {}
 
-            ch => {
-                println!("Couldn't classify char {}", ch)
+            _ => {
+                println!("Couldn't tokenize '{}'", ch)
             }
         }
     }
