@@ -1,8 +1,14 @@
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::fs;
+
+lazy_static! {
+    static ref COMMENTS_PATTERN: Regex =
+        Regex::new(r"//.*|/\*[\s\S]\*/").expect("Couldn't create regex 'COMMENTS_PATTERN'");
+}
 
 // TODO: add other keywords
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Keyword {
     Const,
     Import,
@@ -10,29 +16,37 @@ pub enum Keyword {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Token {
     String(String),
     Integer(usize),
+    Char(char),
     List(Vec<Token>),
     Keyword(Keyword),
+    Decimal(f64),
     Identifier(String),
     OpenBracket,
     CloseBracket,
+    Assignment,
     OpenBrace,
     CloseBrace,
-    Unknown,
+}
+
+fn remove_comments(input: &str) -> String {
+    COMMENTS_PATTERN.replace_all(input, "").to_string()
 }
 
 fn tokenize(input: &str) -> Vec<Token> {
+    let input = remove_comments(input);
     let mut tokens: Vec<Token> = Vec::new();
     let mut chars = input.chars();
     while let Some(ch) = chars.next() {
         match ch {
             '(' => tokens.push(Token::OpenBracket),
             ')' => tokens.push(Token::CloseBracket),
+            '=' => tokens.push(Token::Assignment),
             '"' => {
                 let mut contents = String::new();
+
                 while let Some(ch) = chars.next() {
                     if ch == '"' {
                         break;
@@ -41,6 +55,20 @@ fn tokenize(input: &str) -> Vec<Token> {
                     }
                 }
                 tokens.push(Token::String(contents));
+            }
+            '\'' => {
+                let ch = chars
+                    .next()
+                    .expect("Unexpected end of file: \"'\" should be followed by a character");
+
+                tokens.push(Token::Char(ch));
+
+                let ch = chars
+                    .next()
+                    .expect("Unexpected end of file: expected \"'\"");
+                if ch != '\'' {
+                    panic!("Chars can only contain 1 character");
+                }
             }
             _ if ch.is_alphabetic() => {
                 let mut contents = String::from(ch);
@@ -60,10 +88,37 @@ fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(token);
             }
 
+            _ if ch.is_numeric() => {
+                let mut contents = String::from(ch);
+                let mut decimal = false;
+                while let Some(ch) = chars.next() {
+                    if ch == '.' {
+                        decimal = true;
+                        contents.push(ch);
+                    } else if ch.is_numeric() {
+                        contents.push(ch);
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(if decimal {
+                    Token::Decimal(
+                        contents
+                            .parse::<f64>()
+                            .unwrap_or_else(|_| panic!("Couldn't convert {} to f64", contents)),
+                    )
+                } else {
+                    Token::Integer(
+                        contents
+                            .parse::<usize>()
+                            .unwrap_or_else(|_| panic!("Couldn't convert {} to usize", contents)),
+                    )
+                })
+            }
             _ if ch.is_whitespace() => {}
 
             ch => {
-              println!("Couldn't classify char {}", ch)  
+                println!("Couldn't classify char {}", ch)
             }
         }
     }
