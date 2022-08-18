@@ -5,6 +5,8 @@ use std::fs;
 #[allow(dead_code)]
 pub enum Keyword {
     Const,
+    Import,
+    From,
 }
 
 #[derive(Debug)]
@@ -41,7 +43,7 @@ fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(Token::String(contents));
             }
             _ if ch.is_alphabetic() => {
-                let mut contents = String::new();
+                let mut contents = String::from(ch);
                 while let Some(ch) = chars.next() {
                     if ch.is_alphanumeric() || ch == '_' {
                         contents.push(ch);
@@ -51,6 +53,8 @@ fn tokenize(input: &str) -> Vec<Token> {
                 }
                 let token = match contents.as_str() {
                     "const" => Token::Keyword(Keyword::Const),
+                    "import" => Token::Keyword(Keyword::Import),
+                    "from" => Token::Keyword(Keyword::From),
                     _ => Token::Identifier(contents),
                 };
                 tokens.push(token);
@@ -58,7 +62,9 @@ fn tokenize(input: &str) -> Vec<Token> {
 
             _ if ch.is_whitespace() => {}
 
-            _ => {}
+            ch => {
+              println!("Couldn't classify char {}", ch)  
+            }
         }
     }
     tokens
