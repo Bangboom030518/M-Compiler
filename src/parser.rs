@@ -14,12 +14,32 @@ enum Literal {
     Decimal(f64),
 }
 
-enum Expression {
-    Literal(Literal),
-    Addition(Expression, Expression),
+enum BinaryOperator {
+    Addition,
     Subtraction,
     Division,
     Multiplication
+}
+
+enum UnaryOperator {
+    Bang
+}
+
+struct BinaryExpression {
+    left: Box<Expression>,
+    right: Box<Expression>,
+    operator: BinaryOperator
+}
+
+struct UnaryExpression {
+    operand: Box<Expression>,
+    operator: UnaryOperator,
+}
+
+enum Expression {
+    Literal(Literal),
+    BinaryExpression(BinaryExpression),
+    UnaryExpression(UnaryExpression)
 }
 
 struct VariableDeclaration {
@@ -30,12 +50,8 @@ struct VariableDeclaration {
 
 pub fn parse(tokens: &[Token]) -> AST {
     let mut tokens = tokens.into_iter();
-    let mut body: Vec<Node> = Vec::new();
     while let Some(token) = tokens.next() {
         match token {
-            Token::Integer(value) => body.push(Node::IntegerExpression(*value)),
-            Token::Decimal(value) => body.push(Node::FloatExpression(*value)),
-            Token::String(string) => body.push(Node::StringExpression(string.to_string())),
             Token::Keyword(Keyword::Const) => {
                 if let Some(Token::Identifier(identifier)) = tokens.next() {
 
@@ -46,8 +62,5 @@ pub fn parse(tokens: &[Token]) -> AST {
             _ => {}
         }
 
-    }
-    AST {
-        body
     }
 }
