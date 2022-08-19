@@ -14,21 +14,12 @@ enum Literal {
     Decimal(f64),
 }
 
-enum BinaryExpresssionOperator {
-    Addition,
+enum Expression {
+    Literal(Literal),
+    Addition(Expression, Expression),
     Subtraction,
     Division,
     Multiplication
-}
-
-struct BinaryExpresssion {
-    left: Expression,
-    right: Expression,
-    operator: BinaryExpresssionOperator
-}
-
-enum Expression {
-    Literal(Literal),
 }
 
 struct VariableDeclaration {
@@ -36,21 +27,6 @@ struct VariableDeclaration {
     kind: VariableDeclarationKind,
     value: Expression
 }
-
-
-// #[derive(Debug)]
-// pub enum Node {
-//     IntegerExpression(usize),
-//     FloatExpression(f64),
-//     StringExpression(String),
-//     VariableExpression(String),
-//     ImportStatement()
-// }
-
-// #[derive(Debug)]
-// pub struct AST {
-//     pub body: Vec<Node>,
-// }
 
 pub fn parse(tokens: &[Token]) -> AST {
     let mut tokens = tokens.into_iter();
