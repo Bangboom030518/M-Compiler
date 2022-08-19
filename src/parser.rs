@@ -1,5 +1,4 @@
-use core::panic;
-
+use crate::utils;
 use crate::tokenizer::{Token, Keyword};
 
 enum VariableDeclarationKind {
@@ -43,23 +42,51 @@ enum Expression {
 }
 
 struct VariableDeclaration {
-    type_annotation: Token,
+    type_annotation: Token ,
     kind: VariableDeclarationKind,
     value: Expression
 }
 
-pub fn parse(tokens: &[Token]) -> AST {
+struct Tokens {
+    tokens: Vec<Token>,
+    current: usize
+}
+
+impl Tokens {
+    fn next() -> Token {
+
+    }
+
+    fn new(tokens: &[Token]) -> Self {
+        let tokens = tokens.to_vec();
+        Self { tokens: tokens, current: 0 }
+    }
+}
+
+pub fn parse(tokens: &[Token]) {
     let mut tokens = tokens.into_iter();
+    loop {
+        break;
+    }
     while let Some(token) = tokens.next() {
         match token {
-            Token::Keyword(Keyword::Const) => {
-                if let Some(Token::Identifier(identifier)) = tokens.next() {
+            
+            Token::Keyword(keyword) => {
+                match *keyword {
+                    Keyword::Const => {
+                        if let Some(Token::Identifier(identifier)) = tokens.next() {
 
-                } else {
-                    panic!("`const` keyword requires an identifier.")
+                        } else {
+                            utils::error("`const` keyword requires an identifier.")
+                        }
+                    }
+                    _ => {
+                    };
                 }
             }
-            _ => {}
+            token => {
+                utils::error(&format!("Unexpected token: {:?}", token));
+            }
         }
 
     }

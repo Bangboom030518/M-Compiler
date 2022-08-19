@@ -2,6 +2,7 @@ use std::fs;
 
 mod tokenizer;
 mod parser;
+mod utils;
 
 fn main() {
     let input = fs::read_to_string("input.txt").expect("Failed to read file 'input.txt'");
