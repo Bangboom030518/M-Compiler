@@ -2,41 +2,54 @@ use core::panic;
 
 use crate::tokenizer::{Token, Keyword};
 
-// enum VariableDeclaration {
-//     Const
+enum VariableDeclarationKind {
+    Const,
+    Let,
+}
+
+enum Literal {
+    String(String),
+    Integer(usize),
+    Char(char),
+    Decimal(f64),
+}
+
+enum BinaryExpresssionOperator {
+    Addition,
+    Subtraction,
+    Division,
+    Multiplication
+}
+
+struct BinaryExpresssion {
+    left: Expression,
+    right: Expression,
+    operator: BinaryExpresssionOperator
+}
+
+enum Expression {
+    Literal(Literal),
+}
+
+struct VariableDeclaration {
+    type_annotation: Token,
+    kind: VariableDeclarationKind,
+    value: Expression
+}
+
+
+// #[derive(Debug)]
+// pub enum Node {
+//     IntegerExpression(usize),
+//     FloatExpression(f64),
+//     StringExpression(String),
+//     VariableExpression(String),
+//     ImportStatement()
 // }
 
-// struct VariableDeclarationStatement {
-//     declaration_type: VariableDeclaration
-// }
-
-pub enum Literal
-
-pub struct Literal {
-
-}
-
-#[derive(Debug)]
-pub enum Node {
-    IntegerExpression(usize),
-    FloatExpression(f64),
-    StringExpression(String),
-    VariableExpression(String),
-    ImportStatement()
-}
-
-
-#[derive(Debug)]
-pub struct AST {
-    pub body: Vec<Node>,
-}
-
-// fn parse_keyword(token: Token, tokens: &mut Token) -> Option<Token> {
-//     if let Token::Keyword(token) = token {
-        
-//     } else {
-//         None
-//     }
+// #[derive(Debug)]
+// pub struct AST {
+//     pub body: Vec<Node>,
 // }
 
 pub fn parse(tokens: &[Token]) -> AST {
