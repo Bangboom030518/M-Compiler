@@ -1,0 +1,16 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Pest",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=pest"
+                ]
+            },
+            "args": [],
+        },
+    ],
+}
