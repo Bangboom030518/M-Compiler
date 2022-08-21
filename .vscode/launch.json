@@ -12,5 +12,17 @@
             },
             "args": [],
         },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug BNF",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=bnf"
+                ]
+            },
+            "args": [],
+        },
     ],
 }

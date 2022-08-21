@@ -23,7 +23,6 @@ fn parse_bnf(input: &str) -> String {
             .collect::<Vec<char>>()
             .chunks(3)
             .map(|chunk| {
-                
                 (chunk[0], chunk[2])
             });
     }

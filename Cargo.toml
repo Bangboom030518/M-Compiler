@@ -9,6 +9,7 @@ regex = "1"
 lazy_static = "1.4.0"
 pest = "2.3"
 pest_derive = "2.3"
+bnf = "0.4.0"
 
 [[bin]]
 name = "pest"

@@ -1,14 +1,15 @@
-extern crate pest;
 #[macro_use]
-extern crate pest_derive;
+extern crate pest;
 
-use pest::Parser;
-use std::fs;
+use pest::error::Error;
+use pest::iterators::{Pair, Pairs};
+use pest::prec_climber::{Assoc, Operator, PrecClimber};
+use pest::{state, ParseResult, Parser, ParserState};
 use lazy_static::lazy_static;
 
 #[derive(Parser)]
-#[grammar = "../pest/csv.pest"]
-pub struct CSVParser;
+#[grammar = "../pest/grammar.pest"]
+pub struct CalculatorParser;
 
 lazy_static! {
     static ref PREC_CLIMBER: PrecClimber<Rule> = {
