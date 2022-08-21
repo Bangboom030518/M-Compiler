@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate pest;
+extern crate pest_derive;
 
 use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
@@ -41,4 +41,15 @@ fn eval(expression: Pairs<Rule>) -> f64 {
             _ => unreachable!(),
         },
     )
+}
+
+fn main() {
+    match CalculatorParser::parse(Rule::calculation, include_str!("../pest/input.txt")) {
+        Ok(tree) => {
+            println!("{}", eval(tree));
+        },
+        Err(err) => {
+            eprintln!("Parse Error {}", err);
+        }
+    };
 }
