@@ -4,25 +4,40 @@ extern crate pest_derive;
 
 use pest::Parser;
 use std::fs;
+use lazy_static::lazy_static;
 
 #[derive(Parser)]
 #[grammar = "../pest/csv.pest"]
 pub struct CSVParser;
 
-fn main() {
-    let unparsed_file = include_str!("../pest/test.csv");
+lazy_static! {
+    static ref PREC_CLIMBER: PrecClimber<Rule> = {
+        use Rule::*;
+        use Assoc::*;
 
-    // let file = CSVParser::parse(Rule::file, &unparsed_file)
-    //     .expect("unsuccessful parse") // unwrap the parse result
-    //     .next().unwrap(); // get and unwrap the `file` rule; never fails
+        PrecClimber::new(vec![
+            Operator::new(add, Left) | Operator::new(subtract, Left),
+            Operator::new(multiply, Left) | Operator::new(divide, Left),
+            Operator::new(power, Right)
+        ])
+    };
+}
 
-    // dbg!(file);
-    match CSVParser::parse(Rule::file, &unparsed_file) {
-        Ok(result) => {
-            dbg!(result);
-        }
-        Err(err) => {
-            eprintln!("Parse Error {}", err)
-        }
-    }
+fn eval(expression: Pairs<Rule>) -> f64 {
+    PREC_CLIMBER.climb(
+        expression,
+        |pair: Pair<Rule>| match pair.as_rule() {
+            Rule::num => pair.as_str().parse::<f64>().unwrap(),
+            Rule::expr => eval(pair.into_inner()),
+            _ => unreachable!(),
+        },
+        |lhs: f64, op: Pair<Rule>, rhs: f64| match op.as_rule() {
+            Rule::add      => lhs + rhs,
+            Rule::subtract => lhs - rhs,
+            Rule::multiply => lhs * rhs,
+            Rule::divide   => lhs / rhs,
+            Rule::power    => lhs.powf(rhs),
+            _ => unreachable!(),
+        },
+    )
 }
