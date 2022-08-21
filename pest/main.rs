@@ -1,10 +1,9 @@
 #[macro_use]
 extern crate pest_derive;
 
-use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
 use pest::prec_climber::{Assoc, Operator, PrecClimber};
-use pest::{state, ParseResult, Parser, ParserState};
+use pest::Parser;
 use lazy_static::lazy_static;
 
 #[derive(Parser)]
