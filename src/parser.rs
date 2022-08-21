@@ -81,7 +81,7 @@ pub fn parse(tokens: &[Token]) {
                         }
                     }
                     _ => {
-                    };
+                    }
                 }
             }
             token => {

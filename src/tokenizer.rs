@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::{str::Chars, thread::__FastLocalKeyInner};
+use std::str::Chars;
 
 lazy_static! {
     static ref COMMENTS_PATTERN: Regex =
