@@ -1,7 +1,7 @@
 
-<const_decl> ::= "const" <assignment>;
+<const_decl> ::= const <assignment>;
 
-<assignment> ::= <identifier> "=" <expression>;
+<assignment> ::= <identifier> = <expression>;
 
 (* Words *)
 
@@ -10,7 +10,17 @@
 <identifier_char> ::= <lowercase>|<uppercase>|_;
 <identifier> ::= <ident_char>|<ident><ident_char>;
 
-(* Numbers *)
+(* Numeric Expressions*)
+
+<numeric_expression> ::= <numeric_literal>|<identifier>|<calculation>;
+<calculation> ::= <subtraction>|<division>|<addition>|<multiplication>|<modulo>;
+<subtraction> ::= <numeric_expression> - <numeric_expression>;
+<addition> ::= <numeric_expression> + <numeric_expression>;
+<multiplication> ::= <numeric_expression> * <numeric_expression>;
+<division> ::= <numeric_expression> / <numeric_expression>;
+<modulo> ::=  <numeric_expression> % <numeric_expression>;
+
+(* Number Literals *)
 
 <numeric_literal> ::= <int>|<float>;
 <float> ::= -<ufloat>|<ufloat>;
@@ -20,3 +30,4 @@
 <digits> ::= <digit>|<digits><digit>;
 <digit> ::= 0|<nonzero>;
 <nonzero> ::= 1|2|3|4|5|6|7|8|9;
+
