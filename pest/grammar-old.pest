@@ -28,12 +28,10 @@ subtraction = { "-" }
 
 // Number Literals
 
-numeric_literal = int | float;
-float = -ufloat | ufloat;
-ufloat = uint.uint;
-int = uint | -uint;
-uint = digit | nonzero digits;
-digits = digit | digits digit;
-digit = 0 | nonzero;
-nonzero = { "1".."9" };
+number_literal = @{ (int | float) ~ (^"e" ~ int)? }
+    float = { int ~ ("." ~ ASCII_DIGIT*) }
+    int = { "-"? ~ unsigned }
+    unsigned = { nonzero ~ ASCII_DIGIT* }
+    nonzero = { '1'..'9' }
 
+WHITESPACE = _{ " " | "\t" }
