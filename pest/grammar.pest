@@ -14,7 +14,7 @@ expression = { binary_expression | unary_expression | literal | group | identifi
             modulo = { "%" }
             multiply = { "*" }
         binary_term = { unary_expression | literal | group | identifier }
-            
+
     literal = { number_literal | string_literal }
         string_literal = ${ "\"" ~ string_content ~ "\"" }
             string_content = @{ string_char* }
@@ -42,10 +42,10 @@ statement = { import | expression }
     import = @{ "import " ~ namespace_list ~ " from " ~ string_literal }
         namespace_list = { (pascal_identifier ~ ",")* ~ pascal_identifier }
         
-program = _{ SOI ~ (statement ~ ";")* ~ EOI }
+program = { SOI ~ (statement ~ ";")* ~ EOI }
 keyword = _{ "import" | "from" }
 
-WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }
-COMMENT = {  ("/*" ~ ANY* ~ "*/") | ("//" ~ ANY* ~ "\n") }
-
+WHITESPACE = _{ " " | "\t" | newline }
+COMMENT = _{  ("/*" ~ !"*/"* ~ "*/") | ("//" ~ ANY* ~ newline) }
+newline = _{ "\n" | "\r\n" }
 
