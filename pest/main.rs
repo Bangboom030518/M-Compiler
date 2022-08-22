@@ -7,7 +7,7 @@ use pest::Parser;
 use lazy_static::lazy_static;
 
 #[derive(Parser)]
-#[grammar = "../pest/grammar.pest"]
+#[grammar = "../pest/calculator.pest"]
 pub struct CalculatorParser;
 
 lazy_static! {

@@ -1,19 +1,56 @@
-number = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
-    int = { ("+" | "-")? ~ ASCII_DIGIT+ }
 
-operation = _{ add | subtract | multiply | divide | power }
-    add      = { "+" }
-    subtract = { "-" }
-    multiply = { "*" }
-    divide   = { "/" }
-    power    = { "^" }
+// const_decl = const assignment;
 
-expr = { term ~ (operation ~ term)* }
-term = _{ number | "(" ~ expr ~ ")" }
+// assignment = { identifier ~ "=" ~ expression };
 
-calculation = _{ SOI ~ expr ~ EOI }
+// Words
+identifier = {lowercase_identifier | uppercase_identifier};
+    lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char+ };
+        lowercase_char = { ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
+    lowercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char+ };
+        uppercase_char = { ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
+
+// Numeric Expressions
+
+// https://github.com/pest-parser/pest/blob/master/pest/tests/calculator.rs
+// https://pest.rs/
+
+// numeric_expression = { numeric_literal | identifier | calculation }
+// calculation = { subtraction | division | addition | multiplication | modulo }
+// subtraction = { numeric_expression ~ "-" ~ numeric_expression }
+// addition = { numeric_expression ~ "+" ~ numeric_expression };
+// multiplication = numeric_expression * numeric_expression;
+// division = numeric_expression / numeric_expression;
+// modulo =  numeric_expression % numeric_expression;
+
+expression = { binary_expression | unary_expression | literal | group }
+    unary_expression = { unary_operator ~ expression }
+        unary_operator = { bang | minus }
+            bang = { "!" }
+            minus = { "-" }
+
+    group = { "(" ~ expression ~ ")" }
+
+    binary_expression = { expression ~ (binary_operator ~ expression)* }
+        binary_operator = 
+            plus = { "+" };
+            divide = { "/" };
+            minus = { "-" };
+            modulo = { "%" };
+            multiply = { "*" };
+            
+
+    literal = { number_literal | string_literal }
+        string_literal = @{ "\"" ~ ANY* ~ "\"" }
+        char_literal = @{ "'" ~ ANY ~ "'" }
+        boolean_literal = @{ "true" | "false" }
+        number_literal = @{ (int | float) ~ (^"e" ~ int)? }
+            float = { int ~ ("." ~ ASCII_DIGIT*) }
+            int = { "-"? ~ unsigned }
+            unsigned = { nonzero ~ ASCII_DIGIT* }
+            nonzero = { '1'..'9' }
+
+program = _{ SOI ~ statement* ~ EOI }
 
 WHITESPACE = _{ " " | "\t" }
-
-// https://pest.rs/book/grammars/syntax.html
-// https://github.com/pest-parser/pest/blob/master/pest/tests/calculator.rs
+COMMENT = {  ("/*" ~ ANY* ~ "*/") | ("//" ~ ANY* ~ "\n") }
