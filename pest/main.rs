@@ -27,7 +27,7 @@ fn eval(expression: Pairs<Rule>) -> f64 {
     PREC_CLIMBER.climb(
         expression,
         |pair: Pair<Rule>| match pair.as_rule() {
-            Rule::num => pair.as_str().parse::<f64>().unwrap(),
+            Rule::number => pair.as_str().parse::<f64>().unwrap(),
             Rule::expr => eval(pair.into_inner()),
             _ => unreachable!(),
         },

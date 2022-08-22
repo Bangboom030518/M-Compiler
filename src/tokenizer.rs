@@ -8,14 +8,14 @@ lazy_static! {
 }
 
 // TODO: add other keywords
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Keyword {
     Const,
     Import,
     From,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     String(String),
     Integer(usize),

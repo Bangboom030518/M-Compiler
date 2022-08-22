@@ -53,13 +53,12 @@ struct Tokens {
 }
 
 impl Tokens {
-    fn next() -> Token {
+    // fn next() -> Token {
 
-    }
+    // }
 
     fn new(tokens: &[Token]) -> Self {
-        let tokens = tokens.to_vec();
-        Self { tokens: tokens, current: 0 }
+        Self { tokens: tokens.to_vec(), current: 0 }
     }
 }
 
