@@ -1,6 +1,6 @@
 import Console from "std:io";
 
-Console::write_line("Hello!");
+/* Console::write_line("Hello!");
 
 const x = 12;
 const y = 23.34;
@@ -17,3 +17,4 @@ int a() -> {
 };
 
 map(||)
+*/

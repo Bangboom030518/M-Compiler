@@ -1,47 +1,28 @@
-
-// const_decl = const assignment;
-
-// assignment = { identifier ~ "=" ~ expression };
-
-// Words
-identifier = {lowercase_identifier | uppercase_identifier};
-    lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char+ };
-        lowercase_char = { ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
-    lowercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char+ };
-        uppercase_char = { ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
-
-// Numeric Expressions
-
-// https://github.com/pest-parser/pest/blob/master/pest/tests/calculator.rs
-// https://pest.rs/
-
-// numeric_expression = { numeric_literal | identifier | calculation }
-// calculation = { subtraction | division | addition | multiplication | modulo }
-// subtraction = { numeric_expression ~ "-" ~ numeric_expression }
-// addition = { numeric_expression ~ "+" ~ numeric_expression };
-// multiplication = numeric_expression * numeric_expression;
-// division = numeric_expression / numeric_expression;
-// modulo =  numeric_expression % numeric_expression;
-
-expression = { binary_expression | unary_expression | literal | group }
+expression = { binary_expression | unary_expression | literal | group | identifier }
     unary_expression = { unary_operator ~ expression }
-        unary_operator = { bang | minus }
+        unary_operator = { bang | negate }
             bang = { "!" }
-            minus = { "-" }
+            negate = { "-" }
 
     group = { "(" ~ expression ~ ")" }
 
-    binary_expression = { expression ~ (binary_operator ~ expression)* }
-        binary_operator = 
-            plus = { "+" };
-            divide = { "/" };
-            minus = { "-" };
-            modulo = { "%" };
-            multiply = { "*" };
+    binary_expression = { binary_term ~ (binary_operator ~ binary_term)* }
+        binary_operator = { plus | divide | minus | modulo | multiply }
+            plus = { "+" }
+            divide = { "/" }
+            minus = { "-" }
+            modulo = { "%" }
+            multiply = { "*" }
+        binary_term = { unary_expression | literal | group | identifier }
             
-
     literal = { number_literal | string_literal }
-        string_literal = @{ "\"" ~ ANY* ~ "\"" }
+        string_literal = ${ "\"" ~ string_content ~ "\"" }
+            string_content = @{ string_char* }
+                string_char = {
+                    !("\"" | "\\") ~ ANY
+                    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+                    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                }
         char_literal = @{ "'" ~ ANY ~ "'" }
         boolean_literal = @{ "true" | "false" }
         number_literal = @{ (int | float) ~ (^"e" ~ int)? }
@@ -50,7 +31,21 @@ expression = { binary_expression | unary_expression | literal | group }
             unsigned = { nonzero ~ ASCII_DIGIT* }
             nonzero = { '1'..'9' }
 
-program = _{ SOI ~ statement* ~ EOI }
+identifier = { !keyword ~ (lowercase_identifier | uppercase_identifier) }
+    lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char* }
+        lowercase_char = _{ ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
+    uppercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char* }
+        uppercase_char = _{ ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
+    pascal_identifier = { ASCII_ALPHA_UPPER ~ ASCII_ALPHANUMERIC* }
 
-WHITESPACE = _{ " " | "\t" }
+statement = { import | expression }
+    import = @{ "import " ~ namespace_list ~ " from " ~ string_literal }
+        namespace_list = { (pascal_identifier ~ ",")* ~ pascal_identifier }
+        
+program = _{ SOI ~ (statement ~ ";")* ~ EOI }
+keyword = _{ "import" | "from" }
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r\n" }
 COMMENT = {  ("/*" ~ ANY* ~ "*/") | ("//" ~ ANY* ~ "\n") }
+
+
