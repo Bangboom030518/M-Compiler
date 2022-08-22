@@ -1,4 +1,4 @@
-num = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
+number = @{ int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ int)? }
     int = { ("+" | "-")? ~ ASCII_DIGIT+ }
 
 operation = _{ add | subtract | multiply | divide | power }
@@ -9,7 +9,7 @@ operation = _{ add | subtract | multiply | divide | power }
     power    = { "^" }
 
 expr = { term ~ (operation ~ term)* }
-term = _{ num | "(" ~ expr ~ ")" }
+term = _{ number | "(" ~ expr ~ ")" }
 
 calculation = _{ SOI ~ expr ~ EOI }
 
