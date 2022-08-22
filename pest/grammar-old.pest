@@ -5,11 +5,11 @@
 
 // Words
 
-// lowercase = { 'a'..'z' };
-// uppercase = { 'A'..'Z' };
-// uppercase_identifier_char = { lowercase | uppercase | "_" };
-// identifier = ident_char | identident_char;
-
+lowercase = { 'a'..'z' };
+uppercase = { 'A'..'Z' };
+lowercase_identifier = { (lowercase | "_")+ };
+uppercase_identifier = { (uppercase | "_")+ };
+identifier = lowercase_identifier | uppercase_identifier;
 // Numeric Expressions
 
 // https://github.com/pest-parser/pest/blob/master/pest/tests/calculator.rs
