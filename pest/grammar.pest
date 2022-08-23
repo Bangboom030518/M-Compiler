@@ -10,7 +10,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
             unary_operator = { bang | negate }
                 bang = { "!" }
                 negate = { "-" }
-
+        
         group = { "(" ~ expression ~ ")" }
 
         binary_expression = { binary_term ~ (binary_operator ~ binary_term)* }
