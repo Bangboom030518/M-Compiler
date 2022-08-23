@@ -45,7 +45,5 @@ statement = { import | expression }
 program = { SOI ~ (statement ~ ";")* ~ EOI }
 keyword = _{ "import" | "from" }
 
-WHITESPACE = _{ " " | "\t" | newline }
-COMMENT = _{  ("/*" ~ !"*/"* ~ "*/") | ("//" ~ ANY* ~ newline) }
-newline = _{ "\n" | "\r\n" }
-
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ ANY* ~ NEWLINE) }
