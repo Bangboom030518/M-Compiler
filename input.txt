@@ -1,21 +1,5 @@
-1 + 1;
+import Stdout, Stdin, Stderr from "std:io";
 
-/* import Console from "std:io";
- Console::write_line("Hello!");
-
-const x = 12;
-const y = 23.34;
-
-array.map()
-
-void main() Stdout::write_line("hello");
-
-const A = "a";
-
-int a() -> {
-    var number = 3;
-    Date.now() / number
-};
-
-map(||)
-*/
+export void main() -> {
+    Stdout::write_line("Hello World");
+}

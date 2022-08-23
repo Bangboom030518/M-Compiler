@@ -1,55 +1,57 @@
 program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
     semicolon = _{ ";" }
 
-    statement = { import | expression }
-        import = @{ "import " ~ namespace_list ~ " from " ~ string_literal }
-            namespace_list = { (pascal_identifier ~ ",")* ~ pascal_identifier }
+    statement = { import_declaration | expression }
+        import_declaration = ${ import ~ space ~ namespace_list ~ space ~ from ~ space ~ string_literal }
+            namespace_list = ${ (pascal_identifier ~ "," ~ WHITESPACE*)* ~ pascal_identifier }
+            space = _{ (COMMENT ~ WHITESPACE*)* ~ WHITESPACE ~ (COMMENT ~ WHITESPACE*)* }
 
-    expression = { binary_expression | unary_expression | literal | group | identifier }
-        unary_expression = { unary_operator ~ expression }
-            unary_operator = { bang | negate }
-                bang = { "!" }
-                negate = { "-" }
-        
-        group = { "(" ~ expression ~ ")" }
+        expression = { binary_expression | unary_expression | literal | group | identifier }
+            unary_expression = { unary_operator ~ expression }
+                unary_operator = { bang | negate }
+                    bang = { "!" }
+                    negate = { "-" }
 
-        binary_expression = { binary_term ~ (binary_operator ~ binary_term)* }
-            binary_operator = { plus | divide | minus | modulo | multiply }
-                plus = { "+" }
-                divide = { "/" }
-                minus = { "-" }
-                modulo = { "%" }
-                multiply = { "*" }
-            binary_term = { unary_expression | literal | group | identifier }
+            group = { "(" ~ expression ~ ")" }
 
-        literal = { number_literal | string_literal }
-            string_literal = ${ "\"" ~ string_content ~ "\"" }
-                string_content = @{ string_char* }
-                    string_char = {
-                        !("\"" | "\\") ~ ANY
-                        | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
-                        | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
-                    }
-            // TODO: this needs improving
-            char_literal = @{ "'" ~ ANY ~ "'" }
+            binary_expression = { binary_term ~ (binary_operator ~ binary_term)* }
+                binary_operator = { plus | divide | minus | modulo | multiply }
+                    plus = { "+" }
+                    divide = { "/" }
+                    minus = { "-" }
+                    modulo = { "%" }
+                    multiply = { "*" }
+                binary_term = { unary_expression | literal | group | identifier }
 
-            boolean_literal = @{ "true" | "false" }
+            literal = { number_literal | string_literal }
+                string_literal = ${ "\"" ~ string_content ~ "\"" }
+                    string_content = @{ string_char* }
+                        string_char = {
+                            !("\"" | "\\") ~ ANY
+                            | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+                            | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                        }
+                // TODO: this needs improving
+                char_literal = @{ "'" ~ ANY ~ "'" }
 
-            number_literal = @{ (int | float) ~ (^"e" ~ int)? }
-                float = { int ~ ("." ~ ASCII_DIGIT*) }
-                int = { "-"? ~ unsigned }
-                unsigned = _{ nonzero ~ ASCII_DIGIT* }
-                nonzero = _{ '1'..'9' }
+                boolean_literal = @{ "true" | "false" }
 
-    identifier = { !keyword ~ (lowercase_identifier | uppercase_identifier) }
-        lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char* }
-            lowercase_char = _{ ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
-        uppercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char* }
-            uppercase_char = _{ ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
-        pascal_identifier = { ASCII_ALPHA_UPPER ~ ASCII_ALPHANUMERIC* }
+                number_literal = @{ (int | float) ~ (^"e" ~ int)? }
+                    float = { int ~ ("." ~ ASCII_DIGIT*) }
+                    int = { "-"? ~ unsigned }
+                    unsigned = _{ nonzero ~ ASCII_DIGIT* }
+                    nonzero = _{ '1'..'9' }
 
+        identifier = { !keyword ~ (lowercase_identifier | uppercase_identifier) }
+            lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char* }
+                lowercase_char = _{ ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
+            uppercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char* }
+                uppercase_char = _{ ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
+            pascal_identifier = { ASCII_ALPHA_UPPER ~ ASCII_ALPHANUMERIC* }
 
-keyword = _{ "import" | "from" }
+keyword = _{ import | from }
+    import  = { "import" }
+    from = { "from" }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
-COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ ANY* ~ NEWLINE) }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }
