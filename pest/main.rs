@@ -16,7 +16,10 @@ fn parse(input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
 fn main() {
     match parse(include_str!("../input.txt")) {
         Ok(tree) => {
-            println!("{}", tree);
+            // println!("{}", tree);
+            for node in tree {
+                println!("{}", node)
+            }
         },
         Err(err) => {
             eprintln!("Parse Error {}", err);

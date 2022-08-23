@@ -18,10 +18,10 @@ An unfinished custom-built parser using enums.
 
 ## TODO:
 
-- Which parser are we using?
-    - Probably pest
-- Finish the grammar
-- LLVM integration ([llvm-sys](https://crates.io/crates/llvm-sys) or [inkwell](https://crates.io/crates/inkwell))
+- Finish the pest grammar
+- Add module bundling
+- Generate [LLVM IR](https://llvm.org/docs/LangRef.html).
+- Compile llvm ir to machine code using [llvm-sys](https://crates.io/crates/llvm-sys) or [inkwell](https://crates.io/crates/inkwell), probably inkwell.
 ## Steps
 
 > [How to write a compiler](https://softwareengineering.stackexchange.com/questions/165543/how-to-write-a-very-basic-compiler) - this gives a nice outline of steps we would need to take
