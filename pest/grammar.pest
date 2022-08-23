@@ -1,10 +1,16 @@
 program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
     semicolon = _{ ";" }
 
-    statement = { import_declaration | expression }
-        import_declaration = ${ import ~ space ~ namespace_list ~ space ~ from ~ space ~ string_literal }
-            namespace_list = ${ (pascal_identifier ~ "," ~ WHITESPACE*)* ~ pascal_identifier }
-            space = _{ (COMMENT ~ WHITESPACE*)* ~ WHITESPACE ~ (COMMENT ~ WHITESPACE*)* }
+    statement = { declaration | expression }
+        declaration = { import_declaration }
+            import_declaration = ${ import ~ space ~ namespace_list ~ space ~ from ~ space ~ string_literal }
+                namespace_list = ${ (pascal_identifier ~ "," ~ WHITESPACE*)* ~ pascal_identifier }
+
+            const_declaration = ${ const ~ space ~ uppercase_identifier ~ assignment }
+
+            assignment = !{ colon ~ type ~ "=" ~ expression }
+
+        type = { "lolz" }
 
         expression = { binary_expression | unary_expression | literal | group | identifier }
             unary_expression = { unary_operator ~ expression }
@@ -32,10 +38,12 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                             | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
                         }
                 // TODO: this needs improving
-                char_literal = @{ "'" ~ ANY ~ "'" }
+                char_literal = ${ "'" ~ string_char ~ "'" }
 
-                boolean_literal = @{ "true" | "false" }
-
+                boolean_literal = ${ true | false }
+                    true = { "true" }
+                    false = { "false" }
+                
                 number_literal = @{ (int | float) ~ (^"e" ~ int)? }
                     float = { int ~ ("." ~ ASCII_DIGIT*) }
                     int = { "-"? ~ unsigned }
@@ -52,6 +60,10 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 keyword = _{ import | from }
     import  = { "import" }
     from = { "from" }
+    const = { "const" }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }
+space = _{ (COMMENT ~ WHITESPACE*)* ~ WHITESPACE ~ (COMMENT ~ WHITESPACE*)* }
+opt_space = _{ WHITESPACE* ~ (COMMENT ~ WHITESPACE*)* }
+colon = _{ ":" }
