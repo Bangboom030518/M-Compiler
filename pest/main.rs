@@ -1,16 +1,20 @@
 #[macro_use]
 extern crate pest_derive;
 
-// use pest::iterators::{Pair, Pairs};
-// use pest::prec_climber::{Assoc, Operator, PrecClimber};
+use pest::iterators::Pairs;
+use pest::error::Error;
 use pest::Parser;
 
 #[derive(Parser)]
 #[grammar = "../pest/grammar.pest"]
 pub struct GrammarParser;
 
+fn parse(input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
+    GrammarParser::parse(Rule::program, input)
+}
+
 fn main() {
-    match GrammarParser::parse(Rule::program, include_str!("../input.txt")) {
+    match parse(include_str!("../input.txt")) {
         Ok(tree) => {
             println!("{}", tree);
         },
