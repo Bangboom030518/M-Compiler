@@ -2,15 +2,20 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
     semicolon = _{ ";" }
 
     statement = { declaration | expression }
-        declaration = { import_declaration }
+        declaration = { import_declaration | variable_declaration }
             import_declaration = ${ import_keyword ~ space ~ namespace_list ~ space ~ from_keyword ~ space ~ string_literal }
-                namespace_list = ${ (pascal_identifier ~ "," ~ WHITESPACE*)* ~ pascal_identifier }
+                namespace_list = ${ (identifier ~ "," ~ WHITESPACE*)* ~ identifier }
 
-            const_declaration = ${ const_keyword ~ space ~ uppercase_identifier ~ assignment }
+            variable_declaration = ${ variable_keyword ~ variable_declaration_body }
+                variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
+                variable_declaration_body = ${ space ~ identifier ~ opt_space ~ variable_initializer }
+                variable_initializer = !{ type_annotation? ~ assignment }
 
-            assignment = !{ colon ~ data_type ~ "=" ~ expression }
+            type_annotation = !{ colon ~ data_type }
 
-        data_type = { "lolz" }
+            assignment = !{ "=" ~ expression }
+
+        data_type = { identifier }
 
         expression = { binary_expression | unary_expression | literal | group | identifier }
             unary_expression = { unary_operator ~ expression }
@@ -20,7 +25,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 
             group = { "(" ~ expression ~ ")" }
 
-            binary_expression = { binary_term ~ (binary_operator ~ binary_term)* }
+            binary_expression = { binary_term ~ (binary_operator ~ binary_term)+ }
                 binary_operator = { plus | divide | minus | modulo | multiply }
                     plus = { "+" }
                     divide = { "/" }
@@ -37,7 +42,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                             | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
                             | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
                         }
-                // TODO: this needs improving
+
                 char_literal = ${ "'" ~ string_char ~ "'" }
 
                 boolean_literal = ${ "true" | "false" }
@@ -48,17 +53,15 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                     unsigned = _{ nonzero ~ ASCII_DIGIT* }
                     nonzero = _{ '1'..'9' }
 
-        identifier = { !keyword ~ (lowercase_identifier | uppercase_identifier) }
-            lowercase_identifier = { ASCII_ALPHA_LOWER ~ lowercase_char* }
-                lowercase_char = _{ ASCII_ALPHA_LOWER | "_" | ASCII_DIGIT }
-            uppercase_identifier = { ASCII_ALPHA_UPPER ~ uppercase_char* }
-                uppercase_char = _{ ASCII_ALPHA_UPPER | "_" | ASCII_DIGIT }
-            pascal_identifier = { ASCII_ALPHA_UPPER ~ ASCII_ALPHANUMERIC* }
+        identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
 
-keyword = _{ import_keyword | from_keyword }
+keyword = _{ import_keyword | from_keyword | const_keyword | var_keyword | static_keyword | let_keyword }
     import_keyword  = { "import" }
     from_keyword = { "from" }
     const_keyword = { "const" }
+    var_keyword = { "var" }
+    static_keyword = { "static" }
+    let_keyword = { "let" }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }

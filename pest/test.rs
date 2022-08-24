@@ -8,5 +8,4 @@ fn add() {
         Ok(tree) => print_tree(tree),
         Err(error) => panic!("Parse Error {}", error)
     };
-    // assert_eq!(tree, 1)
 }

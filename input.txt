@@ -1,5 +1,15 @@
-import Stdout, Stdin, Stderr from "std:io";
+var MONEY = "HELLO";
 
-export void main() -> {
-    Stdout::write_line("Hello World");
+function index<T>(array: T[], index: integer): T {
+    return array[index]
 }
+
+index([1, 2, 3], 5);
+function index<T, I : UintGeneric & Max(vec.length)>(vec: T[], index: integer): T {
+    return vec.get(index)
+}
+
+if random() {
+    vec.push(3)
+}
+index([1, 2, 3], 6)

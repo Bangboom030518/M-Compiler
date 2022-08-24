@@ -25,7 +25,12 @@ fn main() {
 }
 
 fn print_tree(tree: Pairs<Rule>, indent: usize) {
+
     for node in tree {
+        match node.as_rule() {
+            Rule::expression => "EXPRESSION!!1!1!!",
+            _ => ""
+        };
         println!("{}{:?} ({})", "  ".repeat(indent), node.as_rule(), node.as_str());
         print_tree(node.into_inner(), indent + 1);
     }
