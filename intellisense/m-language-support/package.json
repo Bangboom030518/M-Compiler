@@ -1,0 +1,25 @@
+{
+  "name": "m-language-support",
+  "displayName": "m_language_support",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "m",
+      "aliases": ["M", "m"],
+      "extensions": [".m"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "m",
+      "scopeName": "index.m",
+      "path": "./syntaxes/m.tmLanguage.json"
+    }]
+  }
+}
