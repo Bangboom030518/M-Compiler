@@ -1,8 +1,13 @@
+use std::str::FromStr;
+
 enum Statement {
     Expression(Expression),
-    Import(Import)
+    Declaration(Declaration)
 }
 
+enum Declaration {
+    Import(Import)
+}
 
 struct Import;
 
@@ -46,6 +51,9 @@ enum Expression {
     Unary(UnaryExpression)
 }
 
+impl Expression {
+    // fn eval();
+}
 
 fn parse() {
 
