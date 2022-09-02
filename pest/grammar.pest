@@ -3,13 +3,14 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 
     statement = { declaration | expression }
         declaration = { import_declaration | variable_declaration }
-            import_declaration = ${ import_keyword ~ space ~ namespace_list ~ space ~ from_keyword ~ space ~ string_literal }
+            import_declaration = ${ import_start ~ namespace_list ~ space ~ from_keyword ~ space ~ string_literal }
+                import_start = @{ import_keyword ~ " "}
                 namespace_list = ${ (identifier ~ "," ~ WHITESPACE*)* ~ identifier }
 
             variable_declaration = ${ variable_keyword ~ variable_declaration_body }
                 variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
                 variable_declaration_body = ${ space ~ identifier ~ opt_space ~ variable_initializer }
-                variable_initializer = !{ type_annotation? ~ assignment }
+                    variable_initializer = !{ type_annotation? ~ assignment }
 
             type_annotation = !{ colon ~ data_type }
 
@@ -56,7 +57,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
         identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
 
 keyword = _{ import_keyword | from_keyword | const_keyword | var_keyword | static_keyword | let_keyword }
-    import_keyword  = { "import" }
+    import_keyword = { "import" }
     from_keyword = { "from" }
     const_keyword = { "const" }
     var_keyword = { "var" }

@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 enum Statement {
     Expression(Expression),
     Declaration(Declaration)

@@ -1,0 +1,11 @@
+grammar = {  }
+    line = { tab* ~ identifier  }
+        tab = { "\t" }
+        assignment = { identifier ~ equals ~ rule }
+            equals = _{ "=" }
+            rule = {}
+                modifier = {  }
+        identifier = { (ASCII_ALPHANUMERIC | "_")+ }
+
+WHITESPACE = _{ " " | NEWLINE }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }

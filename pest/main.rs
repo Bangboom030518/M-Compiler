@@ -1,4 +1,5 @@
 mod parser;
+mod validator;
 
 #[macro_use]
 extern crate pest_derive;
@@ -16,6 +17,9 @@ fn parse(input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
 }
 
 fn main() {
+    match validator::validate_pest(include_str!("../pest/grammar.pest")) {
+        Ok(_) => {}
+    };
     match parse(include_str!("../input.txt")) {
         Ok(tree) => {
             print_tree(tree, 0);
