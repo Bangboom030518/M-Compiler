@@ -1,6 +1,10 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 
+#[derive(Parser)]
+#[grammar = "../pest/pest.pest"]
+pub struct PestParser;
+
 lazy_static! {
     static ref COMMENTS_PATTERN: Regex = Regex::new(r"/\*[\s\S]*\*/|//.*").expect("Couldn't parse COMMENTS_PATTERN regex");
 }

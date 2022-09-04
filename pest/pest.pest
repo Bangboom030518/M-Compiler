@@ -1,10 +1,55 @@
-grammar = {  }
-    line = { tab* ~ identifier  }
+grammar = { SOI ~ line* ~ EOI }
+    line = { tab* ~ assignment ~ NEWLINE }
         tab = { "\t" }
         assignment = { identifier ~ equals ~ rule }
             equals = _{ "=" }
-            rule = {}
-                modifier = {  }
+
+            rule = { modifier? ~ "{" ~ rule_expression ~ "}" }
+                modifier = { atomic | compound_atomic | silent | non_atomic }
+                    atomic = { "@" }
+                    compound_atomic = { "$" }
+                    silent = { "_" }
+                    non_atomic = { "!" }
+
+                rule_expression = { identifier | binary_expression | group | char_range | string_literal | not | repetition }
+                    group = { "(" ~ rule_expression ~ ")" }
+                    
+                    not = { "!" ~ rule_expression }
+
+                    repetition = { rule_expression ~ repetition_operator }
+                        repetition_operator = { one_or_more | zero_or_more | n_to_n | optional }
+                            one_or_more = { "+" }
+                            zero_or_more = { "*" }
+                            optional = { "?" }
+                            n_to_n = { "{" ~ number? ~ "," ~ number? ~ "}" }
+                                number = @{ (int | float) ~ (^"e" ~ int)? }
+                                    float = { int ~ ("." ~ ASCII_DIGIT*) }
+                                    int = { "-"? ~ unsigned }
+                                    unsigned = _{ nonzero ~ ASCII_DIGIT* }
+                                    nonzero = _{ '1'..'9' }
+
+                    binary_expression = { binary_term ~ (binary_operator ~ binary_term)+ }
+                        binary_operator = { choice | and_then }
+                            choice = { "|" }
+                            and_then = { "~" }
+                        binary_term = { group | identifier }
+
+                    string_literal = ${ "\"" ~ string_content ~ "\"" }
+                        string_content = @{ string_char* }
+                            string_char = {
+                                !("\"" | "\\") ~ ANY
+                                | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+                                | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                            }
+
+                    char_range = { char_literal ~ ".." ~ char_literal }
+                        char_literal = ${ "'" ~ string_char ~ "'" }
+                            string_char = {
+                                !("\"" | "\\") ~ ANY
+                                | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+                                | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                            }
+
         identifier = { (ASCII_ALPHANUMERIC | "_")+ }
 
 WHITESPACE = _{ " " | NEWLINE }

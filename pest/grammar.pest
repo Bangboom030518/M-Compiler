@@ -1,20 +1,19 @@
 program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
-    semicolon = _{ ";" }
-
     statement = { declaration | expression }
         declaration = { import_declaration | variable_declaration }
             import_declaration = ${ import_start ~ namespace_list ~ space ~ from_keyword ~ space ~ string_literal }
                 import_start = @{ import_keyword ~ " "}
                 namespace_list = ${ (identifier ~ "," ~ WHITESPACE*)* ~ identifier }
 
-            variable_declaration = ${ variable_keyword ~ variable_declaration_body }
-                variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
-                variable_declaration_body = ${ space ~ identifier ~ opt_space ~ variable_initializer }
-                    variable_initializer = !{ type_annotation? ~ assignment }
+            variable_declaration = { variable_start ~ variable_declaration_body }
+                variable_start = ${ variable_keyword ~ " " }
+                    variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
+                variable_declaration_body = { identifier ~ variable_initializer }
+                    variable_initializer = { type_annotation? ~ assignment }
 
-            type_annotation = !{ colon ~ data_type }
+            type_annotation = { colon ~ data_type }
 
-            assignment = !{ "=" ~ expression }
+            assignment = { "=" ~ expression }
 
         data_type = { identifier }
 
@@ -35,7 +34,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                     multiply = { "*" }
                 binary_term = { unary_expression | literal | group | identifier }
 
-            literal = { number_literal | string_literal }
+            literal = { number_literal | string_literal | char_literal }
                 string_literal = ${ "\"" ~ string_content ~ "\"" }
                     string_content = @{ string_char* }
                         string_char = {
@@ -69,3 +68,4 @@ COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLI
 space = _{ (COMMENT ~ WHITESPACE*)* ~ WHITESPACE ~ (COMMENT ~ WHITESPACE*)* }
 opt_space = _{ WHITESPACE* ~ (COMMENT ~ WHITESPACE*)* }
 colon = _{ ":" }
+semicolon = _{ ";" }
