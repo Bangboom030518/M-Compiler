@@ -1,26 +1,64 @@
-use lexer::State;
-use pest::iterators::{Pairs, Pair};
-use crate::Rule;
+// TODO: refactor into seperate modules
 
-trait Node {}
+use crate::Rule;
+use pest::iterators::{Pair as PestPair, Pairs as PestPairs};
+
+type Pairs<'a> = PestPairs<'a, Rule>;
+type Pair<'a> = PestPair<'a, Rule>;
 
 #[derive(Debug)]
 pub struct Program {
     body: Vec<Statement>,
 }
 
-impl Node for Program {}
+impl<'a> From<Pairs<'a>> for Program {
+    fn from(pairs: Pairs<'a>) -> Self {
+        let body = pairs
+            .filter_map(|pair| match pair.as_rule() {
+                Rule::statement => Some(Statement::from(pair)),
+                Rule::EOI => None,
+                _ => unreachable!(
+                    "Expected only statements at top level. Found '{:?}'",
+                    pair.as_rule()
+                ),
+            })
+            .collect::<Vec<Statement>>();
+
+        Self { body }
+    }
+}
 
 #[derive(Debug)]
 enum Statement {
     Expression(Expression),
-    Declaration(Declaration)
+    Declaration(Declaration),
+}
+
+impl<'a> From<Pair<'a>> for Statement {
+    fn from(pair: Pair<'a>) -> Self {
+        let pair = expect_single_child(pair);
+        match pair.as_rule() {
+            Rule::expression => Statement::Expression(Expression::from(pair)),
+            Rule::declaration => Statement::Declaration(Declaration::from(pair)),
+            rule => unreachable!(
+                "Statement can only be an expression or declaration. Found '{:?}'",
+                rule
+            ),
+        }
+    }
 }
 
 #[derive(Debug)]
 enum Declaration {
     Import(Import),
-    Variable(Variable)
+    Variable(Variable),
+}
+
+impl<'a> From<Pair<'a>> for Declaration {
+    fn from(pair: Pair<'a>) -> Self {
+        let pairs = pair.into_inner();
+        unimplemented!("Declaration Parsing")
+    }
 }
 
 #[derive(Debug)]
@@ -48,7 +86,7 @@ enum Literal {
     String(String),
     Integer(isize),
     Char(char),
-    Float(f64)
+    Float(f64),
 }
 
 #[derive(Debug)]
@@ -79,42 +117,50 @@ struct UnaryExpression {
 struct BinaryExpression {
     operator: BinaryOperator,
     left: Box<Expression>,
-    right: Box<Expression>
+    right: Box<Expression>,
 }
 
 #[derive(Debug)]
 enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),
-    Unary(UnaryExpression)
+    Unary(UnaryExpression),
+    Identifier(String),
 }
 
-impl Expression {
-    // fn eval();
-}
 
-pub fn parse(pairs: Pairs<Rule>) -> Program {
-    Program {
-        body: Vec::new()
+
+impl<'a> From<Pair<'a>> for Expression {
+    fn from(pair: Pair<'a>) -> Self {
+        
+        let pair = expect_single_child(pair);
+        match pair.as_rule() {
+        Rule::binary_expression => unimplemented!(),
+        Rule::unary_expression => unimplemented!(),
+        Rule::literal => unimplemented!(),
+        Rule::group => unimplemented!(),
+        Rule::identifier => unimplemented!(),
+        // TODO: write function to automate this
+        rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
+    }
     }
 }
 
-fn parse_body(pairs: Pairs<Rule>) -> Vec<Statement> {
-    pairs.map(|pair| {
-        match pair.as_rule() {
-            Rule::expression => Statement::Expression(parse_expression(pair)),
-            Rule::declaration => Statement::Declaration(parse_declaration(pair)),
-            _ => unreachable!()
+pub fn parse(pairs: Pairs) -> Program {
+    Program::from(pairs)
+}
+
+fn expect_single_child(pair: Pair) -> Pair {
+    // TODO: is clone the best?
+    let mut pairs = pair.clone().into_inner();
+    if let Some(pair) = pairs.next() {
+        if pairs.next() == None {
+            Some(pair)
+        } else {
+            None
         }
-    }).collect::<Vec<Statement>>()
-}
-
-fn parse_expression(pair: Pair<Rule>) -> Expression {
-    let pairs = pair.into_inner();
-    unimplemented!()
-}
-
-fn parse_declaration(pair: Pair<Rule>) -> Declaration {
-    let pairs = pair.into_inner();
-    unimplemented!()
+    } else {
+        None
+    }
+    .unwrap_or_else(|| panic!("Rule '{:?}' should have exactly 1 child", pair.as_rule()))
 }

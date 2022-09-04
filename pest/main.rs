@@ -33,7 +33,7 @@ fn main() {
         Err(message) => error(&format!("Parse Error {}", message)),
     };
 
-    print_tree(tokens.clone(), 0);
+    // print_tree(tokens.clone(), 0);
 
     let tree = parse(tokens);
 
