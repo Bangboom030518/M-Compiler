@@ -128,21 +128,18 @@ enum Expression {
     Identifier(String),
 }
 
-
-
 impl<'a> From<Pair<'a>> for Expression {
     fn from(pair: Pair<'a>) -> Self {
-        
         let pair = expect_single_child(pair);
         match pair.as_rule() {
-        Rule::binary_expression => unimplemented!(),
-        Rule::unary_expression => unimplemented!(),
-        Rule::literal => unimplemented!(),
-        Rule::group => unimplemented!(),
-        Rule::identifier => unimplemented!(),
-        // TODO: write function to automate this
-        rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
-    }
+            Rule::binary_expression => unimplemented!("'Binary Expression'"),
+            Rule::unary_expression => unimplemented!("'Unary Expression'"),
+            Rule::literal => unimplemented!("'Literal'"),
+            Rule::group => unimplemented!("'Group'"),
+            Rule::identifier => unimplemented!("'Identifier'"),
+            // TODO: write function to automate this
+            rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
+        }
     }
 }
 
@@ -154,7 +151,7 @@ fn expect_single_child(pair: Pair) -> Pair {
     // TODO: is clone the best?
     let mut pairs = pair.clone().into_inner();
     if let Some(pair) = pairs.next() {
-        if pairs.next() == None {
+        if pairs.next().is_none() {
             Some(pair)
         } else {
             None
