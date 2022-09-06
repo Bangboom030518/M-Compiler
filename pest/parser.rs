@@ -1,10 +1,8 @@
 // TODO: refactor into seperate modules
+mod expressions;
 
-use crate::Rule;
-use pest::iterators::{Pair as PestPair, Pairs as PestPairs};
-
-type Pairs<'a> = PestPairs<'a, Rule>;
-type Pair<'a> = PestPair<'a, Rule>;
+use crate::{Rule, Pairs, Pair};
+use expressions::Expression;
 
 #[derive(Debug)]
 pub struct Program {
@@ -38,8 +36,8 @@ impl<'a> From<Pair<'a>> for Statement {
     fn from(pair: Pair<'a>) -> Self {
         let pair = expect_single_child(pair);
         match pair.as_rule() {
-            Rule::expression => Statement::Expression(Expression::from(pair)),
-            Rule::declaration => Statement::Declaration(Declaration::from(pair)),
+            Rule::expression => Self::Expression(Expression::from(pair)),
+            Rule::declaration => Self::Declaration(Declaration::from(pair)),
             rule => unreachable!(
                 "Statement can only be an expression or declaration. Found '{:?}'",
                 rule
@@ -81,83 +79,17 @@ enum VariableKind {
     Var,
 }
 
-#[derive(Debug)]
-enum Literal {
-    String(String),
-    Integer(isize),
-    Char(char),
-    Float(f64),
-}
-
-#[derive(Debug)]
-enum UnaryOperator {
-    LogicalNOT,
-    Negate,
-}
-
-#[derive(Debug)]
-enum BinaryOperator {
-    Plus,
-    Minus,
-    Multiply,
-    Divide,
-    Exponent,
-    Modulo,
-    LogicalOR,
-    LogicalAND,
-}
-
-#[derive(Debug)]
-struct UnaryExpression {
-    operator: UnaryOperator,
-    operand: Box<Expression>,
-}
-
-#[derive(Debug)]
-struct BinaryExpression {
-    operator: BinaryOperator,
-    left: Box<Expression>,
-    right: Box<Expression>,
-}
-
-#[derive(Debug)]
-enum Expression {
-    Literal(Literal),
-    Binary(BinaryExpression),
-    Unary(UnaryExpression),
-    Identifier(String),
-}
-
-impl<'a> From<Pair<'a>> for Expression {
-    fn from(pair: Pair<'a>) -> Self {
-        let pair = expect_single_child(pair);
-        match pair.as_rule() {
-            Rule::binary_expression => unimplemented!("'Binary Expression'"),
-            Rule::unary_expression => unimplemented!("'Unary Expression'"),
-            Rule::literal => unimplemented!("'Literal'"),
-            Rule::group => unimplemented!("'Group'"),
-            Rule::identifier => unimplemented!("'Identifier'"),
-            // TODO: write function to automate this
-            rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
-        }
-    }
-}
-
 pub fn parse(pairs: Pairs) -> Program {
     Program::from(pairs)
 }
 
 fn expect_single_child(pair: Pair) -> Pair {
-    // TODO: is clone the best?
-    let mut pairs = pair.clone().into_inner();
-    if let Some(pair) = pairs.next() {
-        if pairs.next().is_none() {
-            Some(pair)
-        } else {
-            None
-        }
+    let rule = pair.as_rule();
+    let mut pairs = pair.into_inner();
+    pairs.next().and_then(|pair| if pairs.next().is_none() {
+        Some(pair)
     } else {
         None
-    }
-    .unwrap_or_else(|| panic!("Rule '{:?}' should have exactly 1 child", pair.as_rule()))
+    })
+    .unwrap_or_else(|| panic!("Rule '{:?}' should have exactly 1 child", rule))
 }

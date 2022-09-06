@@ -36,15 +36,14 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 
             literal = { number_literal | string_literal | char_literal }
                 string_literal = ${ "\"" ~ string_content ~ "\"" }
-                    string_content = @{ string_char* }
+                    string_content = ${ string_char* }
                         string_char = {
                             !("\"" | "\\") ~ ANY
-                            | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+                            | "\\" ~ ("\"" | "\\" | "n" | "r" | "t")
                             | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
                         }
 
                 char_literal = ${ "'" ~ string_char ~ "'" }
-
                 boolean_literal = ${ "true" | "false" }
                 
                 number_literal = @{ (int | float) ~ (^"e" ~ int)? }

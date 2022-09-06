@@ -1,3 +1,6 @@
+#![allow(unused)]
+#![warn(clippy::pedantic, clippy::nursery)]
+
 mod parser;
 // mod validator;
 
@@ -5,16 +8,19 @@ mod parser;
 extern crate pest_derive;
 
 use pest::error::Error;
-use pest::iterators::Pairs;
+use pest::iterators::{Pairs as PestPairs, Pair as PestPair};
 use pest::Parser;
 use std::process;
 use parser::parse;
+
+pub type Pairs<'a> = PestPairs<'a, Rule>;
+pub type Pair<'a> = PestPair<'a, Rule>;
 
 #[derive(Parser)]
 #[grammar = "../pest/grammar.pest"]
 pub struct GrammarParser;
 
-fn tokenize(input: &str) -> Result<Pairs<Rule>, Error<Rule>> {
+fn tokenize(input: &str) -> Result<Pairs, Error<Rule>> {
     GrammarParser::parse(Rule::program, input)
 }
 
@@ -33,14 +39,14 @@ fn main() {
         Err(message) => error(&format!("Parse Error {}", message)),
     };
 
-    // print_tree(tokens.clone(), 0);
+    print_tree(tokens.clone(), 0);
 
     let tree = parse(tokens);
 
     dbg!(tree);
 }
 
-fn print_tree(tree: Pairs<Rule>, indent: usize) {
+fn print_tree(tree: Pairs, indent: usize) {
     for node in tree {
         match node.as_rule() {
             Rule::expression => "EXPRESSION!!1!1!!",
