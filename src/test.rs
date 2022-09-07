@@ -50,3 +50,17 @@ fn parse_string() {
         }
     )
 }
+
+#[test]
+fn parse_group() {
+    let tokens = tokenize("((((((1))))));").expect("Pest failed to parse the input");
+    let tree = parse(tokens);
+    assert_eq!(
+        tree,
+        Program {
+            body: vec![Statement::Expression(
+                Expression::Literal(Literal::Number(1.0))
+            )]
+        }
+    )
+}
