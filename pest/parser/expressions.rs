@@ -150,8 +150,8 @@ impl<'a> From<Pair<'a>> for Expression {
             Rule::binary_expression => Self::Binary(BinaryExpression::from(pair)),
             Rule::unary_expression => Self::Unary(UnaryExpression::from(pair)),
             Rule::literal => Self::Literal(Literal::from(pair)),
-            Rule::group => unimplemented!("'Group'"),
-            Rule::identifier => unimplemented!("'Identifier'"),
+            Rule::group => Self::from(expect_single_child(pair)),
+            Rule::identifier => Self::Identifier(expect_single_child(pair).as_span().as_str().to_string()),
             // TODO: write function to automate this
             rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
         }
