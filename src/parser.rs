@@ -1,12 +1,12 @@
 // TODO: refactor into seperate modules
-mod expressions;
+pub mod expressions;
 
-use crate::{Rule, Pairs, Pair};
+use crate::{Pair, Pairs, Rule};
 use expressions::Expression;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Program {
-    body: Vec<Statement>,
+    pub body: Vec<Statement>,
 }
 
 impl<'a> From<Pairs<'a>> for Program {
@@ -26,8 +26,8 @@ impl<'a> From<Pairs<'a>> for Program {
     }
 }
 
-#[derive(Debug)]
-enum Statement {
+#[derive(Debug, PartialEq)]
+pub enum Statement {
     Expression(Expression),
     Declaration(Declaration),
 }
@@ -46,8 +46,8 @@ impl<'a> From<Pair<'a>> for Statement {
     }
 }
 
-#[derive(Debug)]
-enum Declaration {
+#[derive(Debug, PartialEq)]
+pub enum Declaration {
     Import(Import),
     Variable(Variable),
 }
@@ -59,20 +59,20 @@ impl<'a> From<Pair<'a>> for Declaration {
     }
 }
 
-#[derive(Debug)]
-struct Import {
-    path: String,
-    namespaces: Vec<String>,
+#[derive(Debug, PartialEq, Eq)]
+pub struct Import {
+    pub path: String,
+    pub namespaces: Vec<String>,
 }
 
-#[derive(Debug)]
-struct Variable {
-    kind: VariableKind,
-    value: Expression,
+#[derive(Debug, PartialEq)]
+pub struct Variable {
+    pub kind: VariableKind,
+    pub value: Expression,
 }
 
-#[derive(Debug)]
-enum VariableKind {
+#[derive(Debug, PartialEq, Eq)]
+pub enum VariableKind {
     Static,
     Let,
     Const,
@@ -86,10 +86,14 @@ pub fn parse(pairs: Pairs) -> Program {
 fn expect_single_child(pair: Pair) -> Pair {
     let rule = pair.as_rule();
     let mut pairs = pair.into_inner();
-    pairs.next().and_then(|pair| if pairs.next().is_none() {
-        Some(pair)
-    } else {
-        None
-    })
-    .unwrap_or_else(|| panic!("Rule '{:?}' should have exactly 1 child", rule))
+    pairs
+        .next()
+        .and_then(|pair| {
+            if pairs.next().is_none() {
+                Some(pair)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("Rule '{:?}' should have exactly 1 child", rule))
 }

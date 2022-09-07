@@ -2,22 +2,23 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 mod parser;
+mod test;
 // mod validator;
 
 #[macro_use]
 extern crate pest_derive;
 
+use parser::parse;
 use pest::error::Error;
-use pest::iterators::{Pairs as PestPairs, Pair as PestPair};
+use pest::iterators::{Pair as PestPair, Pairs as PestPairs};
 use pest::Parser;
 use std::process;
-use parser::parse;
 
 pub type Pairs<'a> = PestPairs<'a, Rule>;
 pub type Pair<'a> = PestPair<'a, Rule>;
 
 #[derive(Parser)]
-#[grammar = "../pest/grammar.pest"]
+#[grammar = "grammar.pest"]
 pub struct GrammarParser;
 
 fn tokenize(input: &str) -> Result<Pairs, Error<Rule>> {

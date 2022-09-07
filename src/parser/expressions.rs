@@ -2,11 +2,12 @@ use super::expect_single_child;
 use crate::{Pair, Rule};
 
 // TODO: other numeric types?
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Literal {
     String(String),
     Number(f64),
     Char(char),
+    Bool(bool),
 }
 
 impl<'a> From<Pair<'a>> for Literal {
@@ -30,8 +31,13 @@ impl<'a> From<Pair<'a>> for Literal {
                     .into_inner()
                     .map(|ch| parse_char(&ch))
                     .collect::<String>();
-                    Self::String(content)
+                Self::String(content)
             }
+            Rule::boolean_literal => match expect_single_child(literal).as_rule() {
+                Rule::true_keyword => Self::Bool(true),
+                Rule::false_keyword => Self::Bool(false),
+                rule => unreachable!("'{:?}' isn't a boolean!", rule),
+            },
             rule => unreachable!(
                 "What is '{:?}'? It's meant to be a literal you idiot.",
                 rule
@@ -61,7 +67,7 @@ fn parse_char(ch: &Pair) -> char {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UnaryOperator {
     Bang,
     Negate,
@@ -79,7 +85,7 @@ impl<'a> From<Pair<'a>> for UnaryOperator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum BinaryOperator {
     Plus,
     Minus,
@@ -91,10 +97,10 @@ pub enum BinaryOperator {
     LogicalAND,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct UnaryExpression {
-    operator: UnaryOperator,
-    operand: Box<Expression>,
+    pub operator: UnaryOperator,
+    pub operand: Box<Expression>,
 }
 
 impl<'a> From<Pair<'a>> for UnaryExpression {
@@ -121,11 +127,11 @@ impl<'a> From<Pair<'a>> for UnaryExpression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct BinaryExpression {
-    operator: BinaryOperator,
-    left: Box<Expression>,
-    right: Box<Expression>,
+    pub operator: BinaryOperator,
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
 }
 
 impl<'a> From<Pair<'a>> for BinaryExpression {
@@ -135,7 +141,7 @@ impl<'a> From<Pair<'a>> for BinaryExpression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),

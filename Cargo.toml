@@ -2,14 +2,9 @@
 name = "m_compiler"
 version = "0.1.0"
 edition = "2021"
-default-run = "pest"
 
 [dependencies]
 regex = "1"
 lazy_static = "1.4.0"
 pest = "2.3"
 pest_derive = "2.3"
-
-[[bin]]
-name = "pest"
-path = "pest/main.rs"
