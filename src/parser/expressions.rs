@@ -1,19 +1,11 @@
 use super::expect_single_child;
 use crate::{print_tree, Pair, Rule, Pairs};
-use lazy_static::lazy_static;
-use pest::prec_climber::{Assoc, Operator, PrecClimber};
+pub use binary::{BinaryExpression, BinaryOperator};
 
-lazy_static! {
-    static ref PREC_CLIMBER: PrecClimber<Rule> = PrecClimber::new(vec![
-        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
-        Operator::new(Rule::multiply, Assoc::Left)
-            | Operator::new(Rule::divide, Assoc::Left)
-            | Operator::new(Rule::modulo, Assoc::Left)
-    ]);
-}
+mod binary;
 
 // TODO: other numeric types?
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
     String(String),
     Number(f64),
@@ -78,7 +70,7 @@ fn parse_char(ch: &Pair) -> char {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum UnaryOperator {
     Bang,
     Negate,
@@ -96,19 +88,7 @@ impl<'a> From<Pair<'a>> for UnaryOperator {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum BinaryOperator {
-    Plus,
-    Minus,
-    Multiply,
-    Divide,
-    Exponent,
-    Modulo,
-    LogicalOR,
-    LogicalAND,
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct UnaryExpression {
     pub operator: UnaryOperator,
     pub operand: Box<Expression>,
@@ -138,7 +118,7 @@ impl<'a> From<Pair<'a>> for UnaryExpression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),

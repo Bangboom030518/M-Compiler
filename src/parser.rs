@@ -26,7 +26,7 @@ impl<'a> From<Pairs<'a>> for Program {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Expression(Expression),
     Declaration(Declaration),
@@ -46,7 +46,7 @@ impl<'a> From<Pair<'a>> for Statement {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Declaration {
     Import(Import),
     Variable(Variable),
@@ -59,19 +59,19 @@ impl<'a> From<Pair<'a>> for Declaration {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Import {
     pub path: String,
     pub namespaces: Vec<String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Variable {
     pub kind: VariableKind,
     pub value: Expression,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VariableKind {
     Static,
     Let,
