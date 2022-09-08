@@ -40,15 +40,13 @@ fn main() {
         Err(message) => error(&format!("Parse Error {}", message)),
     };
 
-    print_tree(tokens.clone(), 0);
-
     let tree = parse(tokens);
 
     dbg!(tree);
 }
 
-fn print_tree(tree: Pairs, indent: usize) {
-    for node in tree {
+pub fn print_tree(tree: &Pairs, indent: usize) {
+    for node in tree.clone() {
         match node.as_rule() {
             Rule::expression => "EXPRESSION!!1!1!!",
             _ => "",
@@ -59,6 +57,6 @@ fn print_tree(tree: Pairs, indent: usize) {
             node.as_rule(),
             node.as_str()
         );
-        print_tree(node.into_inner(), indent + 1);
+        print_tree(&node.into_inner(), indent + 1);
     }
 }

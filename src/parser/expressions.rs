@@ -1,5 +1,16 @@
 use super::expect_single_child;
-use crate::{Pair, Rule};
+use crate::{print_tree, Pair, Rule, Pairs};
+use lazy_static::lazy_static;
+use pest::prec_climber::{Assoc, Operator, PrecClimber};
+
+lazy_static! {
+    static ref PREC_CLIMBER: PrecClimber<Rule> = PrecClimber::new(vec![
+        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
+        Operator::new(Rule::multiply, Assoc::Left)
+            | Operator::new(Rule::divide, Assoc::Left)
+            | Operator::new(Rule::modulo, Assoc::Left)
+    ]);
+}
 
 // TODO: other numeric types?
 #[derive(Debug, PartialEq)]
@@ -128,20 +139,6 @@ impl<'a> From<Pair<'a>> for UnaryExpression {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BinaryExpression {
-    pub operator: BinaryOperator,
-    pub left: Box<Expression>,
-    pub right: Box<Expression>,
-}
-
-impl<'a> From<Pair<'a>> for BinaryExpression {
-    fn from(pair: Pair<'a>) -> Self {
-        let pairs = pair.into_inner();
-        unimplemented!("Binary Expression Parsing")
-    }
-}
-
-#[derive(Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),
@@ -159,7 +156,7 @@ impl<'a> From<Pair<'a>> for Expression {
             Rule::group => Self::from(expect_single_child(pair)),
             Rule::identifier => Self::Identifier(expect_single_child(pair).as_span().as_str().to_string()),
             // TODO: write function to automate this
-            rule => unreachable!("Expression can only be a 'binary_expression', 'unary_expression', 'literal', 'group' or 'identifier'. Found '{:?}'", rule)
+            rule => unreachable!("'{:?}' is not a valid expression.", rule)
         }
     }
 }
