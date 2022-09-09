@@ -35,12 +35,14 @@ impl<'a> From<Pair<'a>> for BinaryExpression {
         for operator in operators {
             let (index, operator) = operator;
 
+            // Operator index is the index of the lhs
             let left_index = index;
             let (left, left_indices) = terms
                 .get(left_index)
                 .unwrap_or_else(|| panic!("Couldn't find lhs of binary expression at index {}. Operator is at index {}", left_index, index));
 
-            let right_index = left_index + 1;
+            // Operator index + 1 is the index of the rhs
+            let right_index = index + 1;
             let (right, right_indices) = terms
                 .get(right_index)
                 .unwrap_or_else(|| panic!("Couldn't find rhs of binary expression at index {}. Operator is at index {}", right_index, index));
@@ -51,12 +53,16 @@ impl<'a> From<Pair<'a>> for BinaryExpression {
                 operator,
             };
 
+            // join left and right indices
             let indices: HashSet<usize> = left_indices.union(right_indices).copied().collect();
 
+            // replace all used indices with created expression
             for index in &indices {
                 terms[*index] = (Expression::Binary(expression.clone()), indices.clone());
             };
         };
+
+        // Get any expression in the list, it has spread to all indices
         if let Expression::Binary(expression) = &terms[0].0 {
             expression.clone()
         } else {
