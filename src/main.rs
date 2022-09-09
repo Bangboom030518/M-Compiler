@@ -1,4 +1,3 @@
-// #![allow(unused)]
 #![warn(clippy::pedantic, clippy::nursery)]
 
 mod parser;

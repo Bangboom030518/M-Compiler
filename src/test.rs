@@ -1,7 +1,7 @@
 #![cfg(test)]
 use super::*;
-use parser::expressions::*;
-use parser::*;
+use parser::{Program, Statement};
+use parser::expressions::{Expression, Literal, BinaryExpression, BinaryOperator, UnaryExpression, UnaryOperator};
 
 const fn number(number: f64) -> Expression {
     Expression::Literal(Literal::Number(number))
@@ -22,7 +22,7 @@ fn parse_add() {
                 }
             ))]
         }
-    )
+    );
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn parse_bang() {
                 operand: Box::new(Expression::Literal(Literal::Bool(true)))
             }))]
         }
-    )
+    );
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn parse_string() {
                 String::from("Hello World!")
             )))]
         }
-    )
+    );
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn parse_group() {
         Program {
             body: vec![Statement::Expression(number(1.0))]
         }
-    )
+    );
 }
 
 #[test]
@@ -93,6 +93,6 @@ fn parse_operator_precedance() {
                 }
             ))]
         }
-    )
+    );
 
 }

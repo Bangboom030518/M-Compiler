@@ -76,7 +76,7 @@ impl<'a> From<Pair<'a>> for Expression {
 /// sort_operators(&mut operators);
 /// assert_eq!(operators, vec![(1, Operator::Division), (0, Operator::Addition)]);
 /// ```
-fn sort_operators(operators: &mut Vec<(usize, Operator)>) {
+fn sort_operators(operators: &mut [(usize, Operator)]) {
     operators.sort_by(|first, second| {
         let first = first.1.precedance();
         let second = second.1.precedance();

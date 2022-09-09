@@ -53,8 +53,7 @@ pub enum Declaration {
 }
 
 impl<'a> From<Pair<'a>> for Declaration {
-    fn from(pair: Pair<'a>) -> Self {
-        let pairs = pair.into_inner();
+    fn from(_: Pair<'a>) -> Self {
         unimplemented!("Declaration Parsing")
     }
 }
