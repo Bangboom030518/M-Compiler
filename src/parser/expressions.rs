@@ -1,5 +1,5 @@
 use super::expect_single_child;
-use crate::{print_tree, Pair, Rule, Pairs};
+use crate::{print_tree, Pair, Pairs, Rule};
 pub use binary::{BinaryExpression, BinaryOperator};
 
 mod binary;
@@ -134,9 +134,11 @@ impl<'a> From<Pair<'a>> for Expression {
             Rule::unary_expression => Self::Unary(UnaryExpression::from(pair)),
             Rule::literal => Self::Literal(Literal::from(pair)),
             Rule::group => Self::from(expect_single_child(pair)),
-            Rule::identifier => Self::Identifier(expect_single_child(pair).as_span().as_str().to_string()),
+            Rule::identifier => {
+                Self::Identifier(expect_single_child(pair).as_span().as_str().to_string())
+            }
             // TODO: write function to automate this
-            rule => unreachable!("'{:?}' is not a valid expression.", rule)
+            rule => unreachable!("'{:?}' is not a valid expression.", rule),
         }
     }
 }

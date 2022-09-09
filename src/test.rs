@@ -58,9 +58,9 @@ fn parse_group() {
     assert_eq!(
         tree,
         Program {
-            body: vec![Statement::Expression(
-                Expression::Literal(Literal::Number(1.0))
-            )]
+            body: vec![Statement::Expression(Expression::Literal(Literal::Number(
+                1.0
+            )))]
         }
     )
 }

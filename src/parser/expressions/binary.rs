@@ -1,6 +1,6 @@
-use crate::{Rule, Pair, print_tree};
-use super::{Expression, expect_single_child};
-use std::collections::HashMap;
+use super::{expect_single_child, Expression};
+use crate::{print_tree, Pair, Rule};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BinaryExpression {
@@ -11,7 +11,7 @@ pub struct BinaryExpression {
 
 impl<'a> From<Pair<'a>> for BinaryExpression {
     fn from(pair: Pair<'a>) -> Self {
-        let mut terms = Vec::<Expression>::new();
+        let mut terms = Vec::<(Expression, HashSet<usize>)>::new();
         let mut operators = Vec::<(usize, BinaryOperator)>::new();
         let pairs = pair.into_inner();
 
@@ -19,38 +19,53 @@ impl<'a> From<Pair<'a>> for BinaryExpression {
 
         for pair in pairs {
             if pair.as_rule() == Rule::binary_term {
-                terms.push(Expression::from(pair));
+                terms.push((Expression::from(pair), HashSet::from([i])));
             } else {
                 operators.push((i, BinaryOperator::from(pair)));
                 i += 1;
             };
         }
+
         operators.sort_by(|first, second| {
             let first = first.1.precedance();
             let second = second.1.precedance();
             second.cmp(&first)
         });
 
-        // let result = terms.into_iter();
-
-        // (Expression, [1, 2])
-
         for operator in operators {
             let (index, operator) = operator;
-            let left_index = index * 2;
-            let left = terms.get(left_index).expect("Couldn't find lhs of binary expression");
-            let right_index = left_index + 2;
-            let right = terms.get(right_index).expect("Couldn't find rhs of binary expression");
 
-            terms
+            let left_index = index;
+            let (left, left_indices) = terms
+                .get(left_index)
+                .unwrap_or_else(|| panic!("Couldn't find lhs of binary expression at index {}. Operator is at index {}", left_index, index));
 
+            let right_index = left_index + 1;
+            let (right, right_indices) = terms
+                .get(right_index)
+                .unwrap_or_else(|| panic!("Couldn't find rhs of binary expression at index {}. Operator is at index {}", right_index, index));
+
+            let expression = BinaryExpression {
+                left: Box::new(left.clone()),
+                right: Box::new(right.clone()),
+                operator,
+            };
+
+            let indices: HashSet<usize> = left_indices.union(right_indices).copied().collect();
+
+            for index in &indices {
+                terms[*index] = (Expression::Binary(expression.clone()), indices.clone());
+            };
+        };
+        if let Expression::Binary(expression) = &terms[0].0 {
+            expression.clone()
+        } else {
+            unreachable!("Found non-binary expression in list of binary expressions")
         }
-
-        unimplemented!("'Binary Expression'")
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinaryOperator {
     Plus,
     Minus,
@@ -70,7 +85,7 @@ impl<'a> From<Pair<'a>> for BinaryOperator {
             Rule::minus => BinaryOperator::Minus,
             Rule::modulo => BinaryOperator::Modulo,
             Rule::divide => BinaryOperator::Divide,
-            rule => unreachable!("'{:?}' isn't a binary operator!", rule)
+            rule => unreachable!("'{:?}' isn't a binary operator!", rule),
         }
     }
 }
@@ -81,7 +96,7 @@ impl BinaryOperator {
             BinaryOperator::Plus | BinaryOperator::Minus => 0,
             BinaryOperator::Divide | BinaryOperator::Multiply | BinaryOperator::Modulo => 1,
             BinaryOperator::Exponent => 2,
-            BinaryOperator::LogicalAND | BinaryOperator::LogicalOR => 3
+            BinaryOperator::LogicalAND | BinaryOperator::LogicalOR => 3,
         }
     }
 }
