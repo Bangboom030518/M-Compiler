@@ -1,6 +1,6 @@
 use super::expect_single_child;
-use crate::{print_tree, Pair, Pairs, Rule};
-pub use binary::{BinaryExpression, BinaryOperator};
+use crate::{Pair, Rule};
+pub use binary::{Expression as BinaryExpression, Operator as BinaryOperator};
 
 mod binary;
 

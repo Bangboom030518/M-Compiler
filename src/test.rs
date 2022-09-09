@@ -1,8 +1,11 @@
+#![cfg(test)]
 use super::*;
-#[cfg(test)]
-use core::panic;
 use parser::expressions::*;
 use parser::*;
+
+const fn number(number: f64) -> Expression {
+    Expression::Literal(Literal::Number(number))
+}
 
 #[test]
 fn parse_add() {
@@ -13,9 +16,9 @@ fn parse_add() {
         Program {
             body: vec![Statement::Expression(Expression::Binary(
                 BinaryExpression {
-                    left: Box::new(Expression::Literal(Literal::Number(1.0))),
-                    right: Box::new(Expression::Literal(Literal::Number(1.0))),
-                    operator: BinaryOperator::Plus
+                    left: Box::new(number(1.0)),
+                    right: Box::new(number(1.0)),
+                    operator: BinaryOperator::Addition
                 }
             ))]
         }
@@ -58,9 +61,38 @@ fn parse_group() {
     assert_eq!(
         tree,
         Program {
-            body: vec![Statement::Expression(Expression::Literal(Literal::Number(
-                1.0
-            )))]
+            body: vec![Statement::Expression(number(1.0))]
         }
     )
+}
+
+#[test]
+fn parse_operator_precedance() {
+    let tokens = tokenize("1 + 2 * 3 + 4;").expect("Pest failed to parse the input");
+    let tree = parse(tokens);
+    assert_eq!(
+        tree,
+        Program {
+            body: vec![Statement::Expression(Expression::Binary(
+                BinaryExpression {
+                    left: Box::new(Expression::Binary(
+                        BinaryExpression {
+                            left: Box::new(number(1.0)),
+                            right: Box::new(Expression::Binary(
+                                BinaryExpression {
+                                    left: Box::new(number(2.0)),
+                                    right: Box::new(number(3.0)),
+                                    operator: BinaryOperator::Multiplication
+                                }
+                            )),
+                            operator: BinaryOperator::Addition
+                        }
+                    )),
+                    right: Box::new(number(4.0)),
+                    operator: BinaryOperator::Addition
+                }
+            ))]
+        }
+    )
+
 }

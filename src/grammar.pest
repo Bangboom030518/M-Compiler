@@ -9,11 +9,9 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                 variable_start = ${ variable_keyword ~ " " }
                     variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
                 variable_declaration_body = { identifier ~ variable_initializer }
-                    variable_initializer = { type_annotation? ~ assignment }
+                    variable_initializer = { type_annotation? ~ assignment ~ expression }
 
             type_annotation = { colon ~ data_type }
-
-            assignment = { "=" ~ expression }
 
         data_type = { identifier }
 
@@ -26,12 +24,37 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
             group = { "(" ~ expression ~ ")" }
 
             binary_expression = { binary_term ~ (binary_operator ~ binary_term)+ }
-                binary_operator = { plus | divide | minus | modulo | multiply }
-                    plus = { "+" }
-                    divide = { "/" }
-                    minus = { "-" }
-                    modulo = { "%" }
-                    multiply = { "*" }
+                binary_operator = {
+                    addition | subtraction | multiplication | division | modulo | exponentation |
+                    logical_or | logical_and |
+                    bitwise_and | bitwise_xor | bitwise_or
+                }
+                    // arithmetic
+                    addition = @{ "+" }
+                    subtraction = @{ "-" }
+                    multiplication = @{ "*" }
+                    division = @{ "/" }
+                    modulo = @{ "%" }
+                    exponentation = @{ "**" }
+                    // logical
+                    logical_or = @{ "||" }
+                    logical_and = @{ "&&" }
+                    // bitwise
+                    bitwise_or = @{ "|" }
+                    bitwise_and = @{ "&" }
+                    bitwise_xor = @{ "^" }
+                    // comparison
+                    equality = @{ "==" }
+                    inequality = @{ "!=" }
+                    greater_than = @{ ">" }
+                    greater_than_or_equal = @{ ">=" }
+                    less_than = @{ ">" }
+                    less_than_or_equal = @{ ">=" }
+                    // assignment
+                    assignment = @{ "=" }
+                    addition_assignment = @{ addition ~ "=" }
+
+
                 binary_term = { unary_expression | literal | group | identifier }
 
             literal = { number_literal | string_literal | char_literal | boolean_literal }
