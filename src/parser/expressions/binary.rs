@@ -1,6 +1,5 @@
 use super::{expect_single_child, Expression as GenericExpression};
 use crate::{Pair, Rule};
-use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expression {
@@ -9,9 +8,17 @@ pub struct Expression {
     pub right: Box<GenericExpression>,
 }
 
+type Terms = Vec<Box<Term>>;
+#[derive(Clone)]
+struct Term {
+    expression: Box<GenericExpression>,
+    start: usize,
+    end: usize,
+}
+
 impl<'a> From<Pair<'a>> for Expression {
     fn from(pair: Pair<'a>) -> Self {
-        let mut terms = Vec::<(GenericExpression, HashSet<usize>)>::new();
+        let mut terms: Terms = Vec::new();
         let mut operators = Vec::<(usize, Operator)>::new();
         let pairs = pair.into_inner();
 
@@ -19,7 +26,12 @@ impl<'a> From<Pair<'a>> for Expression {
 
         for pair in pairs {
             if pair.as_rule() == Rule::binary_term {
-                terms.push((GenericExpression::from(pair), HashSet::from([i])));
+                let term = Term {
+                    expression: Box::new(GenericExpression::from(pair)),
+                    start: i,
+                    end: i,
+                };
+                terms.push(Box::new(term));
             } else {
                 operators.push((i, Operator::from(pair)));
                 i += 1;
@@ -33,33 +45,39 @@ impl<'a> From<Pair<'a>> for Expression {
 
             // Operator index is the index of the lhs
             let left_index = index;
-            let (left, left_indices) = terms
-                .get(left_index)
-                .unwrap_or_else(|| panic!("Couldn't find lhs of binary expression at index {}. Operator is at index {}", left_index, index));
+            let Term {
+                expression: ref left,
+                start,
+                ..
+            } = *terms[left_index];
 
             // Operator index + 1 is the index of the rhs
             let right_index = index + 1;
-            let (right, right_indices) = terms
-                .get(right_index)
-                .unwrap_or_else(|| panic!("Couldn't find rhs of binary expression at index {}. Operator is at index {}", right_index, index));
+            let Term {
+                expression: ref right,
+                end,
+                ..
+            } = *terms[right_index];
 
             let expression = Self {
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
+                left: Box::new(*left.clone()),
+                right: Box::new(*right.clone()),
                 operator,
             };
 
-            // join left and right indices
-            let indices: HashSet<usize> = left_indices.union(right_indices).copied().collect();
+            let term = Term {
+                expression: Box::new(GenericExpression::Binary(expression)),
+                start, end
+            };
+
+            terms[start] = Box::new(term.clone());
+            terms[end] = Box::new(term);
 
             // replace all used indices with created expression
-            for index in &indices {
-                terms[*index] = (GenericExpression::Binary(expression.clone()), indices.clone());
-            };
-        };
+        }
 
         // Get any expression in the list, it has spread to all indices
-        if let GenericExpression::Binary(expression) = &terms[0].0 {
+        if let GenericExpression::Binary(ref expression) = *terms[0].expression {
             expression.clone()
         } else {
             unreachable!("Found non-binary expression in list of binary expressions")
@@ -68,9 +86,9 @@ impl<'a> From<Pair<'a>> for Expression {
 }
 
 /// Sorts the operators by precedance
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// let mut operators = vec![(0, Operator::Addition), (1, Operator::Division)];
 /// sort_operators(&mut operators);
@@ -99,7 +117,7 @@ pub enum Operator {
     // Bitwise
     BitwiseAND,
     BitwiseOR,
-    BitwiseXOR
+    BitwiseXOR,
 }
 
 impl<'a> From<Pair<'a>> for Operator {
@@ -128,7 +146,7 @@ impl Operator {
             Self::Division | Self::Multiplication | Self::Modulo => 1,
             Self::Exponentation => 2,
             Self::BitwiseAND | Self::BitwiseOR | Self::BitwiseXOR => 3,
-            Self::LogicalAND | Self::LogicalOR => 4
+            Self::LogicalAND | Self::LogicalOR => 4,
         }
     }
 }
