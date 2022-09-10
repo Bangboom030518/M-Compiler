@@ -8,7 +8,6 @@ pub struct Expression {
     pub right: Box<GenericExpression>,
 }
 
-type Terms = Vec<Box<Term>>;
 #[derive(Clone)]
 struct Term {
     expression: Box<GenericExpression>,
@@ -16,32 +15,40 @@ struct Term {
     end: usize,
 }
 
+struct OperatorTerm {
+    index: usize,
+    operator: Operator,
+}
+
 impl<'a> From<Pair<'a>> for Expression {
     fn from(pair: Pair<'a>) -> Self {
-        let mut terms: Terms = Vec::new();
-        let mut operators = Vec::<(usize, Operator)>::new();
+        let mut terms = Vec::<Box<Term>>::new();
+        let mut operators = Vec::<OperatorTerm>::new();
         let pairs = pair.into_inner();
 
-        let mut i = 0;
+        let mut index = 0;
 
         for pair in pairs {
             if pair.as_rule() == Rule::binary_term {
                 let term = Term {
                     expression: Box::new(GenericExpression::from(pair)),
-                    start: i,
-                    end: i,
+                    start: index,
+                    end: index,
                 };
                 terms.push(Box::new(term));
             } else {
-                operators.push((i, Operator::from(pair)));
-                i += 1;
+                operators.push(OperatorTerm {
+                    index,
+                    operator: Operator::from(pair),
+                });
+                index += 1;
             };
         }
 
         sort_operators(&mut operators);
 
         for operator in operators {
-            let (index, operator) = operator;
+            let OperatorTerm { index, operator } = operator;
 
             // Operator index is the index of the lhs
             let left_index = index;
@@ -67,13 +74,13 @@ impl<'a> From<Pair<'a>> for Expression {
 
             let term = Term {
                 expression: Box::new(GenericExpression::Binary(expression)),
-                start, end
+                start,
+                end,
             };
 
+            // replace outmost indices with created expression
             terms[start] = Box::new(term.clone());
             terms[end] = Box::new(term);
-
-            // replace all used indices with created expression
         }
 
         // Get any expression in the list, it has spread to all indices
@@ -94,10 +101,10 @@ impl<'a> From<Pair<'a>> for Expression {
 /// sort_operators(&mut operators);
 /// assert_eq!(operators, vec![(1, Operator::Division), (0, Operator::Addition)]);
 /// ```
-fn sort_operators(operators: &mut [(usize, Operator)]) {
+fn sort_operators(operators: &mut [OperatorTerm]) {
     operators.sort_by(|first, second| {
-        let first = first.1.precedance();
-        let second = second.1.precedance();
+        let first = first.operator.precedance();
+        let second = second.operator.precedance();
         second.cmp(&first)
     });
 }
