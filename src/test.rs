@@ -2,10 +2,15 @@
 use super::*;
 use parser::{Program, Statement};
 use parser::expressions::{Expression, Literal, BinaryExpression, BinaryOperator, UnaryExpression, UnaryOperator};
+use rand::prelude::{thread_rng, Rng, Distribution};
+use rand::seq::SliceRandom;
+use rand::distributions::Uniform;
 
 const fn number(number: f64) -> Expression {
     Expression::Literal(Literal::Number(number))
 }
+
+const BINARY_OPERATORS: &[&str] = &[ "*", "/", "+", "-", "%", "**", "&&", "||", "&", "^", "|" ];
 
 #[test]
 fn parse_add() {
@@ -96,3 +101,23 @@ fn parse_operator_precedance() {
     );
 
 }
+
+#[test]
+fn long_binary_expression() {
+    let expression = generate_binary_expression(1000000);
+    let tokens = tokenize(&expression).unwrap_or_else(|err| panic!("{}", err));
+    parse(tokens);
+}
+
+fn generate_binary_expression(length: usize) -> String {
+    let mut rng = thread_rng();
+    let uniform = Uniform::new(0, 1000);
+    let mut result = format!("{}", uniform.sample(&mut rng));
+    for _ in 0..length {
+        let number = uniform.sample(&mut rng);
+        let operator = BINARY_OPERATORS.choose(&mut rng).expect("Failed to choose random item");
+        result.push_str(&format!(" {} {}", operator, number));
+    }
+    format!("{};", result)
+}
+

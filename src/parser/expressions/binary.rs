@@ -66,14 +66,12 @@ impl<'a> From<Pair<'a>> for Expression {
                 ..
             } = *terms[right_index];
 
-            let expression = Self {
-                left: Box::new(*left.clone()),
-                right: Box::new(*right.clone()),
-                operator,
-            };
-
             let term = Term {
-                expression: Box::new(GenericExpression::Binary(expression)),
+                expression: Box::new(GenericExpression::Binary(Self {
+                    left: Box::new(*left.clone()),
+                    right: Box::new(*right.clone()),
+                    operator,
+                })),
                 start,
                 end,
             };

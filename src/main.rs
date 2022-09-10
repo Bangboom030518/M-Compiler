@@ -2,6 +2,7 @@
 
 mod parser;
 mod test;
+mod bench;
 // mod validator;
 
 #[macro_use]
@@ -41,7 +42,8 @@ fn main() {
 
     let tree = parse(tokens);
 
-    dbg!(tree);
+    // dbg!(tree);
+    println!("Finished parsing :)");
 }
 
 pub fn print_tree(tree: &Pairs, indent: usize) {

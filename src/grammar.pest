@@ -25,7 +25,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 
             binary_expression = { binary_term ~ (binary_operator ~ binary_term)+ }
                 binary_operator = {
-                    addition | subtraction | multiplication | division | modulo | exponentation |
+                    exponentation | addition | subtraction | multiplication | division | modulo |
                     logical_or | logical_and |
                     bitwise_and | bitwise_xor | bitwise_or
                 }
@@ -70,10 +70,9 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                 boolean_literal = ${ true_keyword | false_keyword }
                 
                 number_literal = @{ (int | float) ~ (^"e" ~ int)? }
-                    float = { int ~ ("." ~ ASCII_DIGIT*) }
+                    float = { int ~ "." ~ int }
                     int = { "-"? ~ unsigned }
-                    unsigned = _{ nonzero ~ ASCII_DIGIT* }
-                    nonzero = _{ '1'..'9' }
+                    unsigned = _{ ASCII_DIGIT+ }
 
         identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
 
