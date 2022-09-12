@@ -1,7 +1,8 @@
 #![warn(clippy::pedantic, clippy::nursery)]
+#![feature(test)]
 
 mod parser;
-mod test;
+mod tests;
 mod bench;
 // mod validator;
 
@@ -40,9 +41,11 @@ fn main() {
         Err(message) => error(&format!("Parse Error {}", message)),
     };
 
+    dbg!(&tokens);
+
     let tree = parse(tokens);
 
-    // dbg!(tree);
+    dbg!(tree);
     println!("Finished parsing :)");
 }
 

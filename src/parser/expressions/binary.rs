@@ -31,7 +31,7 @@ impl<'a> From<Pair<'a>> for Expression {
         for pair in pairs {
             if pair.as_rule() == Rule::binary_term {
                 let term = Term {
-                    expression: Box::new(GenericExpression::from(pair)),
+                    expression: Box::new(GenericExpression::from_binary_term(pair)),
                     start: index,
                     end: index,
                 };

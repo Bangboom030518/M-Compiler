@@ -15,66 +15,63 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
 
         data_type = { identifier }
 
-        expression = { binary_expression | unary_expression | literal | group | identifier }
-            unary_expression = { unary_operator ~ expression }
-                unary_operator = { bang | negate }
-                    bang = { "!" }
-                    negate = { "-" }
+        expression = { binary_term ~ (binary_operator ~ binary_term)* }
+            binary_term = { group | literal | identifier | unary_expression }
+                unary_expression = { unary_operator ~ binary_term }
+                    unary_operator = { bang | negate }
+                        bang = { "!" }
+                        negate = { "-" }
 
-            group = { "(" ~ expression ~ ")" }
+                group = { "(" ~ expression ~ ")" }
 
-            binary_expression = { binary_term ~ (binary_operator ~ binary_term)+ }
-                binary_operator = {
-                    exponentation | addition | subtraction | multiplication | division | modulo |
-                    logical_or | logical_and |
-                    bitwise_and | bitwise_xor | bitwise_or
-                }
-                    // arithmetic
-                    addition = @{ "+" }
-                    subtraction = @{ "-" }
-                    multiplication = @{ "*" }
-                    division = @{ "/" }
-                    modulo = @{ "%" }
-                    exponentation = @{ "**" }
-                    // logical
-                    logical_or = @{ "||" }
-                    logical_and = @{ "&&" }
-                    // bitwise
-                    bitwise_or = @{ "|" }
-                    bitwise_and = @{ "&" }
-                    bitwise_xor = @{ "^" }
-                    // comparison
-                    equality = @{ "==" }
-                    inequality = @{ "!=" }
-                    greater_than = @{ ">" }
-                    greater_than_or_equal = @{ ">=" }
-                    less_than = @{ ">" }
-                    less_than_or_equal = @{ ">=" }
-                    // assignment
-                    assignment = @{ "=" }
-                    addition_assignment = @{ addition ~ "=" }
+                literal = { number_literal | string_literal | char_literal | boolean_literal }
+                    string_literal = ${ "\"" ~ string_content ~ "\"" }
+                        string_content = ${ string_char* }
+                            string_char = {
+                                !("\"" | "\\") ~ ANY
+                                | "\\" ~ ("\"" | "\\" | "n" | "r" | "t")
+                                | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                            }
 
+                    char_literal = ${ "'" ~ string_char ~ "'" }
+                    boolean_literal = ${ true_keyword | false_keyword }
+                    
+                    number_literal = @{ (int | float) ~ (^"e" ~ int)? }
+                        float = { int ~ "." ~ int }
+                        int = { "-"? ~ unsigned }
+                        unsigned = _{ ASCII_DIGIT+ }
 
-                binary_term = { unary_expression | literal | group | identifier }
+                identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
 
-            literal = { number_literal | string_literal | char_literal | boolean_literal }
-                string_literal = ${ "\"" ~ string_content ~ "\"" }
-                    string_content = ${ string_char* }
-                        string_char = {
-                            !("\"" | "\\") ~ ANY
-                            | "\\" ~ ("\"" | "\\" | "n" | "r" | "t")
-                            | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
-                        }
-
-                char_literal = ${ "'" ~ string_char ~ "'" }
-                boolean_literal = ${ true_keyword | false_keyword }
-                
-                number_literal = @{ (int | float) ~ (^"e" ~ int)? }
-                    float = { int ~ "." ~ int }
-                    int = { "-"? ~ unsigned }
-                    unsigned = _{ ASCII_DIGIT+ }
-
-        identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
+            binary_operator = {
+                exponentation | addition | subtraction | multiplication | division | modulo |
+                logical_or | logical_and |
+                bitwise_and | bitwise_xor | bitwise_or
+            }
+                // arithmetic
+                addition = @{ "+" }
+                subtraction = @{ "-" }
+                multiplication = @{ "*" }
+                division = @{ "/" }
+                modulo = @{ "%" }
+                exponentation = @{ "**" }
+                // logical
+                logical_or = @{ "||" }
+                logical_and = @{ "&&" }
+                // bitwise
+                bitwise_or = @{ "|" }
+                bitwise_and = @{ "&" }
+                bitwise_xor = @{ "^" }
+                // comparison
+                equality = @{ "==" }
+                inequality = @{ "!=" }
+                greater_than = @{ ">" }
+                greater_than_or_equal = @{ ">=" }
+                less_than = @{ ">" }
+                less_than_or_equal = @{ ">=" }
+                // assignment
+                assignment = @{ "=" }
+                addition_assignment = @{ addition ~ "=" }
 
 keyword = _{ import_keyword | from_keyword | const_keyword | var_keyword | static_keyword | let_keyword | true_keyword | false_keyword }
     import_keyword = { "import" }

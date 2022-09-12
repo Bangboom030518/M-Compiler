@@ -18,9 +18,20 @@ pub enum Expression {
 
 impl<'a> From<Pair<'a>> for Expression {
     fn from(pair: Pair<'a>) -> Self {
+        // TODO: clone???
+        let length = pair.clone().into_inner().count();
+        if length > 1 {
+            Self::Binary(BinaryExpression::from(pair))
+        } else {
+            Self::from_binary_term(expect_single_child(pair))
+        }
+    }
+}
+
+impl Expression {
+    fn from_binary_term(pair: Pair) -> Self {
         let pair = expect_single_child(pair);
         match pair.as_rule() {
-            Rule::binary_expression => Self::Binary(BinaryExpression::from(pair)),
             Rule::unary_expression => Self::Unary(UnaryExpression::from(pair)),
             Rule::literal => Self::Literal(Literal::from(pair)),
             Rule::group => Self::from(expect_single_child(pair)),

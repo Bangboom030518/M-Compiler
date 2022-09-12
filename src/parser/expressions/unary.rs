@@ -20,13 +20,13 @@ impl<'a> From<Pair<'a>> for Expression {
         );
         assert_eq!(
             operand.as_rule(),
-            Rule::expression,
-            "Second child of unary expression should be 'unary_expression'. Found '{:?}'",
+            Rule::binary_term,
+            "Second child of unary expression should be 'binary_term'. Found '{:?}'",
             operand.as_rule()
         );
         Self {
             operator: Operator::from(operator),
-            operand: Box::new(GenericExpression::from(operand)),
+            operand: Box::new(GenericExpression::from_binary_term(operand)),
         }
     }
 }

@@ -120,4 +120,3 @@ fn generate_binary_expression(length: usize) -> String {
     }
     format!("{};", result)
 }
-
