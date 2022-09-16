@@ -1,9 +1,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
-#![feature(test)]
 
 mod parser;
-mod tests;
-mod bench;
 // mod validator;
 
 #[macro_use]

@@ -1,5 +1,5 @@
+use super::{expect_single_child, Expression as GenericExpression};
 use crate::{Pair, Rule};
-use super::{Expression as GenericExpression, expect_single_child};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expression {

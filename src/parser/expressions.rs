@@ -6,6 +6,7 @@ pub use unary::{Expression as UnaryExpression, Operator as UnaryOperator};
 
 mod binary;
 mod literals;
+mod test;
 mod unary;
 
 #[derive(Debug, PartialEq, Clone)]

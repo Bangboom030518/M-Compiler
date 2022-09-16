@@ -1,5 +1,5 @@
-use crate::{Pair, Rule};
 use super::expect_single_child;
+use crate::{Pair, Rule};
 
 // TODO: other numeric types?
 #[derive(Debug, PartialEq, Clone)]

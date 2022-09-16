@@ -1,16 +1,18 @@
 #![cfg(test)]
-use super::*;
-use parser::{Program, Statement};
-use parser::expressions::{Expression, Literal, BinaryExpression, BinaryOperator, UnaryExpression, UnaryOperator};
-use rand::prelude::{thread_rng, Rng, Distribution};
-use rand::seq::SliceRandom;
+use super::super::{Program, Statement};
+use super::{
+    BinaryExpression, BinaryOperator, Expression, Literal, UnaryExpression, UnaryOperator,
+};
+use crate::{parse, tokenize};
 use rand::distributions::Uniform;
+use rand::prelude::{thread_rng, Distribution};
+use rand::seq::SliceRandom;
 
 const fn number(number: f64) -> Expression {
     Expression::Literal(Literal::Number(number))
 }
 
-const BINARY_OPERATORS: &[&str] = &[ "*", "/", "+", "-", "%", "**", "&&", "||", "&", "^", "|" ];
+const BINARY_OPERATORS: &[&str] = &["*", "/", "+", "-", "%", "**", "&&", "||", "&", "^", "|"];
 
 #[test]
 fn parse_add() {
@@ -80,31 +82,26 @@ fn parse_operator_precedance() {
         Program {
             body: vec![Statement::Expression(Expression::Binary(
                 BinaryExpression {
-                    left: Box::new(Expression::Binary(
-                        BinaryExpression {
-                            left: Box::new(number(1.0)),
-                            right: Box::new(Expression::Binary(
-                                BinaryExpression {
-                                    left: Box::new(number(2.0)),
-                                    right: Box::new(number(3.0)),
-                                    operator: BinaryOperator::Multiplication
-                                }
-                            )),
-                            operator: BinaryOperator::Addition
-                        }
-                    )),
+                    left: Box::new(Expression::Binary(BinaryExpression {
+                        left: Box::new(number(1.0)),
+                        right: Box::new(Expression::Binary(BinaryExpression {
+                            left: Box::new(number(2.0)),
+                            right: Box::new(number(3.0)),
+                            operator: BinaryOperator::Multiplication
+                        })),
+                        operator: BinaryOperator::Addition
+                    })),
                     right: Box::new(number(4.0)),
                     operator: BinaryOperator::Addition
                 }
             ))]
         }
     );
-
 }
 
 #[test]
 fn long_binary_expression() {
-    let expression = generate_binary_expression(1000000);
+    let expression = generate_binary_expression(1000);
     let tokens = tokenize(&expression).unwrap_or_else(|err| panic!("{}", err));
     parse(tokens);
 }
@@ -115,8 +112,34 @@ fn generate_binary_expression(length: usize) -> String {
     let mut result = format!("{}", uniform.sample(&mut rng));
     for _ in 0..length {
         let number = uniform.sample(&mut rng);
-        let operator = BINARY_OPERATORS.choose(&mut rng).expect("Failed to choose random item");
+        let operator = BINARY_OPERATORS
+            .choose(&mut rng)
+            .expect("Failed to choose random item");
         result.push_str(&format!(" {} {}", operator, number));
     }
     format!("{};", result)
+}
+
+#[test]
+fn complex_binary_expression() {
+    let tokens = tokenize("!1 + !1;").expect("Pest failed to parse the input");
+    let tree = parse(tokens);
+    assert_eq!(
+        tree,
+        Program {
+            body: vec![Statement::Expression(Expression::Binary(
+                BinaryExpression {
+                    left: Box::new(Expression::Unary(UnaryExpression {
+                        operator: UnaryOperator::Bang,
+                        operand: Box::new(number(1.0))
+                    })),
+                    right: Box::new(Expression::Unary(UnaryExpression {
+                        operator: UnaryOperator::Bang,
+                        operand: Box::new(number(1.0))
+                    })),
+                    operator: BinaryOperator::Addition
+                }
+            ))]
+        }
+    );
 }
