@@ -10,10 +10,19 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
                     variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
                 variable_declaration_body = { identifier ~ variable_initializer }
                     variable_initializer = { type_annotation? ~ assignment ~ expression }
-
+            
             type_annotation = { colon ~ data_type }
 
         data_type = { identifier }
+
+        /// Pattern Matching
+        pattern = { struct_pattern | identifier }
+            /// Struct Destructuring Patterns
+            /// `let MyStruct { a, b as c } = instance`
+            struct_pattern = { identifier ~ struct_destructure }
+                struct_destructure = { "{" ~ struct_destructure_fields ~ "}" }
+                    struct_destructure_fields = { struct_destructure_field ~ ("," ~ struct_destructure_field)* }
+                        struct_destructure_field = { identifier ~ (as_keyword ~ pattern)? }
 
         expression = { binary_term ~ (binary_operator ~ binary_term)* }
             binary_term = { group | literal | identifier | unary_expression }
@@ -82,6 +91,7 @@ keyword = _{ import_keyword | from_keyword | const_keyword | var_keyword | stati
     true_keyword = { "true" }
     false_keyword = { "false" }
     let_keyword = { "let" }
+    as_keyword = { "as" }
 
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }
