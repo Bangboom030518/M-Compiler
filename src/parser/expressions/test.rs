@@ -3,8 +3,8 @@ use super::super::{Program, Statement};
 use super::{
     BinaryExpression, BinaryOperator, Expression, Literal, UnaryExpression, UnaryOperator,
 };
-use crate::{parse, tokenize};
 use rand::distributions::Uniform;
+use crate::{parse, tokenize};
 use rand::prelude::{thread_rng, Distribution};
 use rand::seq::SliceRandom;
 

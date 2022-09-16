@@ -8,7 +8,7 @@ program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
             variable_declaration = { variable_start ~ variable_declaration_body }
                 variable_start = ${ variable_keyword ~ " " }
                     variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
-                variable_declaration_body = { identifier ~ variable_initializer }
+                variable_declaration_body = { pattern ~ variable_initializer }
                     variable_initializer = { type_annotation? ~ assignment ~ expression }
             
             type_annotation = { colon ~ data_type }

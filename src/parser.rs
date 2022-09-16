@@ -1,8 +1,10 @@
 // TODO: refactor into seperate modules
 pub mod expressions;
+pub mod declarations;
 
 use crate::{Pair, Pairs, Rule};
 use expressions::Expression;
+use declarations::Declaration;
 
 #[derive(Debug, PartialEq)]
 pub struct Program {
@@ -44,38 +46,6 @@ impl<'a> From<Pair<'a>> for Statement {
             ),
         }
     }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Declaration {
-    Import(Import),
-    Variable(Variable),
-}
-
-impl<'a> From<Pair<'a>> for Declaration {
-    fn from(_: Pair<'a>) -> Self {
-        unimplemented!("Declaration Parsing")
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Import {
-    pub path: String,
-    pub namespaces: Vec<String>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Variable {
-    pub kind: VariableKind,
-    pub value: Expression,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum VariableKind {
-    Static,
-    Let,
-    Const,
-    Var,
 }
 
 pub fn parse(pairs: Pairs) -> Program {
