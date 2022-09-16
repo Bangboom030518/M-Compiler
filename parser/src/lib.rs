@@ -1,8 +1,10 @@
+#![warn(clippy::pedantic, clippy::nursery)]
+
 // TODO: refactor into seperate modules
 pub mod expressions;
 pub mod declarations;
 
-use crate::{Pair, Pairs, Rule};
+pub use tokenizer::{Pair, Pairs, Rule, tokenize};
 use expressions::Expression;
 use declarations::Declaration;
 

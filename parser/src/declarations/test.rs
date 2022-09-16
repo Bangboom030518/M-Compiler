@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::super::{Program, Statement};
-use crate::{tokenize, parse, error};
+use crate::{tokenize, parse};
 
 #[test]
 fn tokenize_var_declaration() {

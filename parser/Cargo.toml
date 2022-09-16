@@ -1,0 +1,12 @@
+[package]
+name = "parser"
+description = "parses the m language"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Bangboom030518/M-Compiler"
+
+[dependencies]
+tokenizer = { path = "../tokenizer" }
+
+[dev-dependencies]
+rand = "0.8"
