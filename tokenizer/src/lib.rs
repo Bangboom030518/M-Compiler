@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::pedantic, clippy::nursery, clippy::cargo)]
 
 use pest::iterators::{Pair as PestPair, Pairs as PestPairs};
 use pest::Parser;
@@ -14,6 +14,10 @@ pub type Pair<'a> = PestPair<'a, Rule>;
 #[grammar = "grammar.pest"]
 pub struct GrammarParser;
 
+/// Converts a string to recursive list of tokens, according to the grammar defined in grammar.pest.
+/// 
+/// # Errors
+/// Returns an error pointing to a specific token, if that token is unable to be categorised using the grammar.
 pub fn tokenize(input: &str) -> Result<Pairs, Error<Rule>> {
     GrammarParser::parse(Rule::program, input)
 }
