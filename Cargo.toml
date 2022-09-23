@@ -6,6 +6,5 @@
 [workspace]
 members = [
     "parser",
-    "compiler",
-    "tokenizer"
+    "compiler"
 ]

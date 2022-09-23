@@ -1,16 +1,9 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use parser::{tokenize, parse};
+use parser::parse;
 
 fn main() {
-    let tokens = match tokenize(include_str!("../../input.txt")) {
-        Ok(tokens) => tokens,
-        Err(message) => panic!("Parse Error {}", message),
-    };
-
-    dbg!(&tokens);
-
-    let tree = parse(tokens);
+    let tree = parse(include_str!("../../input.txt"));
 
     dbg!(tree);
     println!("Finished parsing :)");

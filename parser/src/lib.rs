@@ -1,3 +1,5 @@
+// TODO: find a way to make parser modular.
+
 use peg::parser;
 
 const BINARY_DIGITS: &[char] = &['0', '1'];
@@ -5,26 +7,60 @@ const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9
 
 #[derive(Debug)]
 pub enum Literal {
-    Number(String),
+    Number(Number),
     List(Vec<Expression>),
     Char(char),
 }
 
 #[derive(Debug)]
+pub enum Base {
+    Binary,
+    Octal,
+    Denary,
+    Hexidecimal
+}
+
+#[derive(Debug)]
+pub struct Number {
+    whole_digits: Vec<u8>,
+    fractional_digits: Vec<u8>,
+    base: Base,
+    positive: bool
+}
+
+#[derive(Debug)]
 pub enum BinaryOperator {
-    Multiply
+    Multiply,
+    Add,
+    Subtract,
+    Divide,
+    Exponent
 }
 
 #[derive(Debug)]
 pub struct BinaryExpression {
-    left: Expression,
-    right: Expression,
+    left: Box<Expression>,
+    right: Box<Expression>,
     operator: BinaryOperator,
 }
 
 #[derive(Debug)]
+pub enum UnaryOperator {
+    Negate
+}
+
+#[derive(Debug)]
+pub struct UnaryExpression {
+    operand: Box<Expression>,
+    operator: UnaryOperator,
+}
+
+
+#[derive(Debug)]
 pub enum Expression {
     Literal(Literal),
+    Binary(BinaryExpression),
+    Unary(UnaryExpression)
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -35,10 +71,17 @@ fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
             base_digits
                 .iter()
                 .position(|&character| character == digit)
-                .unwrap_or_else(|err| panic!("Digit in base {} should not be {}", base_digits.len(), digit)) as u8
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Digit in base {} should not be {}",
+                        base_digits.len(),
+                        digit
+                    )
+                }) as u8
         })
         .collect()
 }
+
 
 parser! {
     grammar m_parser() for str {
@@ -52,27 +95,10 @@ parser! {
 
         rule _() = quiet!{ (whitespace() / "\n" / inline_comment() / line_comment())* }
 
-        rule expression() -> Expression
-          = value:(literal()) {
-            Expression::Literal(value)
-          }
-
-        rule literal() -> Literal
-          = value:(number()) {
-            Literal::Number(value)
-          } / value:(char()) {
-            Literal::Char(value)
-          }
-
         rule char() -> char
           = character:['a'] {
             character
           }
-
-        rule number() -> String
-          = number:$(['0'..='9']+) {
-            String::from(number)
-        }
 
         /// Matches number literals
         rule number() -> Number
@@ -118,26 +144,36 @@ parser! {
 
         pub rule expression() -> Expression
          = precedence!{
-            lhs:(@) _ "+" _ rhs:@ {
-                Expression::Add(Box::new(lhs), Box::new(rhs))
+            left:(@) _ "+" _ right:@ {
+                Expression::Binary(
+                    BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Add }
+                )
             }
-            lhs:(@) _ "-" _ rhs:@ {
-                Expression::Sub(Box::new(lhs), Box::new(rhs))
-            }
-            --
-            lhs:(@) _ "*" _ rhs:@ {
-                Expression::Mul(Box::new(lhs), Box::new(rhs))
-            }
-            lhs:(@) _ "/" _ rhs:@ {
-                Expression::Div(Box::new(lhs), Box::new(rhs))
+            left:(@) _ "-" _ right:@ {
+                Expression::Binary(
+                    BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Subtract }
+                )
             }
             --
-            lhs:@ _ "^" _ rhs:(@) {
-                Expression::Pow(Box::new(lhs), Box::new(rhs))
+            left:(@) _ "*" _ right:@ {
+                Expression::Binary(
+                    BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Multiply }
+                )
+            }
+            left:(@) _ "/" _ right:@ {
+                Expression::Binary(
+                    BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Divide }
+                )
+            }
+            --
+            left:@ _ "^" _ right:(@) {
+                Expression::Binary(
+                    BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Exponent }
+                )
             }
             --
             "-" _ expression:(@) {
-                Expression::Negate(Box::new(expression))
+                Expression::Unary(UnaryExpression { operand: Box::new(expression), operator: UnaryOperator::Negate })
             }
             --
             _ value:literal() _ {
@@ -148,5 +184,12 @@ parser! {
 
         pub rule list() -> Vec<Expression>
           = "[" list:(expression() ** (_ "," _)) "]" { list }
+    }
+}
+
+pub fn parse(input: &str) -> Expression {
+    match m_parser::expression(input) {
+        Ok(expression) => expression,
+        Err(error) => panic!("Syntax Error: {}", error)
     }
 }
