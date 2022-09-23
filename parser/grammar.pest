@@ -1,0 +1,101 @@
+program = _{ SOI ~ (statement ~ semicolon)* ~ EOI }
+    statement = { declaration | expression }
+        declaration = { import_declaration | variable_declaration }
+            import_declaration = ${ import_start ~ namespace_list ~ space ~ from_keyword ~ space ~ string_literal }
+                import_start = @{ import_keyword ~ " "}
+                namespace_list = ${ (identifier ~ "," ~ WHITESPACE*)* ~ identifier }
+
+            variable_declaration = { variable_start ~ variable_declaration_body }
+                variable_start = ${ variable_keyword ~ " " }
+                    variable_keyword = ${ let_keyword | var_keyword | const_keyword | static_keyword }
+                variable_declaration_body = { pattern ~ variable_initializer }
+                    variable_initializer = { type_annotation? ~ assignment ~ expression }
+            
+            type_annotation = { colon ~ data_type }
+
+        data_type = { identifier }
+
+        /// Pattern Matching
+        pattern = { struct_pattern | identifier }
+            /// Struct Destructuring Patterns
+            /// `let MyStruct { a, b as c } = instance`
+            struct_pattern = { identifier ~ struct_destructure }
+                struct_destructure = { "{" ~ struct_destructure_fields ~ "}" }
+                    struct_destructure_fields = { struct_destructure_field ~ ("," ~ struct_destructure_field)* }
+                        struct_destructure_field = { identifier ~ (as_keyword ~ pattern)? }
+
+        expression = { binary_term ~ (binary_operator ~ binary_term)* }
+            binary_term = { group | literal | identifier | unary_expression }
+                unary_expression = { unary_operator ~ binary_term }
+                    unary_operator = { bang | negate }
+                        bang = { "!" }
+                        negate = { "-" }
+
+                group = { "(" ~ expression ~ ")" }
+
+                literal = { number_literal | string_literal | char_literal | boolean_literal }
+                    string_literal = ${ "\"" ~ string_content ~ "\"" }
+                        string_content = ${ string_char* }
+                            string_char = {
+                                !("\"" | "\\") ~ ANY
+                                | "\\" ~ ("\"" | "\\" | "n" | "r" | "t")
+                                | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+                            }
+
+                    char_literal = ${ "'" ~ string_char ~ "'" }
+                    boolean_literal = ${ true_keyword | false_keyword }
+                    
+                    number_literal = @{ (int | float) ~ (^"e" ~ int)? }
+                        float = { int ~ "." ~ int }
+                        int = { "-"? ~ unsigned }
+                        unsigned = _{ ASCII_DIGIT+ }
+
+                identifier = { !keyword ~ (ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*) }
+
+            binary_operator = {
+                exponentation | addition | subtraction | multiplication | division | modulo |
+                logical_or | logical_and |
+                bitwise_and | bitwise_xor | bitwise_or
+            }
+                // arithmetic
+                addition = @{ "+" }
+                subtraction = @{ "-" }
+                multiplication = @{ "*" }
+                division = @{ "/" }
+                modulo = @{ "%" }
+                exponentation = @{ "**" }
+                // logical
+                logical_or = @{ "||" }
+                logical_and = @{ "&&" }
+                // bitwise
+                bitwise_or = @{ "|" }
+                bitwise_and = @{ "&" }
+                bitwise_xor = @{ "^" }
+                // comparison
+                equality = @{ "==" }
+                inequality = @{ "!=" }
+                greater_than = @{ ">" }
+                greater_than_or_equal = @{ ">=" }
+                less_than = @{ ">" }
+                less_than_or_equal = @{ ">=" }
+                // assignment
+                assignment = @{ "=" }
+                addition_assignment = @{ addition ~ "=" }
+
+keyword = _{ import_keyword | from_keyword | const_keyword | var_keyword | static_keyword | let_keyword | true_keyword | false_keyword }
+    import_keyword = { "import" }
+    from_keyword = { "from" }
+    const_keyword = { "const" }
+    var_keyword = { "var" }
+    static_keyword = { "static" }
+    true_keyword = { "true" }
+    false_keyword = { "false" }
+    let_keyword = { "let" }
+    as_keyword = { "as" }
+
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | ("//" ~ (!NEWLINE ~ ANY)* ~ (NEWLINE | EOI)) }
+space = _{ (COMMENT ~ WHITESPACE*)* ~ WHITESPACE ~ (COMMENT ~ WHITESPACE*)* }
+opt_space = _{ WHITESPACE* ~ (COMMENT ~ WHITESPACE*)* }
+colon = _{ ":" }
+semicolon = _{ ";" }
