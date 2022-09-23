@@ -9,6 +9,19 @@ pub enum Literal {
     List(Vec<Expression>),
     Char(char),
 }
+
+#[derive(Debug)]
+pub enum BinaryOperator {
+    Multiply
+}
+
+#[derive(Debug)]
+pub struct BinaryExpression {
+    left: Expression,
+    right: Expression,
+    operator: BinaryOperator,
+}
+
 #[derive(Debug)]
 pub enum Expression {
     Literal(Literal),
