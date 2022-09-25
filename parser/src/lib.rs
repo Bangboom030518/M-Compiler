@@ -4,6 +4,7 @@ use std::fmt;
 
 const BINARY_DIGITS: &[char] = &['0', '1'];
 const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const HEX_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
 
 #[derive(Debug)]
 pub enum Literal {
@@ -92,12 +93,12 @@ fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
                 .position(|&character| character == digit)
                 .unwrap_or_else(|| {
                     panic!(
-                        "Digit in base '{}' should not be {}",
+                        "Digit {} doesn't exist in base '{}'",
+                        digit,
                         match Base::try_from(base_digits.len() as u8) {
                             Ok(base) => format!("{}", base),
                             Err(number) => number.to_string(),
-                        },
-                        digit
+                        }
                     )
                 }) as u8
         })
@@ -120,24 +121,48 @@ parser! {
           = character:['a'] {
             character
         }
+        
+        rule hex_digits() -> Vec<char>
+          = digits:(['0'..='9'] / ['a'..='f'])* { digits.to_vec() }
 
-        rule binary_number() -> Number
-          = negation_sign:"-"? "0b" whole_digits:(['0'..='1']*) fractional_digits:("." ['0'..='1']*)? {
+        rule hex_number() -> Number
+          = negation_sign:"-"? "0x" whole_digits:hex_digits() fractional_digits:("." hex_digits())? {
             let fractional_digits = match fractional_digits {
-                Some(digits) => digits_from_slice(&whole_digits, DENARY_DIGITS),
+                Some(digits) => digits_from_slice(&whole_digits, HEX_DIGITS),
                 None => Vec::new(),
             };
 
             Number {
-                whole_digits: digits_from_slice(&whole_digits, DENARY_DIGITS),
+                whole_digits: digits_from_slice(&whole_digits, HEX_DIGITS),
                 fractional_digits,
                 base: Base::Binary,
                 positive: negation_sign.is_none()
             }
         }
 
+        rule binary_digits() -> Vec<char>
+          = digits:['0'..='1']* { digits.to_vec() }
+
+        rule binary_number() -> Number
+          = negation_sign:"-"? "0b" whole_digits:binary_digits() fractional_digits:("." binary_digits())? {
+            let fractional_digits = match fractional_digits {
+                Some(digits) => digits_from_slice(&whole_digits, BINARY_DIGITS),
+                None => Vec::new(),
+            };
+
+            Number {
+                whole_digits: digits_from_slice(&whole_digits, BINARY_DIGITS),
+                fractional_digits,
+                base: Base::Binary,
+                positive: negation_sign.is_none()
+            }
+        }
+
+        rule denary_digits() -> Vec<char>
+          = digits:['0'..='9']* { digits.to_vec() }
+
         rule denary_number() -> Number
-          = negation_sign:"-"? whole_digits:(['0'..='9']*) fractional_digits:("." ['0'..='9']*)? {
+          = negation_sign:"-"? whole_digits:denary_digits() fractional_digits:("." denary_digits())? {
             let fractional_digits = match fractional_digits {
                 Some(digits) => digits_from_slice(&whole_digits, DENARY_DIGITS),
                 None => Vec::new(),
@@ -154,6 +179,7 @@ parser! {
         // Matches number literals
         rule number() -> Number
           = number:binary_number() { number }
+          / number:hex_number() { number }
           / number:denary_number() { number }
 
         /// Matches literals
