@@ -1,6 +1,6 @@
 // TODO: find a way to make parser modular.
-
 use peg::parser;
+use std::fmt;
 
 const BINARY_DIGITS: &[char] = &['0', '1'];
 const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -17,7 +17,27 @@ pub enum Base {
     Binary,
     Octal,
     Denary,
-    Hexidecimal
+    Hexidecimal,
+}
+
+impl std::fmt::Display for Base {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", format!("{:?}", self).to_lowercase())
+    }
+}
+
+impl TryFrom<u8> for Base {
+    type Error = u8;
+
+    fn try_from(number: u8) -> Result<Self, u8> {
+        match number {
+            2 => Ok(Self::Binary),
+            8 => Ok(Self::Octal),
+            10 => Ok(Self::Denary),
+            16 => Ok(Self::Hexidecimal),
+            number => Err(number),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -25,7 +45,7 @@ pub struct Number {
     whole_digits: Vec<u8>,
     fractional_digits: Vec<u8>,
     base: Base,
-    positive: bool
+    positive: bool,
 }
 
 #[derive(Debug)]
@@ -34,7 +54,7 @@ pub enum BinaryOperator {
     Add,
     Subtract,
     Divide,
-    Exponent
+    Exponent,
 }
 
 #[derive(Debug)]
@@ -46,7 +66,7 @@ pub struct BinaryExpression {
 
 #[derive(Debug)]
 pub enum UnaryOperator {
-    Negate
+    Negate,
 }
 
 #[derive(Debug)]
@@ -55,12 +75,11 @@ pub struct UnaryExpression {
     operator: UnaryOperator,
 }
 
-
 #[derive(Debug)]
 pub enum Expression {
     Literal(Literal),
     Binary(BinaryExpression),
-    Unary(UnaryExpression)
+    Unary(UnaryExpression),
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -73,8 +92,11 @@ fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
                 .position(|&character| character == digit)
                 .unwrap_or_else(|| {
                     panic!(
-                        "Digit in base {} should not be {}",
-                        base_digits.len(),
+                        "Digit in base '{}' should not be {}",
+                        match Base::try_from(base_digits.len() as u8) {
+                            Ok(base) => format!("{}", base),
+                            Err(number) => number.to_string(),
+                        },
                         digit
                     )
                 }) as u8
@@ -82,10 +104,11 @@ fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
         .collect()
 }
 
-
 parser! {
     grammar m_parser() for str {
-        rule whitespace() = [' ' | '\n' | '\t']
+
+
+        rule whitespace() =  [' ' | '\n' | '\t']
 
         // Comments like this one
         rule line_comment() = "//" (!"\n" [_])* ("\n" / ![_])
@@ -100,7 +123,8 @@ parser! {
             character
           }
 
-        /// Matches number literals
+
+        // Matches number literals
         rule number() -> Number
           = negation_sign:"-"? "0b" whole_digits:(['0'..='1']*) "." fractional_digits:(['0'..='1']*) {
             // Binary floats
@@ -190,6 +214,6 @@ parser! {
 pub fn parse(input: &str) -> Expression {
     match m_parser::expression(input) {
         Ok(expression) => expression,
-        Err(error) => panic!("Syntax Error: {}", error)
+        Err(error) => panic!("Syntax Error: {}", error),
     }
 }
