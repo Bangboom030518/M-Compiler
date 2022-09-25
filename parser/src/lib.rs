@@ -106,8 +106,6 @@ fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
 
 parser! {
     grammar m_parser() for str {
-
-
         rule whitespace() =  [' ' | '\n' | '\t']
 
         // Comments like this one
@@ -121,44 +119,42 @@ parser! {
         rule char() -> char
           = character:['a'] {
             character
-          }
+        }
 
+        rule binary_number() -> Number
+          = negation_sign:"-"? "0b" whole_digits:(['0'..='1']*) fractional_digits:("." ['0'..='1']*)? {
+            let fractional_digits = match fractional_digits {
+                Some(digits) => digits_from_slice(&whole_digits, DENARY_DIGITS),
+                None => Vec::new(),
+            };
 
-        // Matches number literals
-        rule number() -> Number
-          = negation_sign:"-"? "0b" whole_digits:(['0'..='1']*) "." fractional_digits:(['0'..='1']*) {
-            // Binary floats
             Number {
-                whole_digits: digits_from_slice(&whole_digits, BINARY_DIGITS),
-                fractional_digits: digits_from_slice(&fractional_digits, BINARY_DIGITS),
+                whole_digits: digits_from_slice(&whole_digits, DENARY_DIGITS),
+                fractional_digits,
                 base: Base::Binary,
                 positive: negation_sign.is_none()
             }
-        } / negation_sign:"-"? "0b" whole_digits:(['0'..='1']+) {
-            // Binary ints
-            Number {
-                whole_digits: digits_from_slice(&whole_digits, BINARY_DIGITS),
-                fractional_digits: Vec::new(),
-                base: Base::Binary,
-                positive: negation_sign.is_none()
-            }
-        } / negation_sign:"-"? whole_digits:(['0'..='9']*) "." fractional_digits:(['0'..='9']*) {
-            // Denary floats
-            Number {
-                whole_digits: digits_from_slice(&whole_digits, DENARY_DIGITS),
-                fractional_digits: digits_from_slice(&fractional_digits, DENARY_DIGITS),
-                base: Base::Denary,
-                positive: negation_sign.is_none()
-            }
-        } / negation_sign:"-"? whole_digits:(['0'..='9']+) {
-            // Denary ints
+        }
+
+        rule denary_number() -> Number
+          = negation_sign:"-"? whole_digits:(['0'..='9']*) fractional_digits:("." ['0'..='9']*)? {
+            let fractional_digits = match fractional_digits {
+                Some(digits) => digits_from_slice(&whole_digits, DENARY_DIGITS),
+                None => Vec::new(),
+            };
+
             Number {
                 whole_digits: digits_from_slice(&whole_digits, DENARY_DIGITS),
-                fractional_digits: Vec::new(),
+                fractional_digits,
                 base: Base::Denary,
                 positive: negation_sign.is_none()
             }
         }
+
+        // Matches number literals
+        rule number() -> Number
+          = number:binary_number() { number }
+          / number:denary_number() { number }
 
         /// Matches literals
         rule literal() -> Literal
