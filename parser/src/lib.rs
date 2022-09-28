@@ -4,7 +4,9 @@ use std::fmt;
 
 const BINARY_DIGITS: &[char] = &['0', '1'];
 const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-const HEX_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
+const HEX_DIGITS: &[char] = &[
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+];
 
 #[derive(Debug)]
 pub enum Literal {
@@ -42,12 +44,45 @@ impl TryFrom<u8> for Base {
 }
 
 #[derive(Debug)]
-pub struct Number {
-    whole_digits: Vec<u8>,
-    fractional_digits: Vec<u8>,
-    base: Base,
-    positive: bool,
+pub enum Number {
+    Integer(),
+    Fractional()
 }
+
+#[derive(Debug)]
+struct Integer {
+    sign: Sign,
+    digits: Vec<Bit>
+}
+
+/// Fractional
+#[derive(Debug)]
+struct Fractional {
+    sign: Sign,
+    whole: Vec<Bit>,
+    fractional: Vec<Bit>,
+    multiplier: f32,
+    // base ** -figs = 0.1
+}
+
+#[derive(Debug)]
+enum Bit {
+    Zero,
+    One
+}
+
+#[derive(Debug)]
+enum Sign {
+    Negative,
+    Positive
+}
+
+// pub struct Number {
+//     whole_digits: Vec<u8>,
+//     fractional_digits: Vec<u8>,
+//     positive: bool,
+// }
+
 
 #[derive(Debug)]
 pub enum BinaryOperator {
@@ -68,6 +103,7 @@ pub struct BinaryExpression {
 #[derive(Debug)]
 pub enum UnaryOperator {
     Negate,
+    Bang,
 }
 
 #[derive(Debug)]
@@ -121,7 +157,7 @@ parser! {
           = character:['a'] {
             character
         }
-        
+
         rule hex_digits() -> Vec<char>
           = digits:(['0'..='9'] / ['a'..='f'])* { digits.to_vec() }
 
@@ -212,7 +248,7 @@ parser! {
                 )
             }
             --
-            left:@ _ "^" _ right:(@) {
+            left:@ _ "**" _ right:(@) {
                 Expression::Binary(
                     BinaryExpression { left: Box::new(left), right: Box::new(right), operator: BinaryOperator::Exponent }
                 )
@@ -220,6 +256,9 @@ parser! {
             --
             "-" _ expression:(@) {
                 Expression::Unary(UnaryExpression { operand: Box::new(expression), operator: UnaryOperator::Negate })
+            }
+            "!" _ expression:(@) {
+                Expression::Unary(UnaryExpression { operand: Box::new(expression), operator: UnaryOperator::Bang })
             }
             --
             _ value:literal() _ {
