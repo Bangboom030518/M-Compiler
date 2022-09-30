@@ -1,6 +1,9 @@
 // TODO: find a way to make parser modular.
+use errors::CompilerError;
 use peg::parser;
 use std::fmt;
+
+mod errors;
 
 const BINARY_DIGITS: &[char] = &['0', '1'];
 const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -17,10 +20,32 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub enum Base {
-    Binary,
-    Octal,
-    Denary,
-    Hexidecimal,
+    Binary = 2,
+    Octal = 8,
+    Denary = 10,
+    Hexadecimal = 16,
+}
+
+impl Base {
+    const BINARY_DIGITS: &[char] = &['0', '1'];
+    const DENARY_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    const OCTAL_DIGITS: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7'];
+    const HEXADECIMAL_DIGITS: &[char] = &[
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    ];
+
+    pub const fn get_digits(&self) -> &[char] {
+        match self {
+            Self::Binary => Self::BINARY_DIGITS,
+            Self::Denary => Self::DENARY_DIGITS,
+            Self::Octal => Self::OCTAL_DIGITS,
+            Self::Hexadecimal => Self::HEXADECIMAL_DIGITS,
+        }
+    }
+
+    fn as_number(&self) -> u8 {
+        *self as u8
+    }
 }
 
 impl std::fmt::Display for Base {
@@ -37,7 +62,7 @@ impl TryFrom<u8> for Base {
             2 => Ok(Self::Binary),
             8 => Ok(Self::Octal),
             10 => Ok(Self::Denary),
-            16 => Ok(Self::Hexidecimal),
+            16 => Ok(Self::Hexadecimal),
             number => Err(number),
         }
     }
@@ -45,44 +70,31 @@ impl TryFrom<u8> for Base {
 
 #[derive(Debug)]
 pub enum Number {
-    Integer(),
-    Fractional()
+    Integer(Integer),
+    Fractional(Fractional),
 }
 
 #[derive(Debug)]
-struct Integer {
-    sign: Sign,
-    digits: Vec<Bit>
+pub struct Integer {
+    pub sign: Sign,
+    pub digits: Vec<u8>,
+    pub base: Base,
 }
 
 /// Fractional
 #[derive(Debug)]
-struct Fractional {
-    sign: Sign,
-    whole: Vec<Bit>,
-    fractional: Vec<Bit>,
-    multiplier: f32,
-    // base ** -figs = 0.1
+pub struct Fractional {
+    pub sign: Sign,
+    pub whole_digits: Vec<u8>,
+    pub fractional_digits: Vec<u8>,
+    pub base: Base,
 }
 
 #[derive(Debug)]
-enum Bit {
-    Zero,
-    One
-}
-
-#[derive(Debug)]
-enum Sign {
+pub enum Sign {
     Negative,
-    Positive
+    Positive,
 }
-
-// pub struct Number {
-//     whole_digits: Vec<u8>,
-//     fractional_digits: Vec<u8>,
-//     positive: bool,
-// }
-
 
 #[derive(Debug)]
 pub enum BinaryOperator {
@@ -119,28 +131,6 @@ pub enum Expression {
     Unary(UnaryExpression),
 }
 
-#[allow(clippy::cast_possible_truncation)]
-fn digits_from_slice(digits: &[char], base_digits: &[char]) -> Vec<u8> {
-    digits
-        .iter()
-        .map(|&digit| {
-            base_digits
-                .iter()
-                .position(|&character| character == digit)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Digit {} doesn't exist in base '{}'",
-                        digit,
-                        match Base::try_from(base_digits.len() as u8) {
-                            Ok(base) => format!("{}", base),
-                            Err(number) => number.to_string(),
-                        }
-                    )
-                }) as u8
-        })
-        .collect()
-}
-
 parser! {
     grammar m_parser() for str {
         rule whitespace() =  [' ' | '\n' | '\t']
@@ -158,65 +148,51 @@ parser! {
             character
         }
 
-        rule hex_digits() -> Vec<char>
-          = digits:(['0'..='9'] / ['a'..='f'])* { digits.to_vec() }
-
-        rule hex_number() -> Number
-          = negation_sign:"-"? "0x" whole_digits:hex_digits() fractional_digits:("." hex_digits())? {
-            let fractional_digits = match fractional_digits {
-                Some(digits) => digits_from_slice(&whole_digits, HEX_DIGITS),
-                None => Vec::new(),
-            };
-
-            Number {
-                whole_digits: digits_from_slice(&whole_digits, HEX_DIGITS),
-                fractional_digits,
-                base: Base::Binary,
-                positive: negation_sign.is_none()
+        // Matches a digit given a base
+        rule digit(base: &Base) -> u8
+          = digit:quiet!{ [digit if base.get_digits().contains(&digit.to_ascii_lowercase())] } {
+                let digits = base.get_digits();
+                digits.iter().position(|&character| character == digit.to_ascii_lowercase()).unwrap_or_else(|| {
+                    panic!(
+                        "Digit in base {} should not be {}",
+                        digits.len(),
+                        digit
+                    )
+                }) as u8
             }
-        }
+          / expected!("digit")
 
-        rule binary_digits() -> Vec<char>
-          = digits:['0'..='1']* { digits.to_vec() }
+        rule base() -> Base
+          = "0b" { Base::Binary }
+          / "0o" { Base::Octal }
+          / "0x" { Base::Hexadecimal }
+          / "" { Base::Denary }
 
-        rule binary_number() -> Number
-          = negation_sign:"-"? "0b" whole_digits:binary_digits() fractional_digits:("." binary_digits())? {
-            let fractional_digits = match fractional_digits {
-                Some(digits) => digits_from_slice(&whole_digits, BINARY_DIGITS),
-                None => Vec::new(),
-            };
+        rule sign() -> Sign
+          = "-" { Sign::Negative }
+          / "" { Sign::Positive }
 
-            Number {
-                whole_digits: digits_from_slice(&whole_digits, BINARY_DIGITS),
-                fractional_digits,
-                base: Base::Binary,
-                positive: negation_sign.is_none()
-            }
-        }
+        rule digits(base: &Base) -> Vec<u8>
+          = digits:digit(base) ++ ("_"?) { digits }
 
-        rule denary_digits() -> Vec<char>
-          = digits:['0'..='9']* { digits.to_vec() }
-
-        rule denary_number() -> Number
-          = negation_sign:"-"? whole_digits:denary_digits() fractional_digits:("." denary_digits())? {
-            let fractional_digits = match fractional_digits {
-                Some(digits) => digits_from_slice(&whole_digits, DENARY_DIGITS),
-                None => Vec::new(),
-            };
-
-            Number {
-                whole_digits: digits_from_slice(&whole_digits, DENARY_DIGITS),
-                fractional_digits,
-                base: Base::Denary,
-                positive: negation_sign.is_none()
-            }
-        }
-
-        // Matches number literals
         rule number() -> Number
-          = number:binary_number() { number }
-          / number:hex_number() { number }
-          / number:denary_number() { number }
+          = sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) {
+                let whole_digits = whole_digits.unwrap_or_default();
+                Number::Fractional(Fractional {
+                    sign,
+                    whole_digits,
+                    fractional_digits,
+                    base
+                })
+            }
+          / sign:sign() base:base() digits:digits(&base) {
+                Number::Integer(Integer {
+                    digits,
+                    base,
+                    sign
+                })
+            }
+
 
         /// Matches literals
         rule literal() -> Literal
@@ -275,6 +251,10 @@ parser! {
 pub fn parse(input: &str) -> Expression {
     match m_parser::expression(input) {
         Ok(expression) => expression,
-        Err(error) => panic!("Syntax Error: {}", error),
+        Err(error) => {
+            let err = CompilerError::parse_error(error, input);
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
     }
 }
