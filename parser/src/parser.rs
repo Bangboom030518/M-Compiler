@@ -23,7 +23,7 @@ parser! {
         }
 
         // Matches a digit given a base
-        rule digit(base: &Base) -> u8
+        rule digit(base: &Base) -> usize
           = digit:quiet!{ [digit if base.get_digits().contains(&digit.to_ascii_lowercase())] } {
                 let digits = base.get_digits();
                 digits.iter().position(|&character| character == digit.to_ascii_lowercase()).unwrap_or_else(|| {
@@ -32,7 +32,7 @@ parser! {
                         digits.len(),
                         digit
                     )
-                }) as u8
+                })
             }
           / expected!("digit")
 
@@ -46,7 +46,7 @@ parser! {
           = "-" { Sign::Negative }
           / "" { Sign::Positive }
 
-        rule digits(base: &Base) -> Vec<u8>
+        rule digits(base: &Base) -> Vec<usize>
           = digits:digit(base) ++ ("_"?) { digits }
 
         rule integer() -> Integer
@@ -120,11 +120,11 @@ parser! {
                 )
             }
             --
-            "-" _ expression:(@) {
-                Expression::Unary(UnaryExpression { operand: Box::new(expression), operator: UnaryOperator::Negate })
-            }
-            "!" _ expression:(@) {
-                Expression::Unary(UnaryExpression { operand: Box::new(expression), operator: UnaryOperator::Bang })
+            operator:(
+                "-" { UnaryOperator::Negate }
+              / "!" { UnaryOperator::Bang }
+            ) _ operand:(@) {
+                Expression::Unary(UnaryExpression::new(operand, operator))
             }
             --
             _ value:literal() _ {
