@@ -18,11 +18,20 @@ parser! {
         rule _() = quiet!{ (whitespace() / "\n" / inline_comment() / line_comment())* }
 
         rule char() -> char
-          = character:['a'] {
+          = r"\n" { '\n' }
+          / r"\r" { '\r' }
+          / r"\t" { '\t' }
+          / r"\\" { '\\' }
+          / r"\u{" digits:digit(&Base::Hexadecimal)*<4> { 
+            // TODO: convert digits to number and get char at that codepoint
+            '😊'
+          }
+          / "\"" { '\"' }
+          / character:[_] {
             character
-        }
+          }
 
-        // Matches a digit given a base
+        /// Matches a digit given a base
         rule digit(base: &Base) -> usize
           = digit:quiet!{ [digit if base.get_digits().contains(&digit.to_ascii_lowercase())] } {
                 let digits = base.get_digits();
