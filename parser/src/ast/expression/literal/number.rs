@@ -4,7 +4,6 @@ pub enum Number {
     Fractional(Fractional),
 }
 
-
 #[derive(Debug)]
 pub enum Base {
     Binary = 2,
@@ -28,6 +27,17 @@ impl Base {
             Self::Octal => Self::OCTAL_DIGITS,
             Self::Hexadecimal => Self::HEXADECIMAL_DIGITS,
         }
+    }
+
+    pub fn parse_digits(&self, digits: Vec<usize>) -> usize {
+        digits
+            .into_iter()
+            .rev()
+            .enumerate()
+            .fold(0, |previous, (index, digit)| {
+                let exponent: u32 = index.try_into().unwrap_or_else(|_| panic!("digit '{}' cannot be converted to u32", digit));
+                previous + ((*self as usize).pow(exponent) * digit)
+            })
     }
 }
 

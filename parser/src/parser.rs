@@ -18,13 +18,22 @@ parser! {
         rule _() = quiet!{ (whitespace() / "\n" / inline_comment() / line_comment())* }
 
         rule char() -> char
+          = "'" character:string_char() "'" { character }
+
+        rule string_char() -> char
           = r"\n" { '\n' }
           / r"\r" { '\r' }
           / r"\t" { '\t' }
           / r"\\" { '\\' }
-          / r"\u{" digits:digit(&Base::Hexadecimal)*<4> { 
+          / r"\0" { '\0' }
+          / r"\u{" digits:(digit(&Base::Hexadecimal))*<1,6> "}" {
             // TODO: convert digits to number and get char at that codepoint
-            '😊'
+            const DEFAULT: char = '�';
+            let charcode: u32 = match Base::Hexadecimal.parse_digits(digits).try_into() {
+              Ok(number) => number,
+              Err(_) => return DEFAULT
+            };
+            char::from_u32(charcode).unwrap_or(DEFAULT)
           }
           / "\"" { '\"' }
           / character:[_] {
@@ -96,8 +105,11 @@ parser! {
         /// Matches literals
         rule literal() -> Literal
           = value:number() {
-            Literal::Number(value)
-        }
+              Literal::Number(value)
+            }
+          / character:char() {
+              Literal::Char(character)
+            }
 
         rule binary_operator_l1() -> BinaryOperator
           = "+" { BinaryOperator::Add }
