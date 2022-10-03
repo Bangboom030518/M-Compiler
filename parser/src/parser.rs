@@ -1,6 +1,6 @@
 use crate::ast::{
-    Base, BinaryExpression, BinaryOperator, Expression, Fractional, Integer, Literal, Number, Sign,
-    Statement, UnaryExpression, UnaryOperator,
+    Base, BinaryExpression, BinaryOperator, CallExpression, Expression, Fractional, Integer,
+    Literal, Number, Sign, Statement, UnaryExpression, UnaryOperator,
 };
 use peg::parser;
 
@@ -20,6 +20,11 @@ parser! {
         rule char() -> char
           = "'" character:string_char() "'" { character }
 
+        rule string() -> String
+          = "\"" chars:(!['"'] character:string_char() { character })* "\"" {
+              chars.into_iter().collect()
+            }
+
         rule string_char() -> char
           = r"\n" { '\n' }
           / r"\r" { '\r' }
@@ -27,7 +32,6 @@ parser! {
           / r"\\" { '\\' }
           / r"\0" { '\0' }
           / r"\u{" digits:(digit(&Base::Hexadecimal))*<1,6> "}" {
-            // TODO: convert digits to number and get char at that codepoint
             const DEFAULT: char = '�';
             let charcode: u32 = match Base::Hexadecimal.parse_digits(digits).try_into() {
               Ok(number) => number,
@@ -35,7 +39,8 @@ parser! {
             };
             char::from_u32(charcode).unwrap_or(DEFAULT)
           }
-          / "\"" { '\"' }
+          / r#"\""# { '"' }
+          / r"\'" { '\'' }
           / character:[_] {
             character
           }
@@ -102,6 +107,11 @@ parser! {
             Number::Integer(integer)
           }
 
+        rule list() -> Vec<Expression>
+          = "[" _ expressions:(expression() ** (_ ",")) _ "]" {
+            expressions
+          }
+
         /// Matches literals
         rule literal() -> Literal
           = value:number() {
@@ -110,13 +120,19 @@ parser! {
           / character:char() {
               Literal::Char(character)
             }
+          / string:string() {
+              Literal::String(string)
+            }
+          / list:list() {
+              Literal::List(list)
+            }
 
         rule binary_operator_l1() -> BinaryOperator
           = "+" { BinaryOperator::Add }
           / "-" { BinaryOperator::Subtract }
 
         rule expression() -> Expression
-         = precedence!{
+         = precedence! {
             left:(@) _ operator:(
                   "+" { BinaryOperator::Add }
                 / "-" { BinaryOperator::Subtract }
@@ -146,6 +162,14 @@ parser! {
               / "!" { UnaryOperator::Bang }
             ) _ operand:(@) {
                 Expression::Unary(UnaryExpression::new(operand, operator))
+            }
+            --
+            callable:(@) "(" _ arguments:expression() ** (_ ",") ")" {
+                Expression::Call(CallExpression {
+                  callable: Box::new(callable),
+                  arguments,
+                  type_arguments: Vec::new()
+                })
             }
             --
             _ value:literal() _ {

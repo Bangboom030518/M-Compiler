@@ -8,5 +8,6 @@ pub enum Literal {
     Number(Number),
     List(Vec<Expression>),
     Char(char),
+    String(String),
 }
 
