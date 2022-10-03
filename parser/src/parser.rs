@@ -33,11 +33,14 @@ parser! {
           / r"\0" { '\0' }
           / r"\u{" digits:(digit(&Base::Hexadecimal))*<1,6> "}" {
             const DEFAULT: char = '�';
-            let charcode: u32 = match Base::Hexadecimal.parse_digits(digits).try_into() {
-              Ok(number) => number,
-              Err(_) => return DEFAULT
-            };
-            char::from_u32(charcode).unwrap_or(DEFAULT)
+            let charcode = Base::Hexadecimal.parse_digits(digits).and_then(|number| {
+              if let Ok(number) = number.try_into() {
+                Some(number)
+              } else {
+                None
+              }
+            });
+            charcode.map_or(DEFAULT, |charcode| char::from_u32(charcode).unwrap_or(DEFAULT))
           }
           / r#"\""# { '"' }
           / r"\'" { '\'' }

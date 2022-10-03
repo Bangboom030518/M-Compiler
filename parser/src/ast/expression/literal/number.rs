@@ -29,14 +29,20 @@ impl Base {
         }
     }
 
-    pub fn parse_digits(&self, digits: Vec<usize>) -> usize {
+    pub fn parse_digits(&self, digits: Vec<usize>) -> Option<usize> {
         digits
             .into_iter()
             .rev()
             .enumerate()
-            .fold(0, |previous, (index, digit)| {
-                let exponent: u32 = index.try_into().unwrap_or_else(|_| panic!("digit '{}' cannot be converted to u32", digit));
-                previous + ((*self as usize).pow(exponent) * digit)
+            .fold(Some(0), |previous, (index, digit)| {
+                previous.and_then(|previous| {
+                    let exponent: Result<u32, _> = index.try_into();
+                    if let Ok(exponent) = exponent {
+                        Some(previous + ((*self as usize).pow(exponent) * digit))
+                    } else {
+                        None
+                    }
+                })
             })
     }
 }
