@@ -1,21 +1,20 @@
 use crate::ast::{
-    Base, BinaryExpression, BinaryOperator, CallExpression, Expression, Fractional, Integer,
-    Literal, Number, Sign, Statement, UnaryExpression, UnaryOperator,
+    Base, BinaryExpression, BinaryOperator, CallExpression, Expression, Fractional, GenericParams,
+    Integer, Literal, Namespace, NamespaceAccess, Number, Sign, Statement, Type, UnaryExpression,
+    UnaryOperator,
 };
 use peg::parser;
 
 // TODO: find a way to make parser modular.
 parser! {
     pub grammar m_parser() for str {
-        rule whitespace() =  [' ' | '\n' | '\t']
-
         // Comments like this one
         rule line_comment() = "//" (!"\n" [_])* ("\n" / ![_])
 
         /* Comments like this */
         rule inline_comment() = "/*" (!"*/" [_])* "*/"
 
-        rule _() = quiet!{ (whitespace() / "\n" / inline_comment() / line_comment())* }
+        rule _() = quiet!{ (" " / "\n" / "\t" / "\r\n" / inline_comment() / line_comment())* }
 
         rule char() -> char
           = "'" character:string_char() "'" { character }
@@ -101,7 +100,6 @@ parser! {
             }
           / expected!("float")
 
-
         rule number() -> Number
           = fractional:fractional() {
             Number::Fractional(fractional)
@@ -110,10 +108,24 @@ parser! {
             Number::Integer(integer)
           }
 
+        rule csv<T>(kind: rule<T>) -> Vec<T>
+          = _ values:(kind() ** (_ ",")) _ ","? _ {
+            values
+          }
+
         rule list() -> Vec<Expression>
-          = "[" _ expressions:(expression() ** (_ ",")) _ "]" {
+          = "[" expressions:csv(<expression()>) "]" {
             expressions
           }
+
+        rule identifier_char()
+          = [character if character.is_alphanumeric() || character == '_']
+
+        rule identifier() -> String
+          = quiet!{ identifier:$([character if character.is_alphabetic()] identifier_char()*) {
+              identifier.to_string()
+            } }
+          / expected!("identifier")
 
         /// Matches literals
         rule literal() -> Literal
@@ -134,8 +146,56 @@ parser! {
           = "+" { BinaryOperator::Add }
           / "-" { BinaryOperator::Subtract }
 
+        rule data_type() -> Type
+          = precedence! {
+            operand:@ "<" arguments:csv(<data_type()>) ">" {
+              Type::GenericParams(GenericParams::new(operand, arguments))
+            }
+            --
+            left:(@) "::" right:@ {
+                Type::NamespaceAccess(NamespaceAccess::new(left, right))
+            }
+            --
+            identifier:identifier() {
+              Type::Identifier(identifier)
+            }
+          }
+
+        // rule data_type_without_namespace_access() -> Type
+        // = data_type:data_type() {?
+        //   if let Type::NamespaceAccess(_) = data_type {
+        //     Err("Oh dear, it's broken")
+        //   } else {
+        //     Ok(data_type)
+        //   }
+        // }
+        //   = precedence! {
+        //     operand:@ "<" arguments:csv(<data_type()>) ">" {
+        //       Type::GenericParams(GenericParams::new(operand, arguments))
+        //     }
+        //     --
+        //     identifier:identifier() {
+        //       Type::Identifier(identifier)
+        //     }
+        //   }
+
         rule expression() -> Expression
          = precedence! {
+            callable:(@) "(" arguments:csv(<expression()>) ")" {
+              Expression::Call(CallExpression {
+                callable: Box::new(callable),
+                arguments,
+                type_arguments: Vec::new()
+              })
+            }
+
+            parent:data_type() "::" child:(@) {
+              Expression::Namespace(Namespace {
+                  parent: vec![parent],
+                  child: Box::new(child)
+              })
+            }
+            --
             left:(@) _ operator:(
                   "+" { BinaryOperator::Add }
                 / "-" { BinaryOperator::Subtract }
@@ -167,18 +227,15 @@ parser! {
                 Expression::Unary(UnaryExpression::new(operand, operator))
             }
             --
-            callable:(@) "(" _ arguments:expression() ** (_ ",") ")" {
-                Expression::Call(CallExpression {
-                  callable: Box::new(callable),
-                  arguments,
-                  type_arguments: Vec::new()
-                })
-            }
-            --
             _ value:literal() _ {
                 Expression::Literal(value)
-            }
+              }
+
             _ "(" _ expression:expression() _ ")" _ { expression }
+            
+            _ identifier:identifier() _ {
+                Expression::Identifier(identifier)
+              }
         }
 
         rule statement() -> Statement
@@ -187,6 +244,6 @@ parser! {
           }
 
         pub rule body() -> Vec<Statement>
-          = statements:(_ statement:statement() _ ";" { statement })* { statements }
+          = statements:(_ statement:statement() _ ";" { statement })* _ { statements }
     }
 }

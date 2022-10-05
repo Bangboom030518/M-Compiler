@@ -1,1 +1,1 @@
-1("hello");
+write_line("Hello World");

@@ -7,3 +7,9 @@ pub struct Call {
     pub arguments: Vec<GenericExpression>,
     pub type_arguments: Vec<Type>,
 }
+
+#[derive(Debug)]
+pub struct Namespace {
+    pub parent: Vec<Type>,
+    pub child: Box<GenericExpression>,
+}
