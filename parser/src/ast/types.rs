@@ -16,26 +16,8 @@ impl GenericParams {
 }
 
 #[derive(Debug)]
-pub struct NamespaceAccess {
-    pub left: Box<Type>,
-    pub right: Box<Type>,
-}
-
-impl NamespaceAccess {
-    pub fn new(left: Type, right: Type) -> Self {
-        Self {
-            left: Box::new(left),
-            right: Box::new(right),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub enum Type {
     Identifier(String),
     GenericParams(GenericParams),
-    NamespaceAccess(
-        Vec<Type>
-        // NamespaceAccess
-    ),
+    NamespaceAccess(Vec<Type>),
 }

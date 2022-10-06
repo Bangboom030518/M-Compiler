@@ -35,13 +35,11 @@ impl Base {
             .rev()
             .enumerate()
             .fold(Some(0), |previous, (index, digit)| {
-                previous.and_then(|previous| {
-                    let exponent: Result<u32, _> = index.try_into();
-                    if let Ok(exponent) = exponent {
-                        Some(previous + ((*self as usize).pow(exponent) * digit))
-                    } else {
-                        None
-                    }
+                previous.and_then(|previous| -> Option<usize> {
+                    index
+                        .try_into()
+                        .ok()
+                        .map(|exponent| previous + ((*self as usize).pow(exponent) * digit))
                 })
             })
     }

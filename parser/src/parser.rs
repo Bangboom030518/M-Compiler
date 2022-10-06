@@ -1,9 +1,14 @@
 use crate::ast::{
-    Base, BinaryExpression, BinaryOperator, CallExpression, Expression, Fractional, GenericParams,
-    Integer, Literal, Namespace, NamespaceAccess, Number, Sign, Statement, Type, UnaryExpression,
-    UnaryOperator,
+    declaration::Import, Base, BinaryExpression, BinaryOperator, CallExpression, Declaration,
+    Expression, Fractional, GenericParams, Integer, Literal, Namespace, Number, Sign, Statement,
+    Type, UnaryExpression, UnaryOperator,
 };
 use peg::parser;
+
+const KEYWORDS: &[&str] = &[
+    "var", "let", "const", "static", "while", "for", "type", "struct", "enum", "trait", "import",
+    "from", "as", "export", "public",
+];
 
 // TODO: find a way to make parser modular.
 parser! {
@@ -32,14 +37,9 @@ parser! {
           / r"\0" { '\0' }
           / r"\u{" digits:(digit(&Base::Hexadecimal))*<1,6> "}" {
             const DEFAULT: char = '�';
-            let charcode = Base::Hexadecimal.parse_digits(digits).and_then(|number| {
-              if let Ok(number) = number.try_into() {
-                Some(number)
-              } else {
-                None
-              }
-            });
-            charcode.map_or(DEFAULT, |charcode| char::from_u32(charcode).unwrap_or(DEFAULT))
+            Base::Hexadecimal.parse_digits(digits)
+              .and_then(|number| number.try_into().ok())
+              .and_then(char::from_u32).unwrap_or(DEFAULT)
           }
           / r#"\""# { '"' }
           / r"\'" { '\'' }
@@ -109,12 +109,22 @@ parser! {
           }
 
         rule csv<T>(kind: rule<T>) -> Vec<T>
-          = _ values:(kind() ** (_ ",")) _ ","? _ {
+          = values:(_ kind:kind() ** (_ ",") { kind }) (_ ",")? {
             values
           }
 
+        rule import() -> Import
+          = "import " namespaces:(_ identifiers:identifier() ++ (_ ",") { identifiers }) " from " path:string() {
+            Import { path, namespaces }
+          }
+
+        rule declaration() -> Declaration
+         = import:import() {
+            Declaration::Import(import)
+         }
+
         rule list() -> Vec<Expression>
-          = "[" expressions:csv(<expression()>) "]" {
+          = "[" _ expressions:csv(<expression()>) _ "]" {
             expressions
           }
 
@@ -122,9 +132,12 @@ parser! {
           = [character if character.is_alphanumeric() || character == '_']
 
         rule identifier() -> String
-          = quiet!{ identifier:$([character if character.is_alphabetic()] identifier_char()*) {
-              identifier.to_string()
-            } }
+          = identifier:$(quiet! { [character if character.is_alphabetic()] identifier_char()* }) {? if KEYWORDS.contains(&identifier) {
+              Err("non-reserved word")
+            } else {
+              Ok(identifier.to_string())
+            }
+          }
           / expected!("identifier")
 
         /// Matches literals
@@ -142,19 +155,11 @@ parser! {
               Literal::List(list)
             }
 
-        rule binary_operator_l1() -> BinaryOperator
-          = "+" { BinaryOperator::Add }
-          / "-" { BinaryOperator::Subtract }
-
         rule data_type_term() -> Type
           = precedence! {
-            operand:@ "<" arguments:csv(<data_type()>) ">" {
+            operand:@ "<" _ arguments:csv(<data_type()>) _ ">" {
               Type::GenericParams(GenericParams::new(operand, arguments))
             }
-            // --
-            // left:(@) "::" right:@ {
-            //     Type::NamespaceAccess(NamespaceAccess::new(left, right))
-            // }
             --
             identifier:identifier() {
               Type::Identifier(identifier)
@@ -185,7 +190,7 @@ parser! {
 
         rule expression() -> Expression
           = precedence! {
-            callable:(@) "(" arguments:csv(<expression()>) ")" {
+            callable:(@) "(" _ arguments:csv(<expression()>) _ ")" {
               Expression::Call(CallExpression {
                 callable: Box::new(callable),
                 arguments,
@@ -243,7 +248,10 @@ parser! {
         }
 
         rule statement() -> Statement
-          = expression:expression() {
+          = declaration:declaration() {
+            Statement::Declaration(declaration)
+          }
+          / expression:expression() {
             Statement::Expression(expression)
           }
 
