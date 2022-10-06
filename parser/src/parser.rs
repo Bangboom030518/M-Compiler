@@ -173,7 +173,7 @@ parser! {
           }
 
         rule data_type_with_terminating_expression() -> Type
-          = left:data_type_term() terms:("::" data_type:data_type_term() ("::" expression()) { data_type })* {
+          = left:data_type_term() terms:("::" data_type:data_type_term() &("::" expression()) { data_type })* {
             if terms.is_empty() {
               left
             } else {
