@@ -146,41 +146,45 @@ parser! {
           = "+" { BinaryOperator::Add }
           / "-" { BinaryOperator::Subtract }
 
-        rule data_type() -> Type
+        rule data_type_term() -> Type
           = precedence! {
             operand:@ "<" arguments:csv(<data_type()>) ">" {
               Type::GenericParams(GenericParams::new(operand, arguments))
             }
-            --
-            left:(@) "::" right:@ {
-                Type::NamespaceAccess(NamespaceAccess::new(left, right))
-            }
+            // --
+            // left:(@) "::" right:@ {
+            //     Type::NamespaceAccess(NamespaceAccess::new(left, right))
+            // }
             --
             identifier:identifier() {
               Type::Identifier(identifier)
             }
           }
 
-        // rule data_type_without_namespace_access() -> Type
-        // = data_type:data_type() {?
-        //   if let Type::NamespaceAccess(_) = data_type {
-        //     Err("Oh dear, it's broken")
-        //   } else {
-        //     Ok(data_type)
-        //   }
-        // }
-        //   = precedence! {
-        //     operand:@ "<" arguments:csv(<data_type()>) ">" {
-        //       Type::GenericParams(GenericParams::new(operand, arguments))
-        //     }
-        //     --
-        //     identifier:identifier() {
-        //       Type::Identifier(identifier)
-        //     }
-        //   }
+        rule data_type() -> Type
+          = left:data_type_term() terms:("::" data_type:data_type_term() { data_type })* {
+            if terms.is_empty() {
+              left
+            } else {
+              let mut terms = terms;
+              terms.insert(0, left);
+              Type::NamespaceAccess(terms)
+            }
+          }
+
+        rule data_type_with_terminating_expression() -> Type
+          = left:data_type_term() terms:("::" data_type:data_type_term() ("::" expression()) { data_type })* {
+            if terms.is_empty() {
+              left
+            } else {
+              let mut terms = terms;
+              terms.insert(0, left);
+              Type::NamespaceAccess(terms)
+            }
+          }
 
         rule expression() -> Expression
-         = precedence! {
+          = precedence! {
             callable:(@) "(" arguments:csv(<expression()>) ")" {
               Expression::Call(CallExpression {
                 callable: Box::new(callable),
@@ -189,7 +193,7 @@ parser! {
               })
             }
 
-            parent:data_type() "::" child:(@) {
+            parent:data_type_with_terminating_expression() "::" child:(@) {
               Expression::Namespace(Namespace {
                   parent: vec![parent],
                   child: Box::new(child)
@@ -232,7 +236,7 @@ parser! {
               }
 
             _ "(" _ expression:expression() _ ")" _ { expression }
-            
+
             _ identifier:identifier() _ {
                 Expression::Identifier(identifier)
               }

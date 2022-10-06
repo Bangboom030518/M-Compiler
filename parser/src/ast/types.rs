@@ -34,5 +34,8 @@ impl NamespaceAccess {
 pub enum Type {
     Identifier(String),
     GenericParams(GenericParams),
-    NamespaceAccess(NamespaceAccess),
+    NamespaceAccess(
+        Vec<Type>
+        // NamespaceAccess
+    ),
 }

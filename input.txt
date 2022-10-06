@@ -1,1 +1,1 @@
-write_line("Hello World");
+IO<A::B::C>::write_line("Hello World");
