@@ -2,15 +2,17 @@ use annotate_snippets::{
     display_list::{DisplayList, FormatOptions},
     snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation},
 };
-use peg::{error::ParseError, str::LineCol};
+use peg::{error::ParseError as PegParseError, str::LineCol};
 
-pub struct CompilerError {
+#[derive(Debug)]
+pub struct ParseError {
     message: String,
 }
 
-impl CompilerError {
-    pub fn parse_error(error: ParseError<LineCol>, source: &str) -> Self {
-        let ParseError {
+impl ParseError {
+    #[must_use]
+    pub fn new(error: PegParseError<LineCol>, source: &str) -> Self {
+        let PegParseError {
             location: LineCol { offset, .. },
             expected,
         } = error;
@@ -58,7 +60,7 @@ impl CompilerError {
     }
 }
 
-impl std::fmt::Display for CompilerError {
+impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
