@@ -1,3 +1,5 @@
+// TODO: implement spanned on everything
+
 mod expression;
 mod types;
 pub mod declaration;
@@ -12,5 +14,15 @@ pub use declaration::Declaration;
 #[derive(Debug)]
 pub enum Statement {
     Expression(Expression),
-    Declaration(Declaration)
+    Declaration(Declaration),
+}
+
+pub trait Spanned {
+    fn as_span(&self) -> Span;
+}
+
+#[derive(Debug)]
+pub struct Span {
+    start: usize,
+    end: usize,
 }

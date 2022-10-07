@@ -19,7 +19,11 @@ parser! {
         /* Comments like this */
         rule inline_comment() = "/*" (!"*/" [_])* "*/"
 
-        rule _() = quiet!{ (" " / "\n" / "\t" / "\r\n" / inline_comment() / line_comment())* }
+        rule whitespace() = " " / "\n" / "\t" / "\r\n"
+
+        rule _() = quiet!{ (whitespace() / inline_comment() / line_comment())* }
+
+        rule __() = quiet!{ (whitespace() / inline_comment() / line_comment())+ }
 
         rule char() -> char
           = "'" character:string_char() "'" { character }
@@ -113,8 +117,11 @@ parser! {
             values
           }
 
+        rule namespace_csv() -> Vec<String>
+          = namespaces:((_ identifier:identifier() { identifier }) ++ (_ ",")) { namespaces }
+
         rule import() -> Import
-          = "import " namespaces:(_ identifiers:identifier() ++ (_ ",") { identifiers }) " from " path:string() {
+          = "import" __ namespaces:namespace_csv() __ "from" _ path:string() {
             Import { path, namespaces }
           }
 

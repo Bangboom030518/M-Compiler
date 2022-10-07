@@ -1,4 +1,0 @@
-import Stdout, a, b from "std/io";
-[1,2,3];
-[1 , 2 
-, 3];
