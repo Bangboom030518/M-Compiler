@@ -1,6 +1,6 @@
 use super::Expression as GenericExpression;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operator {
     Multiply,
     Add,
@@ -9,7 +9,7 @@ pub enum Operator {
     Exponent,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub left: Box<GenericExpression>,
     pub right: Box<GenericExpression>,

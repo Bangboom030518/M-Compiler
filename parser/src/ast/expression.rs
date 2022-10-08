@@ -8,12 +8,12 @@ mod binary;
 mod literal;
 mod unary;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
     Binary(Binary),
     Unary(Unary),
     Call(Call),
     Identifier(String),
-    Namespace(Namespace)
+    Namespace(Namespace),
 }

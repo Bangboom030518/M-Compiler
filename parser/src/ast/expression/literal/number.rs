@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Number {
     Integer(Integer),
     Fractional(Fractional),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Base {
     Binary = 2,
     Octal = 8,
@@ -65,14 +65,14 @@ impl TryFrom<u8> for Base {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Integer {
     pub digits: Vec<usize>,
     pub base: Base,
     pub sign: Sign,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fractional {
     pub sign: Sign,
     pub whole_digits: Vec<usize>,
@@ -80,7 +80,7 @@ pub struct Fractional {
     pub base: Base,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Sign {
     Negative,
     Positive,

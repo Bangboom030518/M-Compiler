@@ -4,7 +4,7 @@ use annotate_snippets::{
 };
 use peg::{error::ParseError as PegParseError, str::LineCol};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParseError {
     message: String,
 }

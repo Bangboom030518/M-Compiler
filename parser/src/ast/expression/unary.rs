@@ -1,12 +1,12 @@
 use super::Expression as GenericExpression;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operator {
     Negate,
     Bang,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub operand: Box<GenericExpression>,
     pub operator: Operator,

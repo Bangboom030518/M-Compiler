@@ -1,6 +1,6 @@
 // TODO: function type
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GenericParams {
     pub operand: Box<Type>,
     pub arguments: Vec<Type>,
@@ -15,7 +15,7 @@ impl GenericParams {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Type {
     Identifier(String),
     GenericParams(GenericParams),
