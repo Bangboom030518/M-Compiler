@@ -1,7 +1,27 @@
-#[derive(Debug, Clone)]
+use span::Span;
+use span_derive::Span;
+
+#[derive(Debug, Clone, Span)]
 pub enum Number {
     Integer(Integer),
     Fractional(Fractional),
+}
+
+#[derive(Debug, Clone, Span)]
+pub struct Integer {
+    pub digits: Vec<usize>,
+    pub base: Base,
+    pub sign: Sign,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Span)]
+pub struct Fractional {
+    pub sign: Sign,
+    pub whole_digits: Vec<usize>,
+    pub fractional_digits: Vec<usize>,
+    pub base: Base,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +40,7 @@ impl Base {
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
     ];
 
+    #[must_use]
     pub const fn get_digits(&self) -> &[char] {
         match self {
             Self::Binary => Self::BINARY_DIGITS,
@@ -29,6 +50,7 @@ impl Base {
         }
     }
 
+    #[must_use]
     pub fn parse_digits(&self, digits: Vec<usize>) -> Option<usize> {
         digits
             .into_iter()
@@ -63,21 +85,6 @@ impl TryFrom<u8> for Base {
             number => Err(number),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Integer {
-    pub digits: Vec<usize>,
-    pub base: Base,
-    pub sign: Sign,
-}
-
-#[derive(Debug, Clone)]
-pub struct Fractional {
-    pub sign: Sign,
-    pub whole_digits: Vec<usize>,
-    pub fractional_digits: Vec<usize>,
-    pub base: Base,
 }
 
 #[derive(Debug, Clone)]

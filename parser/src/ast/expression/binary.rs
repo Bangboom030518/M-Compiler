@@ -17,6 +17,7 @@ pub struct Expression {
 }
 
 impl Expression {
+    #[must_use]
     pub fn new(left: GenericExpression, right: GenericExpression, operator: Operator) -> Self {
         Self {
             left: Box::new(left),

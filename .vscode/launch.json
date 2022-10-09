@@ -6,8 +6,8 @@
             "name": "Debug Pest",
             "cargo": {
                 "args": [
-                    "build",
-                    "--bin=pest"
+                    "run",
+                    "--bin=compiler"
                 ]
             },
             "args": [],

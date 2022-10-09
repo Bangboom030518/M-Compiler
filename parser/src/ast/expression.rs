@@ -1,19 +1,16 @@
-pub use accessor::{Call, Namespace};
-pub use binary::{Expression as Binary, Operator as BinaryOperator};
-pub use literal::{Base, Fractional, Integer, Literal, Number, Sign};
-pub use unary::{Expression as Unary, Operator as UnaryOperator};
-
 pub mod accessor;
-mod binary;
-mod literal;
-mod unary;
+pub mod binary;
+pub mod literal;
+pub mod unary;
+
+pub use literal::Literal;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
-    Binary(Binary),
-    Unary(Unary),
-    Call(Call),
+    Binary(binary::Expression),
+    Unary(unary::Expression),
+    Call(accessor::Call),
+    Namespace(accessor::Namespace),
     Identifier(String),
-    Namespace(Namespace),
 }

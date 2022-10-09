@@ -13,6 +13,7 @@ pub struct Expression {
 }
 
 impl Expression {
+    #[must_use]
     pub fn new(operand: GenericExpression, operator: Operator) -> Self {
         Self {
             operand: Box::new(operand),

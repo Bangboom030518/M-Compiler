@@ -1,12 +1,13 @@
 // TODO: function type
 
 #[derive(Debug, Clone)]
-pub struct GenericParams {
+pub struct Params {
     pub operand: Box<Type>,
     pub arguments: Vec<Type>,
 }
 
-impl GenericParams {
+impl Params {
+    #[must_use]
     pub fn new(operand: Type, arguments: Vec<Type>) -> Self {
         Self {
             operand: Box::new(operand),
@@ -18,6 +19,6 @@ impl GenericParams {
 #[derive(Debug, Clone)]
 pub enum Type {
     Identifier(String),
-    GenericParams(GenericParams),
+    Params(Params),
     NamespaceAccess(Vec<Type>),
 }

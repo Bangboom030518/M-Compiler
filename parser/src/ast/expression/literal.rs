@@ -1,7 +1,7 @@
 use super::Expression;
-pub use number::{Base, Fractional, Integer, Number, Sign};
 
-mod number;
+pub mod number;
+pub use number::Number;
 
 #[derive(Debug, Clone)]
 pub enum Literal {

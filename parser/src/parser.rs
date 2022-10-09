@@ -1,9 +1,8 @@
-use crate::ast::{
-    declaration::Import, Base, BinaryExpression, BinaryOperator, CallExpression, Declaration,
-    Expression, Fractional, GenericParams, Integer, Literal, Namespace, Number, Sign, Statement,
-    Type, UnaryExpression, UnaryOperator,
-};
+use crate::ast::{declaration, expression, types, Declaration, Expression, Statement, Type};
+use expression::literal::{number, Number};
+use expression::Literal;
 use peg::parser;
+use span::Span;
 
 const KEYWORDS: &[&str] = &[
     "var", "let", "const", "static", "while", "for", "type", "struct", "enum", "trait", "import",
@@ -39,9 +38,9 @@ parser! {
           / r"\t" { '\t' }
           / r"\\" { '\\' }
           / r"\0" { '\0' }
-          / r"\u{" digits:(digit(&Base::Hexadecimal))*<1,6> "}" {
+          / r"\u{" digits:(digit(&number::Base::Hexadecimal))*<1,6> "}" {
             const DEFAULT: char = '�';
-            Base::Hexadecimal.parse_digits(digits)
+            number::Base::Hexadecimal.parse_digits(digits)
               .and_then(|number| number.try_into().ok())
               .and_then(char::from_u32).unwrap_or(DEFAULT)
           }
@@ -52,7 +51,7 @@ parser! {
           }
 
         /// Matches a digit given a base
-        rule digit(base: &Base) -> usize
+        rule digit(base: &number::Base) -> usize
           = digit:quiet!{ [digit if base.get_digits().contains(&digit.to_ascii_lowercase())] } {
                 let digits = base.get_digits();
                 digits.iter().position(|&character| character == digit.to_ascii_lowercase()).unwrap_or_else(|| {
@@ -65,40 +64,48 @@ parser! {
             }
           / expected!("digit")
 
-        rule base() -> Base
-          = "0b" { Base::Binary }
-          / "0o" { Base::Octal }
-          / "0x" { Base::Hexadecimal }
-          / "" { Base::Denary }
+        rule base() -> number::Base
+          = "0b" { number::Base::Binary }
+          / "0o" { number::Base::Octal }
+          / "0x" { number::Base::Hexadecimal }
+          / "" { number::Base::Denary }
 
-        rule sign() -> Sign
-          = "-" { Sign::Negative }
-          / "" { Sign::Positive }
+        rule sign() -> number::Sign
+          = "-" { number::Sign::Negative }
+          / "" { number::Sign::Positive }
 
-        rule digits(base: &Base) -> Vec<usize>
+        rule digits(base: &number::Base) -> Vec<usize>
           = digits:digit(base) ++ ("_"?) { digits }
 
-        rule integer() -> Integer
+        rule integer() -> number::Integer
           = quiet!{
                 sign:sign() base:base() digits:digits(&base) {
-                    Integer {
+                    number::Integer {
                         digits,
                         base,
-                        sign
+                        sign,
+                        span: Span {
+                          start: 0,
+                          end: 0,
+                        }
                     }
                 }
             }
           / expected!("integer")
 
-        rule fractional() -> Fractional
+        rule fractional() -> number::Fractional
           = quiet!{
                 sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) {
                     let whole_digits = whole_digits.unwrap_or_default();
-                    Fractional {
+                    number::Fractional {
                         sign,
                         whole_digits,
                         fractional_digits,
-                        base
+                        base,
+                        span: Span {
+                          start: 0,
+                          end: 0,
+                        }
                     }
                 }
             }
@@ -120,9 +127,9 @@ parser! {
         rule namespace_csv() -> Vec<String>
           = namespaces:((_ identifier:identifier() { identifier }) ++ (_ ",")) { namespaces }
 
-        rule import() -> Import
+        rule import() -> declaration::Import
           = "import" __ namespaces:namespace_csv() __ "from" _ path:string() {
-            Import { path, namespaces }
+            declaration::Import { path, namespaces }
           }
 
         rule declaration() -> Declaration
@@ -165,7 +172,7 @@ parser! {
         rule data_type_term() -> Type
           = precedence! {
             operand:@ "<" _ arguments:csv(<data_type()>) _ ">" {
-              Type::GenericParams(GenericParams::new(operand, arguments))
+              Type::Params(types::Params::new(operand, arguments))
             }
             --
             identifier:identifier() {
@@ -198,7 +205,7 @@ parser! {
         rule expression() -> Expression
           = precedence! {
             callable:(@) "(" _ arguments:csv(<expression()>) _ ")" {
-              Expression::Call(CallExpression {
+              Expression::Call(expression::accessor::Call {
                 callable: Box::new(callable),
                 arguments,
                 type_arguments: Vec::new()
@@ -206,41 +213,41 @@ parser! {
             }
 
             parent:data_type_with_terminating_expression() "::" child:(@) {
-              Expression::Namespace(Namespace {
+              Expression::Namespace(expression::accessor::Namespace {
                   parent: vec![parent],
                   child: Box::new(child)
               })
             }
             --
             left:(@) _ operator:(
-                  "+" { BinaryOperator::Add }
-                / "-" { BinaryOperator::Subtract }
+                  "+" { expression::binary::Operator::Add }
+                / "-" { expression::binary::Operator::Subtract }
             ) _ right:@ {
                 Expression::Binary(
-                    BinaryExpression::new(left, right, operator)
+                    expression::binary::Expression::new(left, right, operator)
                 )
             }
             --
             left:(@) _ operator:(
-                "*" { BinaryOperator::Multiply }
-              / "/" { BinaryOperator::Divide }
+                "*" { expression::binary::Operator::Multiply }
+              / "/" { expression::binary::Operator::Divide }
             ) _ right:@ {
                 Expression::Binary(
-                    BinaryExpression::new(left, right, operator)
+                    expression::binary::Expression::new(left, right, operator)
                 )
             }
             --
             left:@ _ "**" _ right:(@) {
                 Expression::Binary(
-                    BinaryExpression::new(left, right, BinaryOperator::Exponent)
+                    expression::binary::Expression::new(left, right, expression::binary::Operator::Exponent)
                 )
             }
             --
             operator:(
-                "-" { UnaryOperator::Negate }
-              / "!" { UnaryOperator::Bang }
+                "-" { expression::unary::Operator::Negate }
+              / "!" { expression::unary::Operator::Bang }
             ) _ operand:(@) {
-                Expression::Unary(UnaryExpression::new(operand, operator))
+                Expression::Unary(expression::unary::Expression::new(operand, operator))
             }
             --
             _ value:literal() _ {

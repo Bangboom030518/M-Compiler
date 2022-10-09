@@ -1,12 +1,20 @@
 use memoize::memoize;
 use parser::{parse, Declaration, ParseError, Statement};
-// use std::collections::{HashMap};
 use std::fs;
 
 #[derive(Debug, Clone)]
 pub enum ModuleBuildError {
-    FsError,
+    FsError(String),
     ParseError(ParseError),
+}
+
+impl std::fmt::Display for ModuleBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FsError(name) => write!(f, "Couldn't read file {}", name),
+            Self::ParseError(error) => write!(f, "{}", error)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -26,7 +34,7 @@ impl Module {
 fn build_module(path: String) -> Result<Module, ModuleBuildError> {
     let content = match fs::read_to_string(&path) {
         Ok(content) => content,
-        Err(_) => return Err(ModuleBuildError::FsError),
+        Err(_) => return Err(ModuleBuildError::FsError(path)),
     };
 
     let tree = match parse(&content) {
