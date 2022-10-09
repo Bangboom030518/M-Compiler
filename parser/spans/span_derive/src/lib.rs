@@ -27,7 +27,7 @@ pub fn derive_span(input: TokenStream) -> TokenStream {
             }
         },
         Data::Struct(data) => {
-            let fields = match data.fields {
+            let _fields = match data.fields {
                 Fields::Named(named) => named.named,
                 _ => panic!("Fields in struct should be named")
             };

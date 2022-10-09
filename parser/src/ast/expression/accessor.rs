@@ -1,5 +1,5 @@
 use super::Expression as GenericExpression;
-use crate::ast::types::Type;
+use crate::ast::data_type::Type;
 
 #[derive(Debug, Clone)]
 pub struct Call {

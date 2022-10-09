@@ -1,28 +1,17 @@
-use span::Span;
+pub mod float;
+pub mod integer;
+
 use span_derive::Span;
+pub use integer::Integer;
+pub use float::Float;
 
 #[derive(Debug, Clone, Span)]
 pub enum Number {
     Integer(Integer),
-    Fractional(Fractional),
+    Float(Float),
 }
 
-#[derive(Debug, Clone, Span)]
-pub struct Integer {
-    pub digits: Vec<usize>,
-    pub base: Base,
-    pub sign: Sign,
-    pub span: Span,
-}
 
-#[derive(Debug, Clone, Span)]
-pub struct Fractional {
-    pub sign: Sign,
-    pub whole_digits: Vec<usize>,
-    pub fractional_digits: Vec<usize>,
-    pub base: Base,
-    pub span: Span,
-}
 
 #[derive(Debug, Clone)]
 pub enum Base {

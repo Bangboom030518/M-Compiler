@@ -1,4 +1,4 @@
-use crate::ast::{declaration, expression, types, Declaration, Expression, Statement, Type};
+use crate::ast::{declaration, expression, data_type, Declaration, Expression, Statement, Type};
 use expression::literal::{number, Number};
 use expression::Literal;
 use peg::parser;
@@ -12,16 +12,18 @@ const KEYWORDS: &[&str] = &[
 // TODO: find a way to make parser modular.
 parser! {
     pub grammar m_parser() for str {
-        // Comments like this one
+        /// Comments begining "//" and taking up a single line
         rule line_comment() = "//" (!"\n" [_])* ("\n" / ![_])
 
-        /* Comments like this */
+        /// Multiline comments beginning "/*" and ending "*/"
         rule inline_comment() = "/*" (!"*/" [_])* "*/"
 
         rule whitespace() = " " / "\n" / "\t" / "\r\n"
 
+        /// Optional whitespace and comments
         rule _() = quiet!{ (whitespace() / inline_comment() / line_comment())* }
 
+        /// Required whitespace or comment
         rule __() = quiet!{ (whitespace() / inline_comment() / line_comment())+ }
 
         rule char() -> char
@@ -31,7 +33,8 @@ parser! {
           = "\"" chars:(!['"'] character:string_char() { character })* "\"" {
               chars.into_iter().collect()
             }
-
+        
+          
         rule string_char() -> char
           = r"\n" { '\n' }
           / r"\r" { '\r' }
@@ -77,13 +80,28 @@ parser! {
         rule digits(base: &number::Base) -> Vec<usize>
           = digits:digit(base) ++ ("_"?) { digits }
 
+        rule integer_type() -> number::integer::Type
+          = "u8" { number::integer::Type::Unsigned8Bit }
+          / "u16" { number::integer::Type::Unsigned16Bit }
+          / "u32" { number::integer::Type::Unsigned32Bit }
+          / "u64" { number::integer::Type::Unsigned64Bit }
+          / "u128" { number::integer::Type::Unsigned128Bit }
+          / "u128" { number::integer::Type::Unsigned128Bit }
+          / "i8" { number::integer::Type::Signed8Bit }
+          / "i16" { number::integer::Type::Signed16Bit }
+          / "i32" { number::integer::Type::Signed32Bit }
+          / "i64" { number::integer::Type::Signed64Bit }
+          / "i128" { number::integer::Type::Signed128Bit }
+          / "i128" { number::integer::Type::Signed128Bit }
+
         rule integer() -> number::Integer
           = quiet!{
-                sign:sign() base:base() digits:digits(&base) {
+                sign:sign() base:base() digits:digits(&base) data_type:integer_type() {
                     number::Integer {
-                        digits,
                         base,
+                        digits,
                         sign,
+                        data_type,
                         span: Span {
                           start: 0,
                           end: 0,
@@ -92,16 +110,21 @@ parser! {
                 }
             }
           / expected!("integer")
+        
+        rule float_type() -> number::float::Type
+          = "f32" { number::float::Type::F32Bit }
+          / "f64" { number::float::Type::F64Bit }
 
-        rule fractional() -> number::Fractional
+        rule float() -> number::Float
           = quiet!{
-                sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) {
+                sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) data_type:float_type() {
                     let whole_digits = whole_digits.unwrap_or_default();
-                    number::Fractional {
+                    number::Float {
                         sign,
                         whole_digits,
                         fractional_digits,
                         base,
+                        data_type,
                         span: Span {
                           start: 0,
                           end: 0,
@@ -112,8 +135,8 @@ parser! {
           / expected!("float")
 
         rule number() -> Number
-          = fractional:fractional() {
-            Number::Fractional(fractional)
+          = float:float() {
+            Number::Float(float)
           }
           / integer:integer() {
             Number::Integer(integer)
@@ -172,7 +195,7 @@ parser! {
         rule data_type_term() -> Type
           = precedence! {
             operand:@ "<" _ arguments:csv(<data_type()>) _ ">" {
-              Type::Params(types::Params::new(operand, arguments))
+              Type::Params(data_type::Params::new(operand, arguments))
             }
             --
             identifier:identifier() {

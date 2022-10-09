@@ -1,12 +1,12 @@
 // TODO: implement spanned on everything
 
+pub mod data_type;
 pub mod declaration;
 pub mod expression;
-pub mod types;
 
 pub use declaration::Declaration;
 pub use expression::Expression;
-pub use types::Type;
+pub use data_type::Type;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
