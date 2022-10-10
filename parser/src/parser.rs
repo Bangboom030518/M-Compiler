@@ -1,3 +1,5 @@
+// TODO: add spans to everything
+
 use crate::ast::{declaration, expression, data_type, Declaration, Expression, Statement, Type};
 use expression::literal::{number, Number};
 use expression::Literal;
@@ -96,15 +98,15 @@ parser! {
 
         rule integer() -> number::Integer
           = quiet!{
-                sign:sign() base:base() digits:digits(&base) data_type:integer_type() {
+                start:position!() sign:sign() base:base() digits:digits(&base) data_type:integer_type() end:position!() {
                     number::Integer {
                         base,
                         digits,
                         sign,
                         data_type,
                         span: Span {
-                          start: 0,
-                          end: 0,
+                          start,
+                          end,
                         }
                     }
                 }

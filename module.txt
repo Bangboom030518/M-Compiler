@@ -1,0 +1,4 @@
+import lolz from "input.txt";
+
+IO::write_line("HELLO!");
+1u8 + 1u8;

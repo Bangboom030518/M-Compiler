@@ -1,6 +1,6 @@
-use quote::quote;
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use quote::quote;
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
 #[proc_macro_derive(Span)]
 pub fn derive_span(input: TokenStream) -> TokenStream {
@@ -15,25 +15,27 @@ pub fn derive_span(input: TokenStream) -> TokenStream {
                     Fields::Unnamed(fields) => fields.unnamed.into_iter(),
                     _ => panic!("Fields in enum variant should be unnamed"),
                 };
-                assert_eq!(fields.len(), 1, "Every variant in Spanned enum should have exactly 1 field");
-                // let field = variant.fields.into_iter().next().unwrap();
-                // let ty = field.ty;
-                quote!(Self :: #variant_name ( item ) => item.as_span())
+                assert_eq!(
+                    fields.len(),
+                    1,
+                    "Every variant in Spanned enum should have exactly 1 field"
+                );
+                quote!(Self :: #variant_name ( item ) => span::Spanned::as_span(item))
             });
             quote! {
                 match self {
                     #(#variants),*
                 }
             }
-        },
-        Data::Struct(data) => {
-            let _fields = match data.fields {
-                Fields::Named(named) => named.named,
-                _ => panic!("Fields in struct should be named")
-            };
-            quote!(self.as_span())
         }
-        Data::Union(_) => panic!("Cannot derive span onto union. Make it an enum instead.")
+        Data::Struct(data) => {
+            match data.fields {
+                Fields::Named(named) => named.named,
+                _ => panic!("Fields in struct should be named"),
+            };
+            quote!(self.span)
+        }
+        Data::Union(_) => unimplemented!("Cannot derive Span onto union."),
     };
     quote! {
         impl #generics span::Spanned for #name #generics {
@@ -41,5 +43,6 @@ pub fn derive_span(input: TokenStream) -> TokenStream {
                 #function_content
             }
         }
-    }.into()
+    }
+    .into()
 }

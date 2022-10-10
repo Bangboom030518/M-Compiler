@@ -1,17 +1,15 @@
 pub mod float;
 pub mod integer;
 
-use span_derive::Span;
-pub use integer::Integer;
 pub use float::Float;
+pub use integer::Integer;
+use span_derive::Span;
 
 #[derive(Debug, Clone, Span)]
 pub enum Number {
     Integer(Integer),
     Float(Float),
 }
-
-
 
 #[derive(Debug, Clone)]
 pub enum Base {
