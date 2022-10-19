@@ -2,26 +2,40 @@ use super::expression::Expression;
 
 #[derive(Debug, Clone)]
 pub enum Declaration {
+    Variable(LocalVariable),
+}
+
+#[derive(Debug, Clone)]
+pub enum TopLevel {
     Import(Import),
-    Variable(Variable),
+    Variable(GlobalVariable),
 }
 
 #[derive(Debug, Clone)]
 pub struct Import {
     pub path: String,
-    pub namespaces: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Variable {
-    pub kind: VariableKind,
+pub struct LocalVariable {
+    pub kind: LocalVariableKind,
     pub value: Expression,
 }
 
 #[derive(Debug, Clone)]
-pub enum VariableKind {
-    Static,
+pub enum LocalVariableKind {
     Let,
-    Const,
     Var,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalVariable {
+    pub kind: GlobalVariableKind,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub enum GlobalVariableKind {
+    Static,
+    Const,
 }

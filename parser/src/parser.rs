@@ -149,19 +149,6 @@ parser! {
             values
           }
 
-        rule namespace_csv() -> Vec<String>
-          = namespaces:((_ identifier:identifier() { identifier }) ++ (_ ",")) { namespaces }
-
-        rule import() -> declaration::Import
-          = "import" __ namespaces:namespace_csv() __ "from" _ path:string() {
-            declaration::Import { path, namespaces }
-          }
-
-        rule declaration() -> Declaration
-         = import:import() {
-            Declaration::Import(import)
-         }
-
         rule list() -> Vec<Expression>
           = "[" _ expressions:csv(<expression()>) _ "]" {
             expressions
@@ -287,14 +274,49 @@ parser! {
         }
 
         rule statement() -> Statement
-          = declaration:declaration() {
-            Statement::Declaration(declaration)
-          }
-          / expression:expression() {
+          = expression:expression() {
             Statement::Expression(expression)
           }
 
         pub rule body() -> Vec<Statement>
           = statements:(_ statement:statement() _ ";" { statement })* _ { statements }
+
+        /// import std/net::tcp;
+        /// import std/std;
+        /// import extern;
+        /// import module from "package";
+        /// 
+        /// 
+        /// package
+        ///   - mod_1
+        ///   - mod_2
+        /// 
+        /// 
+        /// 
+        /// tcp::Server(|data| {
+        ///   tcp::response(handle_request(data))
+        /// })
+        /// 
+        /// std::math::sin()
+        /// package
+        /// 
+        /// dependant:
+        /// 
+        /// import package/mod_1;
+        /// 
+        
+        // rule namespace_csv() -> Vec<String>
+        //   = namespaces:((_ identifier:identifier() { identifier }) ++ (_ ",")) { namespaces }
+        rule import() -> declaration::Import
+          = "import" __  package:(package:identifier() "/" { package }) module:identifier() {
+            declaration::Import { path, namespaces }
+          }
+
+
+        rule top_level_declaration() -> declaration::TopLevel
+          = import:import() {
+            Declaration::Import(import)
+         }
+
     }
 }
