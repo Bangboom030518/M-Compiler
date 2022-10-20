@@ -143,7 +143,7 @@ parser! {
           / integer:integer() {
             Number::Integer(integer)
           }
-
+        
         rule csv<T>(kind: rule<T>) -> Vec<T>
           = values:(_ kind:kind() ** (_ ",") { kind }) (_ ",")? {
             values
@@ -278,45 +278,25 @@ parser! {
             Statement::Expression(expression)
           }
 
-        pub rule body() -> Vec<Statement>
+        rule body() -> Vec<Statement>
           = statements:(_ statement:statement() _ ";" { statement })* _ { statements }
 
-        /// import std/net::tcp;
-        /// import std/std;
-        /// import extern;
-        /// import module from "package";
-        /// 
-        /// 
-        /// package
-        ///   - mod_1
-        ///   - mod_2
-        /// 
-        /// 
-        /// 
-        /// tcp::Server(|data| {
-        ///   tcp::response(handle_request(data))
-        /// })
-        /// 
-        /// std::math::sin()
-        /// package
-        /// 
-        /// dependant:
-        /// 
-        /// import package/mod_1;
-        /// 
-        
-        // rule namespace_csv() -> Vec<String>
-        //   = namespaces:((_ identifier:identifier() { identifier }) ++ (_ ",")) { namespaces }
         rule import() -> declaration::Import
-          = "import" __  package:(package:identifier() "/" { package }) module:identifier() {
-            declaration::Import { path, namespaces }
+          = "import" __  path:(identifier() ++ "::") _ ";" {
+            declaration::Import { path }
           }
 
+        
 
         rule top_level_declaration() -> declaration::TopLevel
           = import:import() {
-            Declaration::Import(import)
+            declaration::TopLevel::Import(import)
          }
+
+         pub rule program() -> Vec<declaration::TopLevel>
+          = _ declarations:(top_level_declaration() ** _) _ {
+            declarations
+          }
 
     }
 }

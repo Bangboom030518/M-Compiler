@@ -13,7 +13,7 @@ pub enum TopLevel {
 
 #[derive(Debug, Clone)]
 pub struct Import {
-    pub path: String,
+    pub path: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

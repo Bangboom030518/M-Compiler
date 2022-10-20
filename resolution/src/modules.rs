@@ -1,5 +1,5 @@
 use memoize::memoize;
-use parser::{parse, Declaration, ParseError, Statement};
+use parser::{parse, declaration, ParseError, Statement};
 use std::{fs, path::Path};
 
 #[derive(Debug, Clone)]
@@ -35,7 +35,7 @@ pub fn build_module(path: String) -> Result<Module, ModuleBuildError> {
     let mut new_tree: Vec<Statement> = Vec::new();
 
     for node in tree.into_iter() {
-        if let Statement::Declaration(Declaration::Import(node)) = node {
+        if let declaration::TopLevel::Import(node) = node {
             let module = build_module(resolve_path(&node.path, &path))?;
             dependencies.push(module);
         } else {
@@ -48,6 +48,10 @@ pub fn build_module(path: String) -> Result<Module, ModuleBuildError> {
         tree: new_tree,
         path,
     })
+}
+
+fn resolve_path_chunks(path: &[&str]) -> String {
+
 }
 
 /// Resolves `path` relative to `dependant`.
