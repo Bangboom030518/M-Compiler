@@ -2,10 +2,10 @@
 /* TODO: imports
 python/rust style???
 */
-use modules::build_module;
 
-mod modules;
 
-pub fn build_file(path: &str) -> Result<Module, ModuleBuildError> {
-    build_module(path.to_string())
+mod module;
+
+pub fn build_file(path: &str) -> Result<module::Module, module::BuildError> {
+    module::build(path.to_string())
 }

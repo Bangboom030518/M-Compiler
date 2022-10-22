@@ -1,6 +1,6 @@
 // TODO: add spans to everything
 
-use crate::ast::{declaration, expression, data_type, Declaration, Expression, Statement, Type};
+use crate::ast::{data_type, declaration, expression, Declaration, Expression, Statement, Type};
 use expression::literal::{number, Number};
 use expression::Literal;
 use peg::parser;
@@ -35,8 +35,8 @@ parser! {
           = "\"" chars:(!['"'] character:string_char() { character })* "\"" {
               chars.into_iter().collect()
             }
-        
-          
+
+
         rule string_char() -> char
           = r"\n" { '\n' }
           / r"\r" { '\r' }
@@ -112,14 +112,14 @@ parser! {
                 }
             }
           / expected!("integer")
-        
+
         rule float_type() -> number::float::Type
-          = "f32" { number::float::Type::F32Bit }
-          / "f64" { number::float::Type::F64Bit }
+          = "f32" { number::float::Type::Float32Bit }
+          / "f64" { number::float::Type::Float64Bit }
 
         rule float() -> number::Float
           = quiet!{
-                sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) data_type:float_type() {
+                start:position!() sign:sign() base:base() whole_digits:digits(&base)? "." fractional_digits:digits(&base) data_type:float_type() end:position!() {
                     let whole_digits = whole_digits.unwrap_or_default();
                     number::Float {
                         sign,
@@ -128,8 +128,8 @@ parser! {
                         base,
                         data_type,
                         span: Span {
-                          start: 0,
-                          end: 0,
+                          start,
+                          end,
                         }
                     }
                 }
@@ -143,7 +143,7 @@ parser! {
           / integer:integer() {
             Number::Integer(integer)
           }
-        
+
         rule csv<T>(kind: rule<T>) -> Vec<T>
           = values:(_ kind:kind() ** (_ ",") { kind }) (_ ",")? {
             values
@@ -286,7 +286,7 @@ parser! {
             declaration::Import { path }
           }
 
-        
+
 
         rule top_level_declaration() -> declaration::TopLevel
           = import:import() {

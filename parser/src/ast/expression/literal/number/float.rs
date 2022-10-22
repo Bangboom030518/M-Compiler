@@ -14,6 +14,6 @@ pub struct Float {
 
 #[derive(Debug, Clone)]
 pub enum Type {
-    F32Bit,
-    F64Bit,
+    Float32Bit,
+    Float64Bit,
 }

@@ -1,3 +1,0 @@
-import lolz from "./module.txt";
-
-1u8 + 1u8;

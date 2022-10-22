@@ -3,7 +3,7 @@
 use resolution::build_file;
 
 fn main() {
-    let tree = build_file(r"C:\Users\Ben\Desktop\Sam and Charlie\Charlie\Rust\M-Compiler\input.txt").unwrap_or_else(|error| {
+    let tree = build_file(r"C:\Users\Ben\Desktop\Sam and Charlie\Charlie\Rust\M-Compiler\input.m").unwrap_or_else(|error| {
         eprintln!("{}", error);
         std::process::exit(1)
     });
