@@ -1,6 +1,6 @@
 use memoize::memoize;
 use parser::{
-    declaration::{self, TopLevel},
+    declaration::{self, Declaration},
     parse, ParseError,
 };
 use std::{ffi::OsStr, fs, path::Path};
@@ -41,7 +41,7 @@ impl std::fmt::Display for PathError {
 #[derive(Debug, Clone)]
 pub struct Module {
     pub dependencies: Vec<Module>,
-    pub tree: Vec<TopLevel>,
+    pub tree: Vec<Declaration>,
     pub path: String,
 }
 
@@ -52,10 +52,10 @@ pub fn build(path: String) -> Result<Module, BuildError> {
     let tree = parse(&content).map_err(BuildError::Parse)?;
 
     let mut dependencies: Vec<Module> = Vec::new();
-    let mut new_tree: Vec<TopLevel> = Vec::new();
+    let mut new_tree: Vec<Declaration> = Vec::new();
 
     for node in tree.into_iter() {
-        if let declaration::TopLevel::Import(node) = node {
+        if let declaration::Declaration::Import(node) = node {
             let file_path = resolve_path_chunks(&node.path, &path).map_err(BuildError::Path)?;
             let module = build(file_path)?;
             dependencies.push(module);

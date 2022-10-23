@@ -1,6 +1,6 @@
 // TODO: add spans to everything
 
-use crate::ast::{data_type, declaration, expression, Declaration, Expression, Statement, Type};
+use crate::ast::{data_type, declaration, expression, Expression, Statement, Type};
 use expression::literal::{number, Number};
 use expression::Literal;
 use peg::parser;
@@ -8,7 +8,7 @@ use span::Span;
 
 const KEYWORDS: &[&str] = &[
     "var", "let", "const", "static", "while", "for", "type", "struct", "enum", "trait", "import",
-    "from", "as", "export", "public",
+    "from", "as", "export", "public", "function", "super", "package"
 ];
 
 // TODO: find a way to make parser modular.
@@ -281,19 +281,19 @@ parser! {
         rule body() -> Vec<Statement>
           = statements:(_ statement:statement() _ ";" { statement })* _ { statements }
 
-        rule import() -> declaration::Import
+        rule import() -> declaration::top_level::Import
           = "import" __  path:(identifier() ++ "::") _ ";" {
-            declaration::Import { path }
+            declaration::top_level::Import { path }
           }
 
+        // rule function() -> declaration::Function
 
-
-        rule top_level_declaration() -> declaration::TopLevel
+        rule top_level_declaration() -> declaration::top_level::Declaration
           = import:import() {
-            declaration::TopLevel::Import(import)
-         }
+              declaration::top_level::Declaration::Import(import)
+            }
 
-         pub rule program() -> Vec<declaration::TopLevel>
+            pub rule program() -> Vec<declaration::top_level::Declaration>
           = _ declarations:(top_level_declaration() ** _) _ {
             declarations
           }

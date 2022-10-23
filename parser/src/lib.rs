@@ -12,6 +12,6 @@ mod parser;
 ///
 /// # Errors
 /// Returns a formatted error if the parser is unable to parse a string due to a user syntax error
-pub fn parse(input: &str) -> Result<Vec<declaration::TopLevel>, ParseError> {
+pub fn parse(input: &str) -> Result<Vec<declaration::Declaration>, ParseError> {
     m_parser::program(input).map_err(|error| ParseError::new(error, input))
 }
