@@ -46,7 +46,7 @@ pub struct Module {
 }
 
 #[memoize]
-pub fn build(path: String) -> Result<Module, BuildError> {
+pub fn build(path: String, root: String) -> Result<Module, BuildError> {
     let content = fs::read_to_string(&path).map_err(|_| BuildError::Fs(path.to_string()))?;
 
     let tree = parse(&content).map_err(BuildError::Parse)?;
@@ -56,8 +56,9 @@ pub fn build(path: String) -> Result<Module, BuildError> {
 
     for node in tree.into_iter() {
         if let declaration::Declaration::Import(node) = node {
-            let file_path = resolve_path_chunks(&node.path, &path).map_err(BuildError::Path)?;
-            let module = build(file_path)?;
+            let file_path =
+                resolve_path_chunks(&node.path, &path, &root).map_err(BuildError::Path)?;
+            let module = build(file_path, root.clone())?;
             dependencies.push(module);
         } else {
             new_tree.push(node);
@@ -71,16 +72,32 @@ pub fn build(path: String) -> Result<Module, BuildError> {
     })
 }
 
-fn resolve_path_chunks(path: &[String], dependant: &str) -> Result<String, PathError> {
+/// # Arguments
+/// - `path`: The import path, as a list of the segments seperated by `::`.
+/// - `dependant`: The absolute file path of the dependant, or the file where the import declaration is found.
+/// - `root`: The absolute path to the project root
+fn resolve_path_chunks(path: &[String], dependant: &str, root: &str) -> Result<String, PathError> {
+    let mut path = path.into_iter().peekable();
     let dependant_path = Path::new(dependant);
     let dependant_file_name = dependant_path.file_name().unwrap_or_default();
-    let mut result_path = String::from(
-        dependant_path
-            .parent()
-            .and_then(Path::to_str)
-            .unwrap_or("/"),
-    );
-    for (index, namespace) in path.iter().enumerate() {
+    let mut result_path = path.peek()
+        .and_then(|namespace| {
+            if namespace.as_str() == "package" {
+                path.next();
+                Some(root)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            dependant_path
+                .parent()
+                .and_then(Path::to_str)
+                .unwrap_or("/")
+        })
+        .to_string();
+
+    for namespace in path {
         result_path += &match namespace.as_str() {
             "super" => if dependant_file_name == OsStr::new("index.m") {
                 "/.."
@@ -88,13 +105,7 @@ fn resolve_path_chunks(path: &[String], dependant: &str) -> Result<String, PathE
                 "/index.m"
             }
             .to_string(),
-            "package" => {
-                if index > 0 {
-                    return Err(PathError::PackageNotAtStart);
-                } else {
-                    todo!("Get package root!")
-                }
-            }
+            "package" => return Err(PathError::PackageNotAtStart),
             _ => {
                 if Path::new(namespace).is_dir() {
                     format!("/{}/index.m", namespace)

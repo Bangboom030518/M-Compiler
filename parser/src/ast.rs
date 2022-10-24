@@ -11,4 +11,7 @@ pub use expression::Expression;
 pub enum Statement {
     Expression(expression::Expression),
     Declaration(declaration::local::Declaration),
+    Continue,
+    Break,
+    Return(expression::Expression),
 }

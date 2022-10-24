@@ -8,7 +8,7 @@ use span::Span;
 
 const KEYWORDS: &[&str] = &[
     "var", "let", "const", "static", "while", "for", "type", "struct", "enum", "trait", "import",
-    "from", "as", "export", "public", "function", "super", "package"
+    "from", "as", "export", "public", "function", "super", "package", "return", "break", "continue"
 ];
 
 // TODO: find a way to make parser modular.
@@ -272,10 +272,22 @@ parser! {
                 Expression::Identifier(identifier)
               }
         }
+        
+        rule continue_statement() -> ()
+          = "continue" {}
+
+        rule break_statement() -> ()
+          = "break" {}
 
         rule statement() -> Statement
           = expression:expression() {
             Statement::Expression(expression)
+          }
+          / continue_statement() {
+            Statement::Continue
+          }
+          / break_statement() {
+            Statement::Break
           }
 
         rule body() -> Vec<Statement>

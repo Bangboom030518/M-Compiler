@@ -16,7 +16,6 @@ impl ParseError {
             location: LineCol { offset, .. },
             expected,
         } = error;
-
         let expected = format!("expected {}", expected);
         let source = format!("{} ", source);
 
