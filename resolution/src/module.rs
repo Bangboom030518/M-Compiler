@@ -77,10 +77,11 @@ pub fn build(path: String, root: String) -> Result<Module, BuildError> {
 /// - `dependant`: The absolute file path of the dependant, or the file where the import declaration is found.
 /// - `root`: The absolute path to the project root
 fn resolve_path_chunks(path: &[String], dependant: &str, root: &str) -> Result<String, PathError> {
-    let mut path = path.into_iter().peekable();
+    let first_namespace = path.get(0);
+    let mut path = path.iter();
     let dependant_path = Path::new(dependant);
     let dependant_file_name = dependant_path.file_name().unwrap_or_default();
-    let mut result_path = path.peek()
+    let mut result_path = first_namespace
         .and_then(|namespace| {
             if namespace.as_str() == "package" {
                 path.next();
