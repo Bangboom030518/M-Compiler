@@ -1,11 +1,10 @@
 import module;
 
-
-int main() {
-    return 1;
-}
-
-for (i in 1..100) loop:{
-    loop:return "Hello!";
-    
+function money() {
+    callback(|| callback:{
+        return@callback "hello!";
+        result.unwrap_or(return None)
+        result.or_break();
+        (return@callback? result).sus;
+    })
 }

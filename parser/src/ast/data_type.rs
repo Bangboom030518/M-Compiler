@@ -18,7 +18,7 @@ impl Params {
 
 #[derive(Debug, Clone)]
 pub enum Type {
-    Identifier(String),
+    Identifier(super::Identifier),
     Params(Params),
     NamespaceAccess(Vec<Type>),
 }

@@ -12,5 +12,5 @@ pub enum Expression {
     Unary(unary::Expression),
     Call(accessor::Call),
     Namespace(accessor::Namespace),
-    Identifier(String),
+    Identifier(super::Identifier),
 }

@@ -1,4 +1,4 @@
-use crate::Expression;
+use crate::{pattern::Pattern, Expression, Identifier, Type};
 
 #[derive(Debug, Clone)]
 pub enum Declaration {
@@ -8,7 +8,7 @@ pub enum Declaration {
 
 #[derive(Debug, Clone)]
 pub struct Import {
-    pub path: Vec<String>,
+    pub path: Vec<Identifier>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,4 +21,22 @@ pub struct Variable {
 pub enum VariableKind {
     Static,
     Const,
+}
+
+pub struct Parameter {
+    pattern: Pattern,
+    data_type: Type,
+}
+
+pub struct TypeBound {
+    data_type: Type,
+    // TODO: not just traits lolz
+    trait_bound: Type,
+}
+
+pub struct Function {
+    type_parameters: Vec<Identifier>,
+    type_bounds: Vec<TypeBound>,
+    parameters: Vec<Parameter>,
+    body: Expression,
 }

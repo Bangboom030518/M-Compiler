@@ -1,6 +1,6 @@
 // TODO: add spans to everything
 
-use crate::ast::{data_type, declaration, expression, Expression, Statement, Type};
+use crate::ast::{data_type, declaration, expression, pattern, Expression, Identifier, Statement, Type};
 use expression::literal::{number, Number};
 use expression::Literal;
 use peg::parser;
@@ -8,7 +8,8 @@ use span::Span;
 
 const KEYWORDS: &[&str] = &[
     "var", "let", "const", "static", "while", "for", "type", "struct", "enum", "trait", "import",
-    "from", "as", "export", "public", "function", "super", "package", "return", "break", "continue"
+    "from", "as", "export", "public", "function", "super", "package", "return", "break",
+    "continue",
 ];
 
 // TODO: find a way to make parser modular.
@@ -145,7 +146,7 @@ parser! {
           }
 
         rule csv<T>(kind: rule<T>) -> Vec<T>
-          = values:(_ kind:kind() ** (_ ",") { kind }) (_ ",")? {
+          = values:(_ kind:kind() ++ (_ ",") { kind }) (_ ",")? {
             values
           }
 
@@ -157,11 +158,14 @@ parser! {
         rule identifier_char()
           = [character if character.is_alphanumeric() || character == '_']
 
-        rule identifier() -> String
-          = identifier:$(quiet! { [character if character.is_alphabetic()] identifier_char()* }) {? if KEYWORDS.contains(&identifier) {
+        rule identifier() -> Identifier
+          =  start:position!() identifier:$(quiet! { [character if character.is_alphabetic()] identifier_char()* }) end:position!() {? if KEYWORDS.contains(&identifier) {
               Err("non-reserved word")
             } else {
-              Ok(identifier.to_string())
+              Ok(Identifier {
+                name: identifier.to_string(),
+                span: Span { start, end },
+              })
             }
           }
           / expected!("identifier")
@@ -272,7 +276,7 @@ parser! {
                 Expression::Identifier(identifier)
               }
         }
-        
+
         rule continue_statement() -> ()
           = "continue" {}
 
@@ -298,7 +302,33 @@ parser! {
             declaration::top_level::Import { path }
           }
 
-        // rule function() -> declaration::Function
+        rule type_parameters() -> Vec<Identifier>
+          = "<" _ identifiers:csv(<identifier()>) _ ">" {
+            identifiers
+          }
+
+        rule pattern() -> pattern::Pattern
+          = identifier:identifier() {
+            pattern::Pattern::Identifier(identifier)
+          }
+        
+        rule parameter() -> declaration::top_level::Parameter
+          = pattern:pattern() _ ":" _ data_type:data_type() {
+            declaration::top_level::Parameter { pattern, data_type }
+          }
+
+        rule parameters() -> Vec<declaration::top_level::Parameter>
+          = "(" _ params:csv(<parameter()>) _ ")" {
+            params
+          }
+
+        rule function() -> declaration::top_level::Function
+          = "function" __ type_parameters:type_parameters()? _ parameters:parameters() _ body:expression() {
+            declaration::top_level::Function {
+              type_parameters,
+              parameters
+            }
+          }
 
         rule top_level_declaration() -> declaration::top_level::Declaration
           = import:import() {
