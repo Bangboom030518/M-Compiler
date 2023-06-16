@@ -1,7 +1,21 @@
 use super::Identifier;
-use span_derive::Span;
+use crate::prelude::*;
 
-#[derive(Clone, Debug, Span)]
+#[derive(Clone, Debug, PartialEq, Eq, Rand)]
 pub enum Pattern {
     Identifier(Identifier),
+}
+
+impl NomParse for Pattern {
+    fn parse(input: &str) -> IResult<Self> {
+        map(Identifier::parse, Self::Identifier)(input)
+    }
+}
+
+impl std::fmt::Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Identifier(identifier) => write!(f, "{identifier}"),
+        }
+    }
 }

@@ -1,17 +1,37 @@
 #![warn(clippy::pedantic, clippy::nursery)]
+#![feature(iter_intersperse)]
 
-pub use ast::*;
-pub use errors::ParseError;
-use parser::m_parser;
+pub mod ast;
+mod prelude;
+mod whitespace;
 
-mod ast;
-mod errors;
-mod parser;
+use ast::prelude::*;
+use prelude::*;
+use rand::prelude::*;
 
-/// Parses a string into the parse tree
-///
-/// # Errors
-/// Returns a formatted error if the parser is unable to parse a string due to a user syntax error
-pub fn parse(input: &str) -> Result<Vec<declaration::Declaration>, ParseError> {
-    m_parser::program(input).map_err(|error| ParseError::new(error, input))
+fn gen_rand_vec<R: rand::Rng + ?Sized, T, F: FnMut(&mut R) -> T>(
+    rng: &mut R,
+    mut generate: F,
+) -> Vec<T> {
+    let length = (0..3).choose(rng).unwrap();
+    let mut result = Vec::with_capacity(length);
+    for _ in 0..length {
+        result.push(generate(rng));
+    }
+    result
+}
+
+fn gen_rand_string<R: rand::Rng + ?Sized>(rng: &mut R) -> String {
+    let chars: Vec<char> = gen_rand_vec(rng, rand::Rng::gen);
+    chars.into_iter().collect()
+}
+
+pub fn parse(input: &str) -> IResult<Vec<Statement>> {
+    many0(terminated(
+        map(
+            whitespace_delimited(Expression::parse),
+            Statement::Expression,
+        ),
+        char(';'),
+    ))(input)
 }

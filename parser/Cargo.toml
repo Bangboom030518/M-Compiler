@@ -6,10 +6,7 @@ edition = "2021"
 repository = "https://github.com/Bangboom030518/M-Compiler"
 
 [dependencies]
-peg = "0.8.0"
-annotate-snippets = "0.9"
-span = { path = "./spans/span" }
-span_derive = { path = "./spans/span_derive" }
-
-[dev-dependencies]
 rand = "0.8"
+nom = "7.1"
+rand_derive = { path = "./rand_derive" }
+lazy_static = "1.4"

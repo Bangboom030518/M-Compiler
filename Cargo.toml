@@ -8,3 +8,4 @@ members = [
     "parser",
     "compiler"
 ]
+default-run = "compiler"

@@ -1,0 +1,15 @@
+[package]
+name = "parser"
+description = "parses the M language"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Bangboom030518/M-Compiler"
+
+[dependencies]
+peg = "0.8.0"
+annotate-snippets = "0.9"
+span = { path = "./spans/span" }
+span_derive = { path = "./spans/span_derive" }
+
+[dev-dependencies]
+rand = "0.8"

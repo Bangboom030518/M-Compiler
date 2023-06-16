@@ -1,6 +1,10 @@
 // TODO: function type
 
-#[derive(Debug, Clone)]
+use crate::prelude::*;
+use super::Identifier;
+
+#[derive(Debug, Clone, PartialEq, Eq, Rand)]
+#[exclude_test]
 pub struct Params {
     pub operand: Box<Type>,
     pub arguments: Vec<Type>,
@@ -8,17 +12,19 @@ pub struct Params {
 
 impl Params {
     #[must_use]
-    pub fn new(operand: Type, arguments: Vec<Type>) -> Self {
+    pub fn new(operand: Type, arguments: &[Type]) -> Self {
         Self {
             operand: Box::new(operand),
-            arguments,
+            arguments: Vec::from(arguments),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Rand)]
+#[exclude_test]
 pub enum Type {
-    Identifier(super::Identifier),
+    Identifier(Identifier),
     Params(Params),
     NamespaceAccess(Vec<Type>),
 }
+

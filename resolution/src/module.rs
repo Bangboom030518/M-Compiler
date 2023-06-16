@@ -1,8 +1,5 @@
 use memoize::memoize;
-use parser::{
-    declaration::{self, Declaration},
-    parse, ParseError,
-};
+use parser::{ast::prelude::*, parse};
 use std::{ffi::OsStr, fs, path::Path};
 
 #[derive(Debug, Clone)]
