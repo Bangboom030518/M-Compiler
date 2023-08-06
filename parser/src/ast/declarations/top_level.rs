@@ -1,11 +1,15 @@
 use crate::ast::{Expression, Identifier, Pattern, Type};
 use crate::prelude::*;
+pub use function::Function;
+
+mod function;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 #[exclude_test]
 pub enum Declaration {
     Import(Import),
     Variable(Variable),
+    Function(Function)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -46,6 +50,8 @@ impl NomParse for VariableKind {
     }
 }
 
+/*
+
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 #[exclude_test]
 pub struct Parameter {
@@ -69,3 +75,4 @@ pub struct Function {
     parameters: Vec<Parameter>,
     body: Expression,
 }
+*/

@@ -55,13 +55,11 @@ impl Base {
             .into_iter()
             .rev()
             .enumerate()
-            .fold(Some(0), |previous, (index, digit)| {
-                previous.and_then(|previous| -> Option<usize> {
-                    index
-                        .try_into()
-                        .ok()
-                        .map(|exponent| previous + (self.as_number().pow(exponent) * digit))
-                })
+            .try_fold(0, |previous, (index, digit)| {
+                index
+                    .try_into()
+                    .ok()
+                    .map(|exponent| previous + (self.as_number().pow(exponent) * digit))
             })
     }
 

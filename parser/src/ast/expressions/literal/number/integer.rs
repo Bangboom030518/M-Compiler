@@ -94,3 +94,18 @@ impl Default for Type {
         Self::Signed32
     }
 }
+
+impl TryFrom<Integer> for isize {
+    type Error = ();
+
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        let unsigned = value
+            .base
+            .parse_digits(value.digits)
+            .map_or_else(|| Err(()), Ok)?;
+        match value.sign {
+            Sign::Positive => Ok(unsigned as isize), 
+            Sign::Negative => Ok(unsigned as isize * -1),
+        }
+    }
+}

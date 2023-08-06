@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use lazy_static::lazy_static;
 use rand::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -53,7 +52,7 @@ impl NomParse for Identifier {
     }
 }
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref LOWERCASE_CHARS: Vec<char> = ('a'..='z').collect();
     static ref UPPERCASE_CHARS: Vec<char> = ('A'..='Z').collect();
     static ref NUMERIC_CHARS: Vec<char> = ('0'..='9').collect();

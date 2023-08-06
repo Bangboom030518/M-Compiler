@@ -1,4 +1,4 @@
-import module;
+/*import module;
 
 function money() {
     callback(|| callback:{
@@ -7,4 +7,6 @@ function money() {
         result.or_break();
         (return@callback? result).sus;
     })
-}
+}*/
+
+function sum(a, b) do a + b;

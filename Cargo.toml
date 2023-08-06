@@ -6,6 +6,8 @@
 [workspace]
 members = [
     "parser",
-    "compiler"
+    "compiler",
+    "translate"
 ]
 default-run = "compiler"
+resolver = "2"
