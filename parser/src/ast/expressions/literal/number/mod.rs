@@ -26,11 +26,22 @@ pub fn digits<'a>(base: Base) -> impl FnMut(&'a str) -> IResult<Vec<usize>> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub enum Number {
+    #[default_variant]
     Integer(Integer),
+    // #[skip_variant]
     Float(Float),
 }
 
-impl NomParse for Number {
+impl Number {
+    pub const fn sign(&self) -> Sign {
+        match self {
+            Self::Float(float) => float.sign,
+            Self::Integer(integer) => integer.sign,
+        }
+    }
+}
+
+impl Parse for Number {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             map(Integer::parse, Self::Integer),

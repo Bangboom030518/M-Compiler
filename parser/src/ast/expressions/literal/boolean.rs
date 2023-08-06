@@ -4,7 +4,7 @@ use rand_derive::Rand;
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub struct Boolean(bool);
 
-impl NomParse for Boolean {
+impl Parse for Boolean {
     fn parse(input: &str) -> IResult<Self> {
         map(
             alt((value(true, tag("true")), value(false, tag("false")))),

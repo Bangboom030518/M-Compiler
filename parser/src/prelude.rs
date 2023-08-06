@@ -17,7 +17,7 @@ pub use nom::InputTake;
 pub use rand_derive::Rand;
 pub use sequence::*;
 
-pub trait NomParse: Sized {
+pub trait Parse: Sized {
     fn parse(input: &str) -> IResult<Self>;
 
     fn test()

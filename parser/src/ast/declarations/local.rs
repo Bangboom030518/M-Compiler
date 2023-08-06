@@ -30,7 +30,7 @@ impl std::fmt::Display for VariableKind {
     }
 }
 
-impl NomParse for VariableKind {
+impl Parse for VariableKind {
     fn parse(input: &str) -> IResult<Self> {
         alt((value(Self::Let, tag("let")), value(Self::Var, tag("var"))))(input)
     }

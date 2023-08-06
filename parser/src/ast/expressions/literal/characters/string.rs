@@ -4,7 +4,7 @@ use crate::prelude::*;
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub struct String(pub Vec<CodePoint>);
 
-impl NomParse for String {
+impl Parse for String {
     fn parse(input: &str) -> IResult<Self> {
         delimited(
             char('"'),

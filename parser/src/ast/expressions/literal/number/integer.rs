@@ -9,7 +9,7 @@ pub struct Integer {
     pub data_type: Type,
 }
 
-impl NomParse for Integer {
+impl Parse for Integer {
     fn parse(input: &str) -> IResult<Self> {
         let (input, Prefix { sign, base }) = Prefix::parse(input)?;
 
@@ -51,7 +51,7 @@ pub enum Type {
     Signed128,
 }
 
-impl NomParse for Type {
+impl Parse for Type {
     fn parse(input: &str) -> IResult<Self> {
         preceded(
             char(':'),
@@ -95,17 +95,4 @@ impl Default for Type {
     }
 }
 
-impl TryFrom<Integer> for isize {
-    type Error = ();
-
-    fn try_from(value: Integer) -> Result<Self, Self::Error> {
-        let unsigned = value
-            .base
-            .parse_digits(value.digits)
-            .map_or_else(|| Err(()), Ok)?;
-        match value.sign {
-            Sign::Positive => Ok(unsigned as isize), 
-            Sign::Negative => Ok(unsigned as isize * -1),
-        }
-    }
-}
+impl 

@@ -159,7 +159,7 @@ impl JIT {
             module: &mut self.module,
         };
         for expr in stmts {
-            trans.translate_expr(expr);
+            trans.translate_expression(expr);
         }
 
         // Set up the return variable of the function. Above, we declared a
@@ -189,8 +189,8 @@ struct FunctionTranslator<'a> {
 impl<'a> FunctionTranslator<'a> {
     /// When you write out instructions in Cranelift, you get back `Value`s. You
     /// can then use these references in other instructions.
-    fn translate_expr(&mut self, expr: Expression) -> Value {
-        match expr {
+    fn translate_expression(&mut self, expression: Expression) -> Value {
+        match expression {
             Expression::Literal(literal) => {
                 let Literal::Number(Number::Integer(number)) = literal else {
                     todo!("more literals")
@@ -200,36 +200,62 @@ impl<'a> FunctionTranslator<'a> {
                 self.builder.ins().iconst(self.int, integer)
             }
             Expression::Binary(binary) => {
-                let BinaryExpression { left, right, operator }  = binary;
-                let left = self.translate_expr(*left);
-                let right = self.translate_expr(*right);
+                let BinaryExpression {
+                    left,
+                    right,
+                    operator,
+                } = binary;
                 match operator {
-                    BinaryOperator::Add => self.builder.ins().iadd(left, right),
-                    BinaryOperator::Subtract => self.builder.ins().isub(left, right),
-                    BinaryOperator::Multiply => self.builder.ins().imul(left, right),
-                    BinaryOperator::Divide => self.builder.ins().udiv(left, right)
+                    BinaryOperator::Add => self.builder.ins().iadd(
+                        self.translate_expression(*left),
+                        self.translate_expression(*right),
+                    ),
+                    BinaryOperator::Subtract => self.builder.ins().isub(
+                        self.translate_expression(*left),
+                        self.translate_expression(*right),
+                    ),
+                    BinaryOperator::Multiply => self.builder.ins().imul(
+                        self.translate_expression(*left),
+                        self.translate_expression(*right),
+                    ),
+                    BinaryOperator::Divide => self.builder.ins().udiv(
+                        self.translate_expression(*left),
+                        self.translate_expression(*right),
+                    ),
+                    BinaryOperator::Remainder => self.builder.ins().srem(
+                        self.translate_expression(*left),
+                        self.translate_expression(*right),
+                    ),
+                    BinaryOperator::Exponent => todo!("allow exponentation"),
+                    BinaryOperator::Equal => self.translate_icmp(IntCC::Equal, *left, *right),
+                    BinaryOperator::NotEqual => self.translate_icmp(IntCC::NotEqual, *left, *right),
+                    BinaryOperator::GreaterThan => {
+                        self.translate_icmp(IntCC::SignedGreaterThan, *left, *right)
+                    }
+                    BinaryOperator::LessThan => {
+                        self.translate_icmp(IntCC::SignedLessThan, *left, *right)
+                    }
+                    BinaryOperator::GreaterThanOrEqual => {
+                        self.translate_icmp(IntCC::SignedLessThanOrEqual, *left, *right)
+                    }
+                    BinaryOperator::LessThanOrEqual => {
+                        self.translate_icmp(IntCC::SignedLessThanOrEqual, *left, *right)
+                    }
                 }
-            }
-            Expr::Eq(lhs, rhs) => self.translate_icmp(IntCC::Equal, *lhs, *rhs),
-            Expr::Ne(lhs, rhs) => self.translate_icmp(IntCC::NotEqual, *lhs, *rhs),
-            Expr::Lt(lhs, rhs) => self.translate_icmp(IntCC::SignedLessThan, *lhs, *rhs),
-            Expr::Le(lhs, rhs) => self.translate_icmp(IntCC::SignedLessThanOrEqual, *lhs, *rhs),
-            Expr::Gt(lhs, rhs) => self.translate_icmp(IntCC::SignedGreaterThan, *lhs, *rhs),
-            Expr::Ge(lhs, rhs) => self.translate_icmp(IntCC::SignedGreaterThanOrEqual, *lhs, *rhs),
-            Expr::Call(name, args) => self.translate_call(name, args),
-            Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
-            Expr::Identifier(name) => {
-                // `use_var` is used to read the value of a variable.
-                let variable = self.variables.get(&name).expect("variable not defined");
-                self.builder.use_var(*variable)
-            }
-            Expr::Assign(name, expr) => self.translate_assign(name, *expr),
-            Expr::IfElse(condition, then_body, else_body) => {
-                self.translate_if_else(*condition, then_body, else_body)
-            }
-            Expr::WhileLoop(condition, loop_body) => {
-                self.translate_while_loop(*condition, loop_body)
-            }
+            } // Expr::Call(name, args) => self.translate_call(name, args),
+              // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
+              // Expr::Identifier(name) => {
+              //     // `use_var` is used to read the value of a variable.
+              //     let variable = self.variables.get(&name).expect("variable not defined");
+              //     self.builder.use_var(*variable)
+              // }
+              // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
+              // Expr::IfElse(condition, then_body, else_body) => {
+              //     self.translate_if_else(*condition, then_body, else_body)
+              // }
+              // Expr::WhileLoop(condition, loop_body) => {
+              //     self.translate_while_loop(*condition, loop_body)
+              // }
         }
     }
 
@@ -237,15 +263,15 @@ impl<'a> FunctionTranslator<'a> {
         // `def_var` is used to write the value of a variable. Note that
         // variables can have multiple definitions. Cranelift will
         // convert them into SSA form for itself automatically.
-        let new_value = self.translate_expr(expr);
+        let new_value = self.translate_expression(expr);
         let variable = self.variables.get(&name).unwrap();
         self.builder.def_var(*variable, new_value);
         new_value
     }
 
     fn translate_icmp(&mut self, cmp: IntCC, lhs: Expression, rhs: Expression) -> Value {
-        let lhs = self.translate_expr(lhs);
-        let rhs = self.translate_expr(rhs);
+        let lhs = self.translate_expression(lhs);
+        let rhs = self.translate_expression(rhs);
         self.builder.ins().icmp(cmp, lhs, rhs)
     }
 
@@ -255,7 +281,7 @@ impl<'a> FunctionTranslator<'a> {
         then_body: Vec<Expression>,
         else_body: Vec<Expression>,
     ) -> Value {
-        let condition_value = self.translate_expr(condition);
+        let condition_value = self.translate_expression(condition);
 
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
@@ -277,7 +303,7 @@ impl<'a> FunctionTranslator<'a> {
         self.builder.seal_block(then_block);
         let mut then_return = self.builder.ins().iconst(self.int, 0);
         for expr in then_body {
-            then_return = self.translate_expr(expr);
+            then_return = self.translate_expression(expr);
         }
 
         // Jump to the merge block, passing it the block return value.
@@ -287,7 +313,7 @@ impl<'a> FunctionTranslator<'a> {
         self.builder.seal_block(else_block);
         let mut else_return = self.builder.ins().iconst(self.int, 0);
         for expr in else_body {
-            else_return = self.translate_expr(expr);
+            else_return = self.translate_expression(expr);
         }
 
         // Jump to the merge block, passing it the block return value.
@@ -314,7 +340,7 @@ impl<'a> FunctionTranslator<'a> {
         self.builder.ins().jump(header_block, &[]);
         self.builder.switch_to_block(header_block);
 
-        let condition_value = self.translate_expr(condition);
+        let condition_value = self.translate_expression(condition);
         self.builder
             .ins()
             .brif(condition_value, body_block, &[], exit_block, &[]);
@@ -323,7 +349,7 @@ impl<'a> FunctionTranslator<'a> {
         self.builder.seal_block(body_block);
 
         for expr in loop_body {
-            self.translate_expr(expr);
+            self.translate_expression(expr);
         }
         self.builder.ins().jump(header_block, &[]);
 
@@ -358,7 +384,7 @@ impl<'a> FunctionTranslator<'a> {
 
         let mut arg_values = Vec::new();
         for arg in args {
-            arg_values.push(self.translate_expr(arg))
+            arg_values.push(self.translate_expression(arg))
         }
         let call = self.builder.ins().call(local_callee, &arg_values);
         self.builder.inst_results(call)[0]

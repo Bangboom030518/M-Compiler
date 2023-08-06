@@ -5,8 +5,28 @@ mod enum_data;
 mod struct_data;
 
 use proc_macro2::{Ident, TokenStream};
-use quote::{quote, format_ident};
-use syn::{DeriveInput, GenericArgument, PathArguments, PathSegment};
+use quote::{format_ident, quote};
+use syn::{Attribute, DeriveInput, GenericArgument, Meta, PathArguments, PathSegment};
+
+fn has_attribute(attributes: &[Attribute], name: &str) -> bool {
+    for attribute in attributes {
+        let attribute = match attribute.parse_meta() {
+            Ok(attribute) => attribute,
+            Err(_) => continue,
+        };
+        let Meta::Path(attribute) = attribute else {
+            continue;
+        };
+        let Some(attribute_name) = attribute.get_ident().map(ToString::to_string) else {
+            continue;
+        };
+        if attribute_name != name {
+            continue;
+        };
+        return true;
+    }
+    false
+}
 
 #[derive(Clone)]
 struct Type {
@@ -30,11 +50,19 @@ impl Type {
         }
     }
 
+    fn handle_option(segment: PathSegment) -> TokenStream {
+        let inner = Self::get_inner_type(&segment);
+        let tokens: TokenStream = Self::from(inner).into();
+        quote! {
+            rng.gen::<bool>().then(|| #tokens)
+        }
+    }
+
     fn get_inner_type(segment: &PathSegment) -> &syn::Type {
         let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
             unreachable!()
         };
-        let GenericArgument::Type(ty)= arguments.args.first().unwrap() else {
+        let GenericArgument::Type(ty) = arguments.args.first().unwrap() else {
             unreachable!()
         };
         ty
@@ -61,6 +89,7 @@ impl From<Type> for TokenStream {
                     crate::gen_rand_string(rng)
                 }),
                 "Box" => Some(Type::handle_box(segment)),
+                "Option" => Some(Type::handle_option(segment)),
                 _ => None,
             })
             .unwrap_or_else(|| {
@@ -92,11 +121,14 @@ impl Data {
         }
 
         let type_ident = &self.ident;
-        let test_name = format_ident!("test_{}", caser::Case::SnakeCase.transform(&type_ident.to_string()));
+        let test_name = format_ident!(
+            "test_{}",
+            caser::Case::SnakeCase.transform(&type_ident.to_string())
+        );
         quote! {
             #[test]
             fn #test_name () {
-                <#type_ident as crate::prelude::NomParse>::test();
+                <#type_ident as crate::prelude::Parse>::test();
             }
         }
     }
@@ -107,7 +139,7 @@ impl From<DeriveInput> for Data {
         Self {
             ident: value.ident,
             data: value.data,
-            exclude_test: value.attrs.len() > 0,
+            exclude_test: has_attribute(&value.attrs, "exclude_test"),
         }
     }
 }

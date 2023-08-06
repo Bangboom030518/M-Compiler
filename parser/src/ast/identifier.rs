@@ -40,7 +40,7 @@ impl std::fmt::Display for Identifier {
     }
 }
 
-impl NomParse for Identifier {
+impl Parse for Identifier {
     fn parse(input: &str) -> IResult<Self> {
         map(
             pair(Self::first_character, many0(Self::character)),

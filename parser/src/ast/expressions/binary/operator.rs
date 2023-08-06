@@ -8,6 +8,10 @@ pub enum Operator {
     Divide,
     Modulo,
     Exponent,
+    Equal,
+    NotEqual,
+    GreaterThan,
+    LessTH
 }
 
 impl Operator {
@@ -20,7 +24,7 @@ impl Operator {
     }
 }
 
-impl NomParse for Operator {
+impl Parse for Operator {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             value(Self::Exponent, tag("**")),

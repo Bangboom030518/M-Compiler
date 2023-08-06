@@ -9,7 +9,7 @@ mod function;
 pub enum Declaration {
     Import(Import),
     Variable(Variable),
-    Function(Function)
+    Function(Function),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -41,7 +41,7 @@ impl std::fmt::Display for VariableKind {
     }
 }
 
-impl NomParse for VariableKind {
+impl Parse for VariableKind {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             value(Self::Static, tag("static")),

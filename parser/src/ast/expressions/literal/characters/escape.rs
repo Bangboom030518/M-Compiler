@@ -11,7 +11,7 @@ pub enum Escape {
     SingleQuote,
 }
 
-impl NomParse for Escape {
+impl Parse for Escape {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             value(Self::Newline, tag(r"\n")),

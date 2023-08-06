@@ -6,7 +6,7 @@ pub enum Sign {
     Positive,
 }
 
-impl NomParse for Sign {
+impl Parse for Sign {
     fn parse(input: &str) -> IResult<Self> {
         alt((value(Self::Negative, char('-')), success(Self::Positive)))(input)
     }

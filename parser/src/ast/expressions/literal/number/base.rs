@@ -93,7 +93,7 @@ impl std::fmt::Display for Base {
     }
 }
 
-impl NomParse for Base {
+impl Parse for Base {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             value(Self::Binary, tag("0b")),
