@@ -17,7 +17,6 @@ pub fn fmt_expression(
         _ => write!(f, "{expression}"),
     }
 }
-
 mod expression;
 mod operator;
 mod term;

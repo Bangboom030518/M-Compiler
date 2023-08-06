@@ -52,7 +52,6 @@ impl Expression {
     }
 }
 
-
 impl Parse for Expression {
     fn parse(input: &str) -> IResult<Self> {
         map(Terms::parse, Self::from)(input)

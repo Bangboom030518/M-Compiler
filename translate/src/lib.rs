@@ -1,4 +1,4 @@
-use cranelift::prelude::*;
+use cranelift::prelude::{Variable as IRVariable, *};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataDescription, Linkage, Module};
 use parser::ast::prelude::*;
@@ -49,19 +49,19 @@ impl Default for JIT {
 
 impl JIT {
     /// Compile a string in the toy language into machine code.
-    pub fn compile(&mut self, input: &str) -> Result<*const u8, String> {
+    pub fn compile(&mut self, Function { name, parameters, return_value }: Function) -> Result<*const u8, String> {
         // First, parse the string, producing AST nodes.
-        let (name, params, the_return, stmts) =
-            parser::function(input).map_err(|e| e.to_string())?;
+        // let (name, params, the_return, stmts) =
+        //     parser::parse_functions(input).map_err(|e| e.to_string())?;
 
         // Then, translate the AST nodes into Cranelift IR.
-        self.translate(params, the_return, stmts)?;
+        self.translate(parameters, the_return, stmts)?;
 
         // Next, declare the function to jit. Functions must be declared
         // before they can be called, or defined.
         let id = self
             .module
-            .declare_function(&name, Linkage::Export, &self.ctx.func.signature)
+            .declare_function(&name.to_string(), Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
         // Define the function to jit. This finishes compilation, although
@@ -112,7 +112,7 @@ impl JIT {
         &mut self,
         params: Vec<String>,
         the_return: String,
-        stmts: Vec<Expr>,
+        stmts: Vec<Expression>,
     ) -> Result<(), String> {
         // Our toy language currently only supports I64 values, though Cranelift
         // supports other types.
@@ -182,7 +182,7 @@ impl JIT {
 struct FunctionTranslator<'a> {
     int: types::Type,
     builder: FunctionBuilder<'a>,
-    variables: HashMap<String, Variable>,
+    variables: HashMap<String, IRVariable>,
     module: &'a mut JITModule,
 }
 
@@ -242,20 +242,31 @@ impl<'a> FunctionTranslator<'a> {
                         self.translate_icmp(IntCC::SignedLessThanOrEqual, *left, *right)
                     }
                 }
-            } // Expr::Call(name, args) => self.translate_call(name, args),
-              // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
-              // Expr::Identifier(name) => {
-              //     // `use_var` is used to read the value of a variable.
-              //     let variable = self.variables.get(&name).expect("variable not defined");
-              //     self.builder.use_var(*variable)
-              // }
-              // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
-              // Expr::IfElse(condition, then_body, else_body) => {
-              //     self.translate_if_else(*condition, then_body, else_body)
-              // }
-              // Expr::WhileLoop(condition, loop_body) => {
-              //     self.translate_while_loop(*condition, loop_body)
-              // }
+            }
+            Expression::Call(call) => {
+                let CallExpression {
+                    callable,
+                    arguments,
+                    type_arguments,
+                } = call;
+                let Expression::Identifier(identifier) = *callable else {
+                    todo!("handle calls to non-identifiers");
+                };
+                self.translate_call(identifier, arguments)
+            }
+            _ => todo!(), // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
+                          // Expr::Identifier(name) => {
+                          //     // `use_var` is used to read the value of a variable.
+                          //     let variable = self.variables.get(&name).expect("variable not defined");
+                          //     self.builder.use_var(*variable)
+                          // }
+                          // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
+                          // Expr::IfElse(condition, then_body, else_body) => {
+                          //     self.translate_if_else(*condition, then_body, else_body)
+                          // }
+                          // Expr::WhileLoop(condition, loop_body) => {
+                          //     self.translate_while_loop(*condition, loop_body)
+                          // }
         }
     }
 
@@ -332,7 +343,7 @@ impl<'a> FunctionTranslator<'a> {
         phi
     }
 
-    fn translate_while_loop(&mut self, condition: Expr, loop_body: Vec<Expr>) -> Value {
+    fn translate_while_loop(&mut self, condition: Expression, loop_body: Vec<Expression>) -> Value {
         let header_block = self.builder.create_block();
         let body_block = self.builder.create_block();
         let exit_block = self.builder.create_block();
@@ -364,7 +375,7 @@ impl<'a> FunctionTranslator<'a> {
         self.builder.ins().iconst(self.int, 0)
     }
 
-    fn translate_call(&mut self, name: String, args: Vec<Expr>) -> Value {
+    fn translate_call(&mut self, name: String, args: Vec<Expression>) -> Value {
         let mut sig = self.module.make_signature();
 
         // Add a parameter for each argument.
@@ -407,9 +418,9 @@ fn declare_variables(
     builder: &mut FunctionBuilder,
     params: &[String],
     the_return: &str,
-    stmts: &[Expr],
+    stmts: &[Expression],
     entry_block: Block,
-) -> HashMap<String, Variable> {
+) -> HashMap<String, IRVariable> {
     let mut variables = HashMap::new();
     let mut index = 0;
 
@@ -435,10 +446,12 @@ fn declare_variables(
 fn declare_variables_in_stmt(
     int: types::Type,
     builder: &mut FunctionBuilder,
-    variables: &mut HashMap<String, Variable>,
+    variables: &mut HashMap<String, IRVariable>,
     index: &mut usize,
-    expr: &Expr,
+    expr: &Expression,
 ) {
+    // TODO: uncomment
+    /*
     match *expr {
         Expr::Assign(ref name, _) => {
             declare_variable(int, builder, variables, index, name);
@@ -458,17 +471,18 @@ fn declare_variables_in_stmt(
         }
         _ => (),
     }
+    */
 }
 
 /// Declare a single variable declaration.
 fn declare_variable(
     int: types::Type,
     builder: &mut FunctionBuilder,
-    variables: &mut HashMap<String, Variable>,
+    variables: &mut HashMap<String, IRVariable>,
     index: &mut usize,
     name: &str,
-) -> Variable {
-    let var = Variable::new(*index);
+) -> IRVariable {
+    let var = IRVariable::new(*index);
     if !variables.contains_key(name) {
         variables.insert(name.into(), var);
         builder.declare_var(var, int);

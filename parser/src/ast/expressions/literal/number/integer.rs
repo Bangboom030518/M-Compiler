@@ -95,4 +95,17 @@ impl Default for Type {
     }
 }
 
-impl 
+impl TryFrom<Integer> for isize {
+    type Error = ();
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        // TODO: add more integer types
+        let Integer {
+            sign, base, digits, ..
+        } = value;
+        let integer = base.parse_digits(digits).map_or_else(|| Err(()), Ok)? as isize;
+        match sign {
+            Sign::Positive => Ok(integer),
+            Sign::Negative => Ok(-integer),
+        }
+    }
+}
