@@ -40,6 +40,12 @@ impl std::fmt::Display for Identifier {
     }
 }
 
+impl std::hash::Hash for Identifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
 impl Parse for Identifier {
     fn parse(input: &str) -> IResult<Self> {
         map(

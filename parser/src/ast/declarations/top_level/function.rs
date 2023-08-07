@@ -7,15 +7,24 @@ use crate::{
 pub struct Function {
     pub name: Identifier,
     pub parameters: Vec<Identifier>,
-    pub return_value: Expression,
+    pub return_variable: Identifier,
+    pub statements: Vec<Expression>,
 }
 
+
 impl Function {
-    pub fn new(name: Identifier, parameters: Vec<Identifier>, return_value: Expression) -> Self {
+    #[must_use]
+    pub fn new(
+        name: Identifier,
+        parameters: Vec<Identifier>,
+        return_variable: Identifier,
+        statements: Vec<Expression>,
+    ) -> Self {
         Self {
             name,
             parameters,
-            return_value,
+            return_variable,
+            statements,
         }
     }
 }
@@ -26,28 +35,32 @@ impl Parse for Function {
             tuple((
                 preceded(tag("function "), Identifier::parse),
                 delimited(char('('), csv1(Identifier::parse), char(')')),
-                preceded(tag("do "), Expression::parse),
+                preceded(tag(" -> "), Identifier::parse),
+                preceded(tag("do "), many1(terminated(Expression::parse, newline))),
             )),
-            |(name, parameters, return_value)| Self::new(name, parameters, return_value),
+            |(name, parameters, return_variable, statements)| {
+                Self::new(name, parameters, return_variable, statements)
+            },
         )(input)
     }
 }
 
 impl std::fmt::Display for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self {
-            name,
-            parameters,
-            return_value,
-        } = self;
-        write!(
-            f,
-            "function {name} ({}) do {return_value}",
-            parameters
-                .iter()
-                .map(ToString::to_string)
-                .intersperse(",".to_string())
-                .collect::<String>()
-        )
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // let Self {
+        //     name,
+        //     parameters,
+        //     return_variable,
+        // } = self;
+        // write!(
+        //     f,
+        //     "function {name} ({}) do {return_value}",
+        //     parameters
+        //         .iter()
+        //         .map(ToString::to_string)
+        //         .intersperse(",".to_string())
+        //         .collect::<String>()
+        // )
+        todo!()
     }
 }

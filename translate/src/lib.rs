@@ -49,13 +49,22 @@ impl Default for JIT {
 
 impl JIT {
     /// Compile a string in the toy language into machine code.
-    pub fn compile(&mut self, Function { name, parameters, return_value }: Function) -> Result<*const u8, String> {
+    pub fn compile(
+        &mut self,
+        Function {
+            name,
+            parameters,
+
+            return_variable,
+            statements,
+        }: Function,
+    ) -> Result<*const u8, String> {
         // First, parse the string, producing AST nodes.
         // let (name, params, the_return, stmts) =
         //     parser::parse_functions(input).map_err(|e| e.to_string())?;
 
         // Then, translate the AST nodes into Cranelift IR.
-        self.translate(parameters, the_return, stmts)?;
+        self.translate(parameters, return_variable, statements)?;
 
         // Next, declare the function to jit. Functions must be declared
         // before they can be called, or defined.
@@ -103,22 +112,21 @@ impl JIT {
         self.data_description.clear();
         self.module.finalize_definitions().unwrap();
         let buffer = self.module.get_finalized_data(id);
-        // TODO: Can we move the unsafe into cranelift?
         Ok(unsafe { slice::from_raw_parts(buffer.0, buffer.1) })
     }
 
     // Translate from toy-language AST nodes into Cranelift IR.
     fn translate(
         &mut self,
-        params: Vec<String>,
-        the_return: String,
-        stmts: Vec<Expression>,
+        parameters: Vec<Identifier>,
+        the_return: Identifier,
+        statements: Vec<Expression>,
     ) -> Result<(), String> {
         // Our toy language currently only supports I64 values, though Cranelift
         // supports other types.
         let int = self.module.target_config().pointer_type();
 
-        for _p in &params {
+        for _p in &parameters {
             self.ctx.func.signature.params.push(AbiParam::new(int));
         }
 
@@ -135,7 +143,6 @@ impl JIT {
         // Since this is the entry block, add block parameters corresponding to
         // the function's parameters.
         //
-        // TODO: Streamline the API here.
         builder.append_block_params_for_function_params(entry_block);
 
         // Tell the builder to emit code in this block.
@@ -149,7 +156,7 @@ impl JIT {
         // The toy language allows variables to be declared implicitly.
         // Walk the AST and declare all implicitly-declared variables.
         let variables =
-            declare_variables(int, &mut builder, &params, &the_return, &stmts, entry_block);
+            declare_variables(int, &mut builder, &parameters, &the_return, &statements, entry_block);
 
         // Now translate the statements of the function body.
         let mut trans = FunctionTranslator {
@@ -158,7 +165,7 @@ impl JIT {
             variables,
             module: &mut self.module,
         };
-        for expr in stmts {
+        for expr in statements {
             trans.translate_expression(expr);
         }
 
@@ -187,6 +194,10 @@ struct FunctionTranslator<'a> {
 }
 
 impl<'a> FunctionTranslator<'a> {
+    // fn translate_statement(&mut self, statement: Statement) -> {
+    //     Statement::
+    // }
+
     /// When you write out instructions in Cranelift, you get back `Value`s. You
     /// can then use these references in other instructions.
     fn translate_expression(&mut self, expression: Expression) -> Value {
@@ -252,7 +263,7 @@ impl<'a> FunctionTranslator<'a> {
                 let Expression::Identifier(identifier) = *callable else {
                     todo!("handle calls to non-identifiers");
                 };
-                self.translate_call(identifier, arguments)
+                self.translate_call(identifier.to_string(), arguments)
             }
             _ => todo!(), // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
                           // Expr::Identifier(name) => {
@@ -416,16 +427,15 @@ impl<'a> FunctionTranslator<'a> {
 fn declare_variables(
     int: types::Type,
     builder: &mut FunctionBuilder,
-    params: &[String],
-    the_return: &str,
+    params: &[Identifier],
+    the_return: Identifier,
     stmts: &[Expression],
     entry_block: Block,
-) -> HashMap<String, IRVariable> {
+) -> HashMap<Identifier, IRVariable> {
     let mut variables = HashMap::new();
     let mut index = 0;
 
     for (i, name) in params.iter().enumerate() {
-        // TODO: cranelift_frontend should really have an API to make it easy to set
         // up param variables.
         let val = builder.block_params(entry_block)[i];
         let var = declare_variable(int, builder, &mut variables, &mut index, name);
@@ -478,13 +488,13 @@ fn declare_variables_in_stmt(
 fn declare_variable(
     int: types::Type,
     builder: &mut FunctionBuilder,
-    variables: &mut HashMap<String, IRVariable>,
+    variables: &mut HashMap<Identifier, IRVariable>,
     index: &mut usize,
-    name: &str,
+    name: &Identifier,
 ) -> IRVariable {
     let var = IRVariable::new(*index);
     if !variables.contains_key(name) {
-        variables.insert(name.into(), var);
+        variables.insert(name.clone().into(), var);
         builder.declare_var(var, int);
         *index += 1;
     }
