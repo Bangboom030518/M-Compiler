@@ -36,7 +36,7 @@ impl Parse for Function {
                 preceded(tag("function "), Identifier::parse),
                 delimited(char('('), csv1(Identifier::parse), char(')')),
                 preceded(tag(" -> "), Identifier::parse),
-                preceded(tag("do "), many1(terminated(Expression::parse, newline))),
+                preceded(tag(" do "), many1(terminated(Expression::parse, char('|')))),
             )),
             |(name, parameters, return_variable, statements)| {
                 Self::new(name, parameters, return_variable, statements)

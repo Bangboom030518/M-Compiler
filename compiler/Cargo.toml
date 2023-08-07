@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 resolution = { path = "../resolution" }
+translate = { path = "../translate" }
 parser = { path = "../parser" }
+cranelift-jit = "0.98"

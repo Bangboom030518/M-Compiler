@@ -189,7 +189,7 @@ impl JIT {
 struct FunctionTranslator<'a> {
     int: types::Type,
     builder: FunctionBuilder<'a>,
-    variables: HashMap<String, IRVariable>,
+    variables: HashMap<Identifier, IRVariable>,
     module: &'a mut JITModule,
 }
 
@@ -216,41 +216,43 @@ impl<'a> FunctionTranslator<'a> {
                     right,
                     operator,
                 } = binary;
+                let left = self.translate_expression(*left);
+                let right = self.translate_expression(*right);
                 match operator {
                     BinaryOperator::Add => self.builder.ins().iadd(
-                        self.translate_expression(*left),
-                        self.translate_expression(*right),
+                        left,
+                        right,
                     ),
                     BinaryOperator::Subtract => self.builder.ins().isub(
-                        self.translate_expression(*left),
-                        self.translate_expression(*right),
+                        left,
+                        right,
                     ),
                     BinaryOperator::Multiply => self.builder.ins().imul(
-                        self.translate_expression(*left),
-                        self.translate_expression(*right),
+                        left,
+                        right,
                     ),
                     BinaryOperator::Divide => self.builder.ins().udiv(
-                        self.translate_expression(*left),
-                        self.translate_expression(*right),
+                        left,
+                        right,
                     ),
                     BinaryOperator::Remainder => self.builder.ins().srem(
-                        self.translate_expression(*left),
-                        self.translate_expression(*right),
+                        left,
+                        right,
                     ),
                     BinaryOperator::Exponent => todo!("allow exponentation"),
-                    BinaryOperator::Equal => self.translate_icmp(IntCC::Equal, *left, *right),
-                    BinaryOperator::NotEqual => self.translate_icmp(IntCC::NotEqual, *left, *right),
+                    BinaryOperator::Equal => self.translate_icmp(IntCC::Equal, left, right),
+                    BinaryOperator::NotEqual => self.translate_icmp(IntCC::NotEqual, left, right),
                     BinaryOperator::GreaterThan => {
-                        self.translate_icmp(IntCC::SignedGreaterThan, *left, *right)
+                        self.translate_icmp(IntCC::SignedGreaterThan, left, right)
                     }
                     BinaryOperator::LessThan => {
-                        self.translate_icmp(IntCC::SignedLessThan, *left, *right)
+                        self.translate_icmp(IntCC::SignedLessThan, left, right)
                     }
                     BinaryOperator::GreaterThanOrEqual => {
-                        self.translate_icmp(IntCC::SignedLessThanOrEqual, *left, *right)
+                        self.translate_icmp(IntCC::SignedLessThanOrEqual, left, right)
                     }
                     BinaryOperator::LessThanOrEqual => {
-                        self.translate_icmp(IntCC::SignedLessThanOrEqual, *left, *right)
+                        self.translate_icmp(IntCC::SignedLessThanOrEqual, left, right)
                     }
                 }
             }
@@ -281,7 +283,7 @@ impl<'a> FunctionTranslator<'a> {
         }
     }
 
-    fn translate_assign(&mut self, name: String, expr: Expression) -> Value {
+    fn translate_assign(&mut self, name: Identifier, expr: Expression) -> Value {
         // `def_var` is used to write the value of a variable. Note that
         // variables can have multiple definitions. Cranelift will
         // convert them into SSA form for itself automatically.
@@ -291,9 +293,9 @@ impl<'a> FunctionTranslator<'a> {
         new_value
     }
 
-    fn translate_icmp(&mut self, cmp: IntCC, lhs: Expression, rhs: Expression) -> Value {
-        let lhs = self.translate_expression(lhs);
-        let rhs = self.translate_expression(rhs);
+    fn translate_icmp(&mut self, cmp: IntCC, lhs: Value, rhs: Value) -> Value {
+        // let lhs = self.translate_expression(lhs);
+        // let rhs = self.translate_expression(rhs);
         self.builder.ins().icmp(cmp, lhs, rhs)
     }
 
@@ -428,7 +430,7 @@ fn declare_variables(
     int: types::Type,
     builder: &mut FunctionBuilder,
     params: &[Identifier],
-    the_return: Identifier,
+    the_return: &Identifier,
     stmts: &[Expression],
     entry_block: Block,
 ) -> HashMap<Identifier, IRVariable> {
@@ -442,7 +444,7 @@ fn declare_variables(
         builder.def_var(var, val);
     }
     let zero = builder.ins().iconst(int, 0);
-    let return_variable = declare_variable(int, builder, &mut variables, &mut index, the_return);
+    let return_variable = declare_variable(int, builder, &mut variables, &mut index, &the_return);
     builder.def_var(return_variable, zero);
     for expr in stmts {
         declare_variables_in_stmt(int, builder, &mut variables, &mut index, expr);
@@ -456,7 +458,7 @@ fn declare_variables(
 fn declare_variables_in_stmt(
     int: types::Type,
     builder: &mut FunctionBuilder,
-    variables: &mut HashMap<String, IRVariable>,
+    variables: &mut HashMap<Identifier, IRVariable>,
     index: &mut usize,
     expr: &Expression,
 ) {
