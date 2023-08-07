@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use self::binary::Terms;
 
 use super::Identifier;
@@ -16,7 +18,43 @@ mod literal;
 mod unary;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
+pub struct Assignment {
+    pub left: Identifier,
+    pub right: Box<Expression>,
+}
+
+impl Assignment {
+    pub fn new(left: Identifier, right: Expression) -> Self {
+        Self {
+            left,
+            right: Box::new(right),
+        }
+    }
+}
+
+impl Parse for Assignment {
+    fn parse(input: &str) -> IResult<Self> {
+        // TODO: allow assigments to more complex exxpressions
+        map(
+            pair(
+                terminated(Identifier::parse, whitespace_delimited(char('='))),
+                Expression::parse,
+            ),
+            |(left, right)| Self::new(left, right),
+        )(input)
+    }
+}
+
+impl Display for Assignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Self { left, right } = &self;
+        write!(f, "{left} = {right}")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub enum Expression {
+    Assignment(Assignment),
     Binary(BinaryExpression),
     Literal(Literal),
     Unary(UnaryExpression),
@@ -37,6 +75,7 @@ impl Expression {
     fn parse_term(input: &str) -> IResult<Self> {
         alt((
             delimited(char('('), whitespace_delimited(Self::parse), char(')')),
+            map(Assignment::parse, Self::Assignment),
             map(Literal::parse, Self::Literal),
             map(UnaryExpression::parse, Self::Unary),
             map(If::parse, Self::If),
@@ -61,6 +100,7 @@ impl Parse for Expression {
 impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::Assignment(assignment) => write!(f, "{assignment}"),
             Self::Literal(literal) => write!(f, "{literal}"),
             Self::Binary(binary) => write!(f, "{binary}"),
             Self::Unary(unary) => write!(f, "{unary}"),

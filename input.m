@@ -1,1 +1,1 @@
-function sum(a) -> b do b = a+1|;
+[sum(a)b{b = a+24:i32}];

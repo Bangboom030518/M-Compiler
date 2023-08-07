@@ -43,7 +43,7 @@ pub fn parse(input: &str) -> IResult<Vec<Statement>> {
 /// # Errors
 /// - if the input given is unparseable
 pub fn parse_functions(input: &str) -> IResult<Vec<Function>> {
-    many0(terminated(
+    many1(terminated(
         whitespace_delimited(Function::parse),
         char(';'),
     ))(input)

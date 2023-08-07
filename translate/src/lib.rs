@@ -155,8 +155,14 @@ impl JIT {
 
         // The toy language allows variables to be declared implicitly.
         // Walk the AST and declare all implicitly-declared variables.
-        let variables =
-            declare_variables(int, &mut builder, &parameters, &the_return, &statements, entry_block);
+        let variables = declare_variables(
+            int,
+            &mut builder,
+            &parameters,
+            &the_return,
+            &statements,
+            entry_block,
+        );
 
         // Now translate the statements of the function body.
         let mut trans = FunctionTranslator {
@@ -219,26 +225,11 @@ impl<'a> FunctionTranslator<'a> {
                 let left = self.translate_expression(*left);
                 let right = self.translate_expression(*right);
                 match operator {
-                    BinaryOperator::Add => self.builder.ins().iadd(
-                        left,
-                        right,
-                    ),
-                    BinaryOperator::Subtract => self.builder.ins().isub(
-                        left,
-                        right,
-                    ),
-                    BinaryOperator::Multiply => self.builder.ins().imul(
-                        left,
-                        right,
-                    ),
-                    BinaryOperator::Divide => self.builder.ins().udiv(
-                        left,
-                        right,
-                    ),
-                    BinaryOperator::Remainder => self.builder.ins().srem(
-                        left,
-                        right,
-                    ),
+                    BinaryOperator::Add => self.builder.ins().iadd(left, right),
+                    BinaryOperator::Subtract => self.builder.ins().isub(left, right),
+                    BinaryOperator::Multiply => self.builder.ins().imul(left, right),
+                    BinaryOperator::Divide => self.builder.ins().udiv(left, right),
+                    BinaryOperator::Remainder => self.builder.ins().srem(left, right),
                     BinaryOperator::Exponent => todo!("allow exponentation"),
                     BinaryOperator::Equal => self.translate_icmp(IntCC::Equal, left, right),
                     BinaryOperator::NotEqual => self.translate_icmp(IntCC::NotEqual, left, right),
@@ -256,30 +247,36 @@ impl<'a> FunctionTranslator<'a> {
                     }
                 }
             }
-            Expression::Call(call) => {
-                let CallExpression {
-                    callable,
-                    arguments,
-                    type_arguments,
-                } = call;
+            Expression::Call(CallExpression {
+                callable,
+                arguments,
+                type_arguments,
+            }) => {
                 let Expression::Identifier(identifier) = *callable else {
                     todo!("handle calls to non-identifiers");
                 };
                 self.translate_call(identifier.to_string(), arguments)
             }
-            _ => todo!(), // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
-                          // Expr::Identifier(name) => {
-                          //     // `use_var` is used to read the value of a variable.
-                          //     let variable = self.variables.get(&name).expect("variable not defined");
-                          //     self.builder.use_var(*variable)
-                          // }
-                          // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
-                          // Expr::IfElse(condition, then_body, else_body) => {
-                          //     self.translate_if_else(*condition, then_body, else_body)
-                          // }
-                          // Expr::WhileLoop(condition, loop_body) => {
-                          //     self.translate_while_loop(*condition, loop_body)
-                          // }
+            Expression::Identifier(identifier) => {
+                // `use_var` is used to read the value of a variable.
+                let variable = self
+                    .variables
+                    .get(&identifier)
+                    .expect("variable not defined");
+                self.builder.use_var(*variable)
+            }
+            Expression::Assignment(Assignment {
+                left,
+                right,
+            }) => self.translate_assign(left, *right),
+            expr => todo!("implement {expr:?}"), // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
+                                                 // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
+                                                 // Expr::IfElse(condition, then_body, else_body) => {
+                                                 //     self.translate_if_else(*condition, then_body, else_body)
+                                                 // }
+                                                 // Expr::WhileLoop(condition, loop_body) => {
+                                                 //     self.translate_while_loop(*condition, loop_body)
+                                                 // }
         }
     }
 

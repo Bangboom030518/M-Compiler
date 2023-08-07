@@ -11,7 +11,6 @@ pub struct Function {
     pub statements: Vec<Expression>,
 }
 
-
 impl Function {
     #[must_use]
     pub fn new(
@@ -32,14 +31,23 @@ impl Function {
 impl Parse for Function {
     fn parse(input: &str) -> IResult<Self> {
         map(
-            tuple((
-                preceded(tag("function "), Identifier::parse),
-                delimited(char('('), csv1(Identifier::parse), char(')')),
-                preceded(tag(" -> "), Identifier::parse),
-                preceded(tag(" do "), many1(terminated(Expression::parse, char('|')))),
-            )),
+            delimited(
+                tag("["),
+                tuple((
+                    Identifier::parse,
+                    delimited(char('('), csv1(Identifier::parse), char(')')),
+                    Identifier::parse,
+                    // TODO: allow multiple statements
+                    delimited(char('{'), Expression::parse, char('}')),
+                    // preceded(tag("function "), Identifier::parse),
+                    // delimited(char('('), csv1(Identifier::parse), char(')')),
+                    // preceded(tag(" -> "), Identifier::parse),
+                    // preceded(tag(" do "), many1(terminated(Expression::parse, char('|')))),
+                )),
+                tag("]"),
+            ),
             |(name, parameters, return_variable, statements)| {
-                Self::new(name, parameters, return_variable, statements)
+                Self::new(name, parameters, return_variable, vec![statements])
             },
         )(input)
     }
