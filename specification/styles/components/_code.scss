@@ -1,0 +1,49 @@
+@use "../abstracts" as *;
+
+@mixin dark-mode {
+  --keyword-color: #38bdf8;
+}
+
+@mixin code {
+  background-color: var(--neutral-accent-color);
+  padding: map-get($padding, small);
+  border-radius: map-get($border-radius, small);
+}
+
+:root {
+  --keyword-color: #1e40af;
+  
+  @media (prefers-color-scheme: dark) {
+    @include dark-mode;
+  }
+  
+  &.dark-mode {
+    @include dark-mode;
+  }
+}
+
+.keyword {
+  color: var(--keyword-color);
+}
+
+// TODO: style
+.string {
+  
+}
+
+code {
+  @include code;
+  padding-block: 0;
+}
+
+pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+pre {
+  @include code;
+}
+
+

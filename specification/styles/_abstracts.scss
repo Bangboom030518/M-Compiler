@@ -1,0 +1,64 @@
+$accent-1: hsl(0deg, 90%, 70%);
+$accent-2: hsl(43deg, 86%, 98%);
+
+$gradient: linear-gradient(
+  45deg,
+  #f87171,
+  #fbbf24
+);
+
+//animation curve
+
+$curve: cubic-bezier(0.69, 2, 0.41, 0.77);
+
+//padding
+
+$padding: (
+  "extra-small": 0.1em,
+  "small": 0.5em,
+  "medium": 0.7em,
+  "large": 2em,
+  "extra-large": 5em,
+);
+
+//border radius
+
+$border-radius: (
+  "extra-small": 0.1pc,
+  "small": 0.5pc,
+  "medium": 1pc,
+  "large": 1.5pc,
+  "extra-large": 5pc,
+);
+
+//border
+
+$border: (
+  "extra-small": 0.1pc,
+  "small": 0.2pc,
+  "medium": 0.3pc,
+  "large": 0.4pc,
+  "extra-large": 0.5pc,
+);
+
+//font size
+
+$font-size: (
+  "extra-small": 0.8rem,
+  "small": 1rem,
+  "medium": 1.2rem,
+  "large": 1.5rem,
+  "extra-large": 6rem,
+);
+
+//box shadow
+//TODO use color tints
+$box-shadow: (
+  "extra-small": 0 0 0.1pc 0.05pc hsla(0, 0%, 0%, 0.2),
+  "small": 0 0 0.2pc 0.1pc hsla(0, 0%, 0%, 0.2),
+  "medium": 0 0 0.5pc 0.2pc hsla(0, 0%, 0%, 0.2),
+  "large": 0 0 1pc 0.3pc hsla(0, 0%, 0%, 0.2),
+  "extra-large": 0 0 2pc 0.5pc hsla(0, 0%, 0%, 0.2),
+);
+
+$screen-medium: 150ch;

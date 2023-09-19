@@ -1,0 +1,90 @@
+HttpStatus = enum
+    OK
+    BAD_REQUEST
+    INTERNAL_SERVER_ERROR
+    // etc..
+
+    function code (self) UInt16 do
+        match self ->
+            Self.OK -> 200
+            Self.BAD_REQUEST -> 400
+            Self.INTERNAL_SERVER_ERROR -> 500
+
+type JsonValue = union
+    String      string
+    Number      number
+    List<Self>  list
+
+    function as_string = (self) String? ->
+        let Self.string = self else
+            return nil
+        string
+
+    function as_list (self) List<Self>? ->
+        match self ->
+            Self.list -> list
+            _ -> nil
+
+tests
+    function json_value () Nil do
+        let string = JsonValue.string "Makka Pakka"
+        string.as_string()!
+
+implement From<JsonValue> for String
+    function from (value) ->
+        match value do
+            JsonValue.string do string
+            JsonValue.number do number
+            JsonValue.list   do list.iterator().map(JsonValue.to_string).collect()
+
+From = interface<T>
+    function from (T value) Self
+
+Iterator = interface
+    type Item
+
+    function next (self) Item?
+
+    function map <F, T> (self, F closure) Map<Self, T>
+    where
+        F Function<(Self.Item), T>
+    do
+        Map.new(self, closure)
+        
+
+include_string = macro (Literal.String file_path) literal.String do
+    import std.IO.*
+    let contents = fs.read_to_string(&String.from(file_path))
+    contents.into()
+
+std.debug.print("Hello World")
+
+interface 
+
+const HELLO_WORLD = "Hello World!"
+let MAGIC_NUMBER = 100
+
+type Vec = struct
+    Allocator allocator
+
+interface Iterator =
+
+function add = (Int32 a, Int32 b) !Int32 ->
+    asdasd
+    asdasd
+
+x.map((a) ->
+    asdasd
+    asdsadda
+    asdasdas
+    asdasdasd
+)
+
+const add = struct()
+
+implement Function for add
+    const Arguments = ()
+
+    const call = @StaticFunction(Self.Arguments)
+
+import 

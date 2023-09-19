@@ -1,0 +1,23 @@
+@use "../abstracts" as *;
+
+h1 {
+  grid-area: heading;
+  position: relative;
+  padding: .05em;
+  font-size: min(10vmin, 4rem);
+  text-align: center;
+  margin: 0;
+
+  &::after {
+    $height: .5ch;
+    content: "";
+    position: absolute;
+    height: $height;
+    width: 100%;
+    background-color: black;
+    bottom: -$height;
+    left: 0;
+    background-image: $gradient;
+    border-radius: .5em;
+  }
+}

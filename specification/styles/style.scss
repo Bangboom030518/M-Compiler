@@ -1,0 +1,63 @@
+@use "abstracts" as *;
+@use "components";
+@use "normalise";
+
+@mixin dark-mode {
+  --neutral-color: black;
+  --neutral-accent-color: #444;
+  --text-color: white;
+}
+
+:root {
+  --neutral-color: white;
+  --neutral-accent-color: #efefef;
+  --text-color: black;
+  --font-size: #{map-get($font-size, large)};
+  
+  @media (min-width: $screen-medium) {
+    --font-size: #{map-get($font-size, medium)};
+  }
+
+  @media (prefers-color-scheme: dark) {
+    @include dark-mode;
+  }
+  
+  &.dark {
+    @include dark-mode;
+  }
+}
+
+body {
+  background-color: var(--neutral-color);
+  min-height: 100%;
+  font-family: "M PLUS Rounded 1c", sans-serif;
+  font-weight: 300;
+  display: grid;
+  place-items: stretch;
+  place-content: stretch;
+  padding: map-get($padding, large);
+  gap: map-get($padding, large);
+  color: var(--text-color);
+  grid-template-areas:
+    "heading"
+    "main";
+  grid-template-rows: min-content 1fr;
+  grid-template-columns: 1fr;
+  font-size: var(--font-size);
+  
+  @media (min-width: $screen-medium) {
+    grid-template-areas:
+      "heading heading"
+      "aside main";
+    grid-template-columns: min-content 1fr;
+  }
+}
+
+main {
+  display: grid;
+  grid-area: main;
+  background-color: var(--neutral-accent);
+  gap: map-get($padding, medium);
+}
+
+
