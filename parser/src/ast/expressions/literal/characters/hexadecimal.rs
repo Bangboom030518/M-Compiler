@@ -3,7 +3,7 @@ use crate::{digits, prelude::*, Base};
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub struct Hexadecimal(char);
 
-impl NomParse for Hexadecimal {
+impl Parse for Hexadecimal {
     fn parse(input: &str) -> IResult<Self> {
         delimited(
             tag(r"\u{"),

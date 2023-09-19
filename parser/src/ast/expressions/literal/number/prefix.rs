@@ -19,7 +19,7 @@ impl std::fmt::Display for Prefix {
     }
 }
 
-impl NomParse for Prefix {
+impl Parse for Prefix {
     fn parse(input: &str) -> IResult<Self> {
         map(tuple((Sign::parse, Base::parse)), |(sign, base)| {
             Self::new(sign, base)

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use lazy_static::lazy_static;
 use rand::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -41,7 +40,13 @@ impl std::fmt::Display for Identifier {
     }
 }
 
-impl NomParse for Identifier {
+impl std::hash::Hash for Identifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
+    }
+}
+
+impl Parse for Identifier {
     fn parse(input: &str) -> IResult<Self> {
         map(
             pair(Self::first_character, many0(Self::character)),
@@ -53,7 +58,7 @@ impl NomParse for Identifier {
     }
 }
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref LOWERCASE_CHARS: Vec<char> = ('a'..='z').collect();
     static ref UPPERCASE_CHARS: Vec<char> = ('A'..='Z').collect();
     static ref NUMERIC_CHARS: Vec<char> = ('0'..='9').collect();

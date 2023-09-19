@@ -1,11 +1,15 @@
 use crate::ast::{Expression, Identifier, Pattern, Type};
 use crate::prelude::*;
+pub use function::Function;
+
+mod function;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 #[exclude_test]
 pub enum Declaration {
     Import(Import),
     Variable(Variable),
+    Function(Function),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -37,7 +41,7 @@ impl std::fmt::Display for VariableKind {
     }
 }
 
-impl NomParse for VariableKind {
+impl Parse for VariableKind {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             value(Self::Static, tag("static")),
@@ -45,6 +49,8 @@ impl NomParse for VariableKind {
         ))(input)
     }
 }
+
+/*
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 #[exclude_test]
@@ -69,3 +75,4 @@ pub struct Function {
     parameters: Vec<Parameter>,
     body: Expression,
 }
+*/

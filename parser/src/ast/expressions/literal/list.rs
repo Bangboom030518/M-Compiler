@@ -7,7 +7,7 @@ pub struct List {
     list: Vec<Expression>,
 }
 
-impl NomParse for List {
+impl Parse for List {
     fn parse(input: &str) -> IResult<Self> {
         map(
             delimited(

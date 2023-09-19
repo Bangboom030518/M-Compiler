@@ -8,7 +8,7 @@ pub enum CodePoint {
     Inline(char),
 }
 
-impl NomParse for CodePoint {
+impl Parse for CodePoint {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             map(Escape::parse, Self::Escape),

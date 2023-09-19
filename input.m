@@ -1,10 +1,1 @@
-import module;
-
-function money() {
-    callback(|| callback:{
-        return@callback "hello!";
-        result.unwrap_or(return None)
-        result.or_break();
-        (return@callback? result).sus;
-    })
-}
+[sum(a)b{b = a+24:i32}];

@@ -26,12 +26,25 @@ fn gen_rand_string<R: rand::Rng + ?Sized>(rng: &mut R) -> String {
     chars.into_iter().collect()
 }
 
+// TODO: finalise `parse`, to avoid `parse_functions` 
+
+/// # Errors
+/// - if the input given is unparseable
 pub fn parse(input: &str) -> IResult<Vec<Statement>> {
     many0(terminated(
         map(
             whitespace_delimited(Expression::parse),
             Statement::Expression,
         ),
+        char(';'),
+    ))(input)
+}
+
+/// # Errors
+/// - if the input given is unparseable
+pub fn parse_functions(input: &str) -> IResult<Vec<Function>> {
+    many1(terminated(
+        whitespace_delimited(Function::parse),
         char(';'),
     ))(input)
 }

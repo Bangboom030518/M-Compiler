@@ -1,4 +1,5 @@
 use crate::prelude::*;
+// use rand::{prelude::*, distributions::Standard};
 pub use boolean::Boolean;
 pub use characters::*;
 pub use list::List;
@@ -11,14 +12,19 @@ mod number;
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
 pub enum Literal {
+    // #[skip_variant]
     Number(Number),
+    // #[skip_variant]
     List(List),
+    // #[skip_variant]
     Character(Character),
+    // #[skip_variant]
     String(MString),
+    #[default_variant]
     Boolean(Boolean),
 }
 
-impl NomParse for Literal {
+impl Parse for Literal {
     fn parse(input: &str) -> IResult<Self> {
         alt((
             map(Number::parse, Literal::Number),

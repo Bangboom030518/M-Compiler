@@ -10,7 +10,7 @@ pub struct Float {
     pub data_type: Type,
 }
 
-impl NomParse for Float {
+impl Parse for Float {
     fn parse(input: &str) -> IResult<Self> {
         let (input, Prefix { sign, base }) = Prefix::parse(input)?;
         map(
@@ -57,7 +57,7 @@ impl Default for Type {
     }
 }
 
-impl NomParse for Type {
+impl Parse for Type {
     fn parse(input: &str) -> IResult<Self> {
         preceded(
             char(':'),

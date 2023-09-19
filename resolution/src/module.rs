@@ -6,7 +6,8 @@ use std::{ffi::OsStr, fs, path::Path};
 pub enum BuildError {
     Fs(String),
     Path(PathError),
-    Parse(ParseError),
+    // TODO: uncomment
+    // Parse(ParseError),
 }
 
 impl std::fmt::Display for BuildError {
@@ -14,7 +15,7 @@ impl std::fmt::Display for BuildError {
         match self {
             Self::Fs(name) => write!(f, "Couldn't read file '{}'", name),
             Self::Path(error) => write!(f, "{}", error),
-            Self::Parse(error) => write!(f, "{}", error),
+            // Self::Parse(error) => write!(f, "{}", error),
         }
     }
 }
@@ -45,16 +46,27 @@ pub struct Module {
 #[memoize]
 pub fn build(path: String, root: String) -> Result<Module, BuildError> {
     let content = fs::read_to_string(&path).map_err(|_| BuildError::Fs(path.to_string()))?;
-
-    let tree = parse(&content).map_err(BuildError::Parse)?;
+    // TODO: handle parse error
+    let tree = parse(&content).unwrap_or_else(|_| todo!())/*.map_err(BuildError::Parse)?*/;
 
     let mut dependencies: Vec<Module> = Vec::new();
     let mut new_tree: Vec<Declaration> = Vec::new();
 
-    for node in tree.into_iter() {
-        if let declaration::Declaration::Import(node) = node {
-            let file_path =
-                resolve_path_chunks(&node.path, &path, &root).map_err(BuildError::Path)?;
+    for node in tree.1.into_iter() {
+        let Statement::Declaration(node) = node else {
+            todo!()
+        };
+        if let Declaration::Import(node) = node {
+            let file_path = resolve_path_chunks(
+                &node
+                    .path
+                    .into_iter()
+                    .map(|ident| ident.0)
+                    .collect::<Vec<_>>(),
+                &path,
+                &root,
+            )
+            .map_err(BuildError::Path)?;
             let module = build(file_path, root.clone())?;
             dependencies.push(module);
         } else {

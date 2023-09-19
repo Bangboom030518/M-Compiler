@@ -62,7 +62,7 @@ impl<'a> StructData<'a> {
     }
 
     fn get_fields(&mut self) -> TokenStream2 {
-        if *self.ident == "Identifier" {
+        if self.ident.to_string() == "Identifier" {
             return quote! {
                 (gen_rand_identifier(rng))
             }
@@ -76,12 +76,14 @@ impl<'a> StructData<'a> {
                     #(#fields),*
                 }
             }
-        } else {
+        } else if fields.len() > 0 {
             quote! {
                 (
                     #(#fields),*
                 )
             }
+        } else {
+            TokenStream2::new()
         }
     }
 }
@@ -152,6 +154,6 @@ impl From<Field> for UnnamedField {
 
 impl From<UnnamedField> for TokenStream2 {
     fn from(value: UnnamedField) -> Self {
-        value.ty.into()
+        value.ty.clone().into()
     }
 }

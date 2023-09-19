@@ -1,4 +1,4 @@
-use super::Operator;
+use super::{Operator, fmt_expression};
 use crate::{prelude::*, Expression as GenericExpression};
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -16,10 +16,13 @@ impl Term {
     }
 }
 
-impl NomParse for Term {
+impl Parse for Term {
     fn parse(input: &str) -> IResult<Self> {
         map(
-            pair(Operator::parse, GenericExpression::parse_term),
+            pair(
+                whitespace_delimited(Operator::parse),
+                GenericExpression::parse_term,
+            ),
             |(operator, expression)| Self::new(operator, expression),
         )(input)
     }
@@ -27,6 +30,8 @@ impl NomParse for Term {
 
 impl std::fmt::Display for Term {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}{}", self.operator, self.expression)
+        let Self { operator, expression } = self;
+        write!(f, "{operator} ")?;
+        fmt_expression(f, expression)
     }
 }

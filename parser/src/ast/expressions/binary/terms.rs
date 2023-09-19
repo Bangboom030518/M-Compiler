@@ -1,4 +1,4 @@
-use super::{term::Term, Expression, Operator};
+use super::{term::Term, Expression, fmt_expression};
 use crate::{prelude::*, Expression as GenericExpression};
 
 #[derive(Debug, Clone, PartialEq, Eq, Rand)]
@@ -9,16 +9,12 @@ pub struct Terms {
     right_terms: Vec<Term>,
 }
 
-impl NomParse for Terms {
+impl Parse for Terms {
     fn parse(input: &str) -> IResult<Self> {
         let (input, left_term) = GenericExpression::parse_term(input)?;
-        let (input, right_terms) = map(
-            many0(map(
-                pair(Operator::parse, GenericExpression::parse_term),
-                |(operator, expression)| Term::new(operator, expression),
-            )),
-            |terms| terms.into_iter().rev().collect(),
-        )(input)?;
+        let (input, right_terms) = map(many0(Term::parse), |terms| {
+            terms.into_iter().rev().collect()
+        })(input)?;
 
         Ok((
             input,
@@ -45,7 +41,7 @@ impl From<Terms> for GenericExpression {
         {
             let left_binding_power = operator.binding_powers().1;
             let right_binding_power = right
-                .get(0)
+                .last()
                 .map_or(255, |Term { operator, .. }| operator.binding_powers().0);
 
             if left_binding_power < right_binding_power {
@@ -65,11 +61,15 @@ impl From<Terms> for GenericExpression {
 
 impl std::fmt::Display for Terms {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Self {
+            left_term,
+            right_terms,
+        } = self;
+        fmt_expression(f, left_term)?;
         write!(
             f,
-            "{}{}",
-            self.left_term,
-            self.right_terms
+            "{}",
+            right_terms
                 .iter()
                 .rev()
                 .map(ToString::to_string)

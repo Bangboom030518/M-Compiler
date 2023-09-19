@@ -9,7 +9,7 @@ pub struct Integer {
     pub data_type: Type,
 }
 
-impl NomParse for Integer {
+impl Parse for Integer {
     fn parse(input: &str) -> IResult<Self> {
         let (input, Prefix { sign, base }) = Prefix::parse(input)?;
 
@@ -51,7 +51,7 @@ pub enum Type {
     Signed128,
 }
 
-impl NomParse for Type {
+impl Parse for Type {
     fn parse(input: &str) -> IResult<Self> {
         preceded(
             char(':'),
@@ -92,5 +92,20 @@ impl std::fmt::Display for Type {
 impl Default for Type {
     fn default() -> Self {
         Self::Signed32
+    }
+}
+
+impl TryFrom<Integer> for isize {
+    type Error = ();
+    fn try_from(value: Integer) -> Result<Self, Self::Error> {
+        // TODO: add more integer types
+        let Integer {
+            sign, base, digits, ..
+        } = value;
+        let integer = base.parse_digits(digits).map_or_else(|| Err(()), Ok)? as isize;
+        match sign {
+            Sign::Positive => Ok(integer),
+            Sign::Negative => Ok(-integer),
+        }
     }
 }

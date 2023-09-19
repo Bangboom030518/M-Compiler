@@ -6,7 +6,7 @@ pub enum Pattern {
     Identifier(Identifier),
 }
 
-impl NomParse for Pattern {
+impl Parse for Pattern {
     fn parse(input: &str) -> IResult<Self> {
         map(Identifier::parse, Self::Identifier)(input)
     }
