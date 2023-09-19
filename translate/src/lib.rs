@@ -269,7 +269,8 @@ impl<'a> FunctionTranslator<'a> {
                 left,
                 right,
             }) => self.translate_assign(left, *right),
-            expr => todo!("implement {expr:?}"), // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
+            expr => todo!("implement {expr:?}"),
+                                                 // Expr::GlobalDataAddr(name) => self.translate_global_data_addr(name),
                                                  // Expr::Assign(name, expr) => self.translate_assign(name, *expr),
                                                  // Expr::IfElse(condition, then_body, else_body) => {
                                                  //     self.translate_if_else(*condition, then_body, else_body)
@@ -493,7 +494,7 @@ fn declare_variable(
 ) -> IRVariable {
     let var = IRVariable::new(*index);
     if !variables.contains_key(name) {
-        variables.insert(name.clone().into(), var);
+        variables.insert(name.clone(), var);
         builder.declare_var(var, int);
         *index += 1;
     }
