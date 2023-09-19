@@ -1,6 +1,0 @@
-[package]
-name = "span"
-description = "spans for tokens in the M language"
-version = "0.1.0"
-edition = "2021"
-repository = "https://github.com/Bangboom030518/M-Compiler"
