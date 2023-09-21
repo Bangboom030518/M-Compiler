@@ -22,6 +22,8 @@ pub enum Token {
     Equality,
     Bang,
     Illegal,
+    String(String),
+    Char(char),
     Ident(String),
     Comment(String),
     // Parenthesised(Vec<Token>),
@@ -52,6 +54,37 @@ impl<'a> Tokenizer<'a> {
             "type" => Token::Type,
             _ => Token::Ident(ident),
         }
+    }
+
+    fn take_escaped_char(&mut self) -> Option<char> {
+        let ch = match self.0.next()? {
+            'n' => '\n',
+            't' => '\t',
+            'r' => '\r',
+            '0' => '\0',
+            'u' => todo!("hex chars"),
+            '"' => '"',
+            '\'' => '\'',
+            '\\' => '\\',
+            _ => return None,
+        };
+        Some(ch)
+    }
+
+    fn take_string(&mut self) -> Token {
+        let mut string = String::new();
+        while let Some(ch) = self.0.next() {
+            let ch = match ch {
+                '\\' => match self.take_escaped_char() {
+                    Some(ch) => ch,
+                    None => return Token::Illegal,
+                },
+                '"' => break,
+                ch => ch,
+            };
+            string.push(ch);
+        }
+        Token::String(string)
     }
 
     fn take_comment_or_divide(&mut self) -> Token {
@@ -88,6 +121,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             '.' => Token::Dot,
             '\t' => Token::Indent,
             '!' => Token::Bang,
+            '"' => self.take_string(),
             '*' => {
                 if self.0.peek() == Some(&'*') {
                     self.0.next();
@@ -127,6 +161,20 @@ fn tokenize_stuff() {
             Token::Comment("Hello World".to_string()),
             Token::Const,
             Token::Ident("identifier_test".to_string())
+        ]
+    );
+}
+
+#[test]
+fn tokenize_string() {
+    let input = r#"+ "Hello World \r \u{001B}""#;
+    let tokenizer: Tokenizer = input.into();
+    let tokens = tokenizer.collect_vec();
+    assert_eq!(
+        tokens,
+        vec![
+            Token::Plus,
+            Token::String("Hello World \r \u{001B}".to_string())
         ]
     );
 }

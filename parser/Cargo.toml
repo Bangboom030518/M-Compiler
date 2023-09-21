@@ -1,12 +1,9 @@
 [package]
 name = "parser"
-description = "parses the M language"
 version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/Bangboom030518/M-Compiler"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rand = "0.8"
-nom = "7.1"
-rand_derive = { path = "./rand_derive" }
-lazy_static = "1.4"
+tokenizer = { path = "../tokenizer" }

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-resolution = { path = "../resolution" }
-translate = { path = "../translate" }
-parser = { path = "../parser" }
+# resolution = { path = "../resolution" }
+# translate = { path = "../translate" }
+# parser-legacy = { path = "../parser legacy" }
 cranelift-jit = "0.98"

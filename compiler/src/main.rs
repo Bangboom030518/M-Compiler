@@ -1,22 +1,23 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 // use resolution::build_file;
-use parser::{ast::prelude::*, parse_functions};
+// use parser::{ast::prelude::*, parse_functions};
 fn main() {
-    let code = include_str!("../../input.m");
-    let (input, functions) = parse_functions(code).unwrap();
-    assert_eq!(input, "");
 
-    // Create the JIT instance, which manages all generated functions and data.
-    let mut jit: translate::JIT = translate::JIT::default();
-    let answer: i32 = unsafe { run_code(&mut jit, functions.first().unwrap().clone(), 12) }.unwrap();
+    // let code = include_str!("../../input.m");
+    // let (input, functions) = parse_functions(code).unwrap();
+    // assert_eq!(input, "");
 
-    // let tree = build_file(r"C:\Users\Ben\Desktop\Sam and Charlie\Charlie\Rust\M-Compiler\input.m").unwrap_or_else(|error| {
-    //     eprintln!("{}", error);
-    //     std::process::exit(1)
-    // });
+    // // Create the JIT instance, which manages all generated functions and data.
+    // let mut jit: translate::JIT = translate::JIT::default();
+    // let answer: i32 = unsafe { run_code(&mut jit, functions.first().unwrap().clone(), 12) }.unwrap();
 
-    println!("answer = {answer}");
+    // // let tree = build_file(r"C:\Users\Ben\Desktop\Sam and Charlie\Charlie\Rust\M-Compiler\input.m").unwrap_or_else(|error| {
+    // //     eprintln!("{}", error);
+    // //     std::process::exit(1)
+    // // });
+
+    // println!("answer = {answer}");
 }
 
 /// Executes the given code using the cranelift JIT compiler.
