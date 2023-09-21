@@ -4,5 +4,6 @@
     ".\\parser\\Cargo.toml",
     ".\\parser\\Cargo.toml"
   ],
-  "rust-analyzer.showUnlinkedFileNotification": false
+  "rust-analyzer.showUnlinkedFileNotification": false,
+  "editor.lineNumbers": "on",
 }
