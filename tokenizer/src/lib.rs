@@ -1,4 +1,5 @@
 #![feature(iter_collect_into)]
+
 use itertools::Itertools;
 use std::iter::Peekable;
 use std::str::Chars;
