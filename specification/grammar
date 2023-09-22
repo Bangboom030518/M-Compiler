@@ -1,9 +1,0 @@
-<field> = <type> $name:identifier
-<union> = union newline
-    [$name:indent <field> newline]+
-<struct> 
-<if> = if <expression> -> <block>
-<block> = <expression> | newline
-    [indent <expression> newline]+
-<toplevel-declaration> = <toplevel-declaration-name> $name:identifier = 
-<toplevel-declaration-name> = type | const | function

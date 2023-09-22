@@ -1,8 +1,9 @@
+#![feature(iter_collect_into)]
 use itertools::Itertools;
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Token {
     Const,
     Function,
@@ -21,12 +22,14 @@ pub enum Token {
     Dot,
     Equality,
     Bang,
+    #[default]
     Illegal,
     String(String),
     Char(char),
     Ident(String),
     Comment(String),
-    // Parenthesised(Vec<Token>),
+    Integer(u64),
+    Float(f64),
 }
 
 pub struct Tokenizer<'a>(Peekable<Chars<'a>>);
@@ -62,7 +65,15 @@ impl<'a> Tokenizer<'a> {
             't' => '\t',
             'r' => '\r',
             '0' => '\0',
-            'u' => todo!("hex chars"),
+            'u' => {
+                if self.0.next()? != '{' {
+                    return None;
+                }
+                let digits: String = self.0.peeking_take_while(|&ch| ch != '}').collect();
+                self.0.next().unwrap();
+                let code = u32::from_str_radix(&digits, 16).ok()?;
+                char::from_u32(code)?
+            }
             '"' => '"',
             '\'' => '\'',
             '\\' => '\\',
@@ -85,6 +96,44 @@ impl<'a> Tokenizer<'a> {
             string.push(ch);
         }
         Token::String(string)
+    }
+
+    fn take_number_base(&mut self, base: u32) -> Token {
+        self.0.next();
+        let digits: String = self.0.peeking_take_while(|ch| ch.is_digit(base)).collect();
+        u64::from_str_radix(&digits, base)
+            .map(Token::Integer)
+            .unwrap_or_default()
+    }
+
+    fn take_number(&mut self, first_char: char) -> Token {
+        if first_char == '0' {
+            match self.0.peek() {
+                Some(&'x' | &'X') => return self.take_number_base(16),
+                Some(&'o' | &'O') => return self.take_number_base(8),
+                Some(&'b' | &'B') => return self.take_number_base(2),
+                _ => {}
+            }
+        }
+
+        let mut digits: String = std::iter::once(first_char)
+            .chain(
+                self.0
+                    .peeking_take_while(|&ch| ch.is_ascii_digit() || ch == '_'),
+            )
+            .collect();
+
+        if self.0.peek() != Some(&'.') {
+            return digits.parse().map(Token::Integer).unwrap_or_default();
+        }
+        self.0.next().unwrap();
+        digits.push('.');
+
+        self.0
+            .peeking_take_while(|&ch| ch.is_ascii_digit() || ch == '_')
+            .collect_into(&mut digits);
+
+        digits.parse().map(Token::Float).unwrap_or_default()
     }
 
     fn take_comment_or_divide(&mut self) -> Token {
@@ -141,6 +190,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             '/' => self.take_comment_or_divide(),
             ch if ch.is_whitespace() => self.next()?,
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
+            ch if ch.is_numeric() => self.take_number(ch),
             _ => Token::Illegal,
         };
         Some(token)
@@ -176,5 +226,16 @@ fn tokenize_string() {
             Token::Plus,
             Token::String("Hello World \r \u{001B}".to_string())
         ]
+    );
+}
+
+#[test]
+fn tokenize_number() {
+    let input = "0xf 1 0.5";
+    let tokenizer: Tokenizer = input.into();
+    let tokens = tokenizer.collect_vec();
+    assert_eq!(
+        tokens,
+        vec![Token::Integer(0xf), Token::Integer(1), Token::Float(0.5),]
     );
 }
