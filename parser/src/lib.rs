@@ -23,15 +23,10 @@ struct TypeDeclaration {
     kind: TypeDeclarationKind,
 }
 
-enum Body {
-    Single(Expression),
-    Multiple(Vec<Expression>)
-}
-
 struct Function {
     parameters: Vec<Field>,
     return_type: Type,
-    body: Body
+    body: Vec<Expression>
 }
 
 enum Expression {
