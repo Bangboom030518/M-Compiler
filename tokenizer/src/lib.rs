@@ -41,6 +41,7 @@ impl<'a> From<&'a str> for Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
+    
     fn take_ident_or_keyword(&mut self, first_char: char) -> Token {
         let ident: String = std::iter::once(first_char)
             .chain(
