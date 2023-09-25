@@ -1,44 +1,64 @@
-use std::iter::Peekable;
+use itertools::{Itertools, PeekingNext};
 use tokenizer::{Token, Tokenizer};
 
-pub struct TopLevelParser<'a>(Peekable<Tokenizer<'a>>);
-
-impl<'a> TopLevelParser<'a> {
-    
+trait FromTokens {
+    // TODO: errors!
+    fn from_tokens<I>(tokens: &mut I) -> Option<Self>
+    where
+        I: Iterator<Item = Token> + PeekingNext,
+        Self: Sized;
 }
 
-impl<'a> Iterator for TopLevelParser<'a> {
-    type Item = TopLevelDeclaration;
+trait Parse {
+    fn parse<T: FromTokens>(&mut self) -> Option<T>;
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // TODO: errors!
-        match self.0.next()? {
-            Token::Type => {
-                let Token::Ident(ident) = self.0.next()? else {
-                    return None;
-                };
-                let ident = Identifier(ident);
-                // TODO: whitespace?
-                if self.0.next()? != Token::Assignment {
-                    return None;
-                }
-
-            }
-            Token::Function => todo!(),
-            Token::Const => todo!(),
-            Token::Comment(_) | Token::Newline => self.next(),
-            _ => None,
-        }
+impl<I> Parse for I
+where
+    I: Iterator<Item = Token> + PeekingNext,
+{
+    fn parse<T: FromTokens>(&mut self) -> Option<T> {
+        T::from_tokens(self)
     }
 }
 
+// pub struct TopLevelParser<I: Iterator<Item = Token> + PeekingNext>(I);
+
+// impl<I> Iterator for TopLevelParser<I>
+// where
+//     I: Iterator<Item = Token> + PeekingNext,
+// {
+//     type Item = TopLevelDeclaration;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         // TODO: errors!
+//         match self.0.next()? {
+//             Token::Type => {
+//                 let Token::Ident(ident) = self.0.next()? else {
+//                     return None;
+//                 };
+//                 let ident = Identifier(ident);
+//                 // TODO: whitespace?
+//                 if self.0.next()? != Token::Assignment {
+//                     return None;
+//                 }
+//             }
+//             Token::Function => todo!(),
+//             Token::Const => todo!(),
+//             Token::Comment(_) | Token::Newline => self.next(),
+//             _ => None,
+//         }
+//     }
+// }
+
 pub struct Identifier(String);
 
-impl Identifier {
-    // TODO: errors!
-    fn parse(input: &mut Tokenizer) -> Option<Self> {
-        // TODO: parse Type
-        let Token::Ident(ident) = input.next()? else {
+impl FromTokens for Identifier {
+    fn from_tokens<I>(tokens: &mut I) -> Option<Self>
+    where
+        I: Iterator<Item = Token> + PeekingNext,
+    {
+        let Token::Ident(ident) = tokens.next()? else {
             return None;
         };
         Some(Self(ident))
@@ -49,10 +69,12 @@ pub enum Type {
     Identifier(Identifier),
 }
 
-impl Type {
-    // TODO: errors!
-    fn parse(input: &mut Tokenizer) -> Option<Self> {
-        Some(Self::Identifier(Identifier::parse(input)?))
+impl FromTokens for Type {
+    fn from_tokens<I>(tokens: &mut I) -> Option<Self>
+    where
+        I: Iterator<Item = Token> + PeekingNext,
+    {
+        Some(Self::Identifier(tokens.parse()?))
     }
 }
 
@@ -62,13 +84,15 @@ struct Field {
     name: Identifier,
 }
 
-impl Field {
-    // TODO: errors!
-    fn parse(input: &mut Tokenizer) -> Option<Self> {
-        // TODO: parse Type
-        let r#type = Type::parse(input)?;
-        let name = Identifier::parse(input)?;
-        Some(Self { r#type, name })
+impl FromTokens for Field {
+    fn from_tokens<I>(tokens: &mut I) -> Option<Self>
+    where
+        I: Iterator<Item = Token> + PeekingNext,
+    {
+        Some(Self {
+            r#type: tokens.parse()?,
+            name: tokens.parse()?,
+        })
     }
 }
 
@@ -77,12 +101,20 @@ pub struct Union {
     declarations: Vec<TopLevelDeclaration>,
 }
 
-impl Union {
-    fn parse(input: &mut Tokenizer) -> Option<Self> {
+impl FromTokens for Union {
+    fn from_tokens<I>(tokens: &mut I) -> Option<Self>
+    where
+        I: Iterator<Item = Token> + PeekingNext,
+    {
+        if tokens.next()? != Token::Union {
+            return None;
+        }
+        let mut variants = Vec::new();
+        while let Some(input) = tokens.parse() {
+            variants.push(input)
+        }
         // TODO: parse Type
-        let r#variants = Field::parse(input)?;
-        // let name = Identifier::parse(input)?;
-        // Some(Self { r#type, name })
+        Some(Self { variants, declarations: todo!() })
     }
 }
 
