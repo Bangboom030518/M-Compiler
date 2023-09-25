@@ -9,8 +9,7 @@ pub enum Token {
     Const,
     Function,
     Type,
-    // TODO: ?
-    // Enum,
+    Newline,
     Exponent,
     Union,
     Struct,
@@ -171,6 +170,8 @@ impl<'a> Iterator for Tokenizer<'a> {
             '.' => Token::Dot,
             '\t' => Token::Indent,
             '!' => Token::Bang,
+            // TODO: `\r\n`?
+            '\n' => Token::Newline,
             '"' => self.take_string(),
             '*' => {
                 if self.0.peek() == Some(&'*') {
