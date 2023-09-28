@@ -1,6 +1,6 @@
 #![feature(iter_collect_into)]
 
-use itertools::Itertools;
+use itertools::{Itertools, PeekingNext};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -32,6 +32,7 @@ pub enum Token {
     Float(f64),
 }
 
+#[derive(Debug)]
 pub struct Tokenizer<'a>(Peekable<Chars<'a>>);
 
 impl<'a> From<&'a str> for Tokenizer<'a> {
@@ -190,6 +191,14 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '/' => self.take_comment_or_divide(),
+            ' ' => {
+                for _ in 0..3 {
+                    let Some(_) = self.0.peeking_next(|&ch| ch == ' ') else {
+                        return self.next();
+                    };
+                }
+                Token::Indent
+            }
             ch if ch.is_whitespace() => self.next()?,
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
             ch if ch.is_numeric() => self.take_number(ch),

@@ -87,4 +87,3 @@ implement Function for add
 
     const call = @StaticFunction(Self.Arguments)
 
-import 
