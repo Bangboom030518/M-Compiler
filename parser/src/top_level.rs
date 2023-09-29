@@ -97,12 +97,12 @@ impl Parse for Function {
     where
         Self: Sized,
     {
-        // function a = (Int a, Int b,) Int ->
         parser.next_token_is(&Token::OpenParen).then_some(())?;
 
         let mut parameters = Vec::new();
         while let Some(parameter) = parser.parse() {
             parameters.push(parameter);
+            // TODO: trailing comma
             parser.next_token_is(&Token::Comma);
         }
 
