@@ -1,64 +1,57 @@
 use crate::internal::prelude::*;
 
-pub struct Marker(());
-
 #[derive(Debug)]
 pub struct Parser<'a> {
-    tokens: Tokenizer<'a>,
-    peeked_tokens: Vec<Token>,
-    peek_index: usize,
+    tokenizer: Tokenizer<'a>,
+    tokens: Vec<Token>,
+    position: usize,
     indent: u8,
 }
 
 impl<'a> From<Tokenizer<'a>> for Parser<'a> {
-    fn from(tokens: Tokenizer<'a>) -> Self {
+    fn from(tokenizer: Tokenizer<'a>) -> Self {
         Self {
-            tokens,
-            peeked_tokens: Vec::new(),
-            peek_index: 0,
+            tokenizer,
+            tokens: Vec::new(),
+            position: 0,
             indent: 0,
         }
     }
 }
 
 impl<'a> Parser<'a> {
-    // TODO: clone?
     pub fn peek_token(&mut self) -> Option<Token> {
-        let token = self.peeked_tokens.get(self.peek_index).cloned();
+        let token = self.tokens.get(self.position).cloned();
         let token = match token {
             token @ Some(_) => token,
             None => {
-                self.peeked_tokens.push(self.tokens.next()?);
-                self.peeked_tokens.last().cloned()
+                self.tokens.push(self.tokenizer.next()?);
+                self.tokens.last().cloned()
             }
         };
-        self.peek_index += 1;
         token
     }
 
-    /// Clears peek tokens
-    fn advance_peeked(&mut self) {
-        self.peeked_tokens.clear()
-    }
-
-    /// Return to start of peek
-    fn reset_peek(&mut self) {
-        self.peek_index = 0
+    // TODO: clone?
+    pub fn take_token(&mut self) -> Option<Token> {
+        let token @ Some(_) = self.peek_token() else {
+            return None;
+        };
+        self.position += 1;
+        token
     }
 
     pub fn parse<T>(&mut self) -> Option<T>
     where
         T: Parse,
     {
-        match T::parse(self, Marker(())) {
+        let start = self.position;
+        match T::parse(self) {
             None => {
-                self.reset_peek();
+                self.position = start;
                 None
             }
-            result @ Some(_) => {
-                self.advance_peeked();
-                result
-            }
+            result @ Some(_) => result,
         }
     }
 
@@ -66,23 +59,48 @@ impl<'a> Parser<'a> {
     where
         T: Parse,
     {
+        let start = self.position;
         for _ in 0..self.indent {
-            self.expect_next_token(&Token::Indent).then_some(())?;
+            if !self.next_token_is(&Token::Indent) {
+                self.position = start;
+                return None;
+            }
         }
-        let value: T = self.parse()?;
-        // TODO: handle EOFs
-        self.expect_next_token(&Token::Newline).then_some(())?;
-        Some(value)
+
+        let Some(value) = self.parse() else {
+            self.position = start;
+            return None;
+        };
+
+        if self.next_newline_or_eof() {
+            Some(value)
+        } else {
+            self.position = start;
+            return None;
+        }
     }
 
-    pub fn expect_next_token(&mut self, token: &Token) -> bool {
-        if self.peek_token().as_ref() == Some(token) {
-            self.advance_peeked();
+    pub fn next_token_is(&mut self, token: &Token) -> bool {
+        if self.peek_token_is(token) {
+            self.position += 1;
             true
         } else {
-            self.reset_peek();
             false
         }
+    }
+
+    pub fn next_newline_or_eof(&mut self) -> bool {
+        let value = self.peek_newline_or_eof();
+        self.take_token();
+        value
+    }
+
+    pub fn peek_newline_or_eof(&mut self) -> bool {
+        matches!(self.peek_token(), Some(Token::Newline) | None)
+    }
+
+    pub fn peek_token_is(&mut self, token: &Token) -> bool {
+        self.peek_token().as_ref() == Some(token)
     }
 
     pub fn indent(&mut self) {

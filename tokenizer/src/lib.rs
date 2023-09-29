@@ -22,6 +22,10 @@ pub enum Token {
     Dot,
     Equality,
     Bang,
+    Arrow,
+    OpenParen,
+    CloseParen,
+    Comma,
     #[default]
     Illegal,
     String(String),
@@ -167,10 +171,20 @@ impl<'a> Iterator for Tokenizer<'a> {
         let ch = self.0.next()?;
         let token = match ch {
             '+' => Token::Plus,
-            '-' => Token::Minus,
+            '-' => {
+                if self.0.peek() == Some(&'>') {
+                    self.0.next();
+                    Token::Arrow
+                } else {
+                    Token::Minus
+                }
+            }
             '.' => Token::Dot,
+            ',' => Token::Comma,
             '\t' => Token::Indent,
             '!' => Token::Bang,
+            '(' => Token::OpenParen,
+            ')' => Token::CloseParen,
             // TODO: `\r\n`?
             '\n' => Token::Newline,
             '"' => self.take_string(),
