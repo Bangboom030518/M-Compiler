@@ -49,11 +49,51 @@ impl Parse for Variant {
 }
 
 #[derive(PartialEq, Debug)]
+struct Field {
+    r#type: Type,
+    name: Identifier,
+}
+
+impl Parse for Field {
+    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+        Some(Self {
+            r#type: parser.parse()?,
+            name: parser.parse()?,
+        })
+    }
+}
+
+#[derive(PartialEq, Debug)]
 struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         TypeBinding::parse(parser, |parser| parser.peek_token_is(&Token::Comma)).map(Self)
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Struct {
+    fields: Vec<Field>,
+    declarations: Vec<Declaration>,
+}
+
+impl Parse for Struct {
+    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+        parser.next_token_is(&Token::Union).then_some(())?;
+        parser.next_token_is(&Token::Newline).then_some(())?;
+        parser.indent();
+        let mut fields = Vec::new();
+        // TODO: refactor to iter
+        while let Some(input) = parser.parse_line() {
+            fields.push(input);
+        }
+        parser.unindent();
+        Some(Self {
+            fields,
+            // TODO: parse declarations
+            declarations: Vec::new(),
+        })
     }
 }
 
@@ -64,10 +104,7 @@ pub struct Union {
 }
 
 impl Parse for Union {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         parser.next_token_is(&Token::Union).then_some(())?;
         parser.next_token_is(&Token::Newline).then_some(())?;
         parser.indent();
@@ -88,7 +125,7 @@ impl Parse for Union {
 #[derive(PartialEq, Debug)]
 struct Function {
     parameters: Vec<Parameter>,
-    return_type: Type,
+    return_type: Option<Type>,
     body: Vec<Expression>,
 }
 
@@ -107,7 +144,7 @@ impl Parse for Function {
         }
 
         parser.next_token_is(&Token::CloseParen).then_some(())?;
-        let return_type = parser.parse()?;
+        let return_type = parser.parse();
 
         parser.next_token_is(&Token::Arrow).then_some(())?;
 
@@ -134,6 +171,7 @@ enum DeclarationKind {
     Function(Function),
     Const(Expression),
     Union(Union),
+    Struct(Struct)
 }
 
 #[derive(PartialEq, Debug)]
@@ -142,18 +180,40 @@ struct Declaration {
     kind: DeclarationKind,
 }
 
-// impl Parse for Declaration {
-//     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-//         let name;
-//         if parser.next_token_is(&Token::Type) {
+impl Parse for Declaration {
+    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+        let kind = parser.take_token()?;
+        let name = parser.parse()?;
+        parser.next_token_is(&Token::Assignment).then_some(())?;
+        let kind = match kind {
+            Token::Type => match parser.peek_token()? {
+                Token::Union => DeclarationKind::Union(parser.parse()?),
+                Token::Struct => DeclarationKind::Struct(parser.parse()?),
+                _ => return None,
+            },
+            Token::Function => DeclarationKind::Function(parser.parse()?),
+            Token::Const => DeclarationKind::Const(parser.parse()?),
+            _ => return None,
+        };
+        Some(Self { name, kind })
+    }
+}
 
-//         } else if parser.next_token_is(&Token::Function) {
-
-//         }
-
-//         Self { name, kind }
-//     }
-// }
+#[test]
+fn top_level_decl_parses() {
+    let source = r"const MONEY = INHERITANCE";
+    assert_eq!(
+        Parser::from(Tokenizer::from(source))
+            .parse::<Declaration>()
+            .unwrap(),
+        Declaration {
+            name: Identifier(String::from("MONEY")),
+            kind: DeclarationKind::Const(Expression::Identifier(Identifier(String::from(
+                "INHERITANCE"
+            ))))
+        }
+    )
+}
 
 #[test]
 fn union_parses() {
@@ -201,7 +261,7 @@ fn function_parses() {
                     name: Identifier(String::from("b")),
                 }),
             ],
-            return_type: Type::Identifier(Identifier(String::from("UInt32"))),
+            return_type: Some(Type::Identifier(Identifier(String::from("UInt32")))),
             body: vec![
                 Expression::Identifier(Identifier(String::from("a"))),
                 Expression::Identifier(Identifier(String::from("a")))

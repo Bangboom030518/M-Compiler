@@ -1,5 +1,9 @@
-use internal::prelude::*;
+#![warn(clippy::pedantic, clippy::nursery)]
 
+use internal::prelude::*;
+pub use expression::Expression;
+
+pub mod expression;
 pub mod parser;
 mod top_level;
 
@@ -19,17 +23,6 @@ impl Parse for Identifier {
             return None;
         };
         Some(Self(ident))
-    }
-}
-
-#[derive(PartialEq, Debug)]
-pub enum Expression {
-    Identifier(Identifier),
-}
-
-impl Parse for Expression {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        Some(Self::Identifier(parser.parse()?))
     }
 }
 

@@ -20,7 +20,13 @@ pub enum Token {
     Divide,
     Indent,
     Dot,
-    Equality,
+    Remainder,
+    Equal,
+    NotEqual,
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
     Bang,
     Arrow,
     OpenParen,
@@ -178,11 +184,35 @@ impl<'a> Iterator for Tokenizer<'a> {
                 } else {
                     Token::Minus
                 }
-            }
+            },
+            '%' => Token::Remainder,
             '.' => Token::Dot,
             ',' => Token::Comma,
             '\t' => Token::Indent,
-            '!' => Token::Bang,
+            '!' => {
+                if self.0.peek() == Some(&'=') {
+                    self.0.next();
+                    Token::NotEqual
+                } else {
+                    Token::Bang
+                }
+            },
+            '>' => {
+                if self.0.peek() == Some(&'=') {
+                    self.0.next();
+                    Token::GreaterThanOrEqual
+                } else {
+                    Token::GreaterThan
+                }
+            },
+            '<' => {
+                if self.0.peek() == Some(&'=') {
+                    self.0.next();
+                    Token::LessThanOrEqual
+                } else {
+                    Token::LessThan
+                }
+            },
             '(' => Token::OpenParen,
             ')' => Token::CloseParen,
             // TODO: `\r\n`?
@@ -199,7 +229,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             '=' => {
                 if self.0.peek() == Some(&'=') {
                     self.0.next();
-                    Token::Equality
+                    Token::Equal
                 } else {
                     Token::Assignment
                 }
