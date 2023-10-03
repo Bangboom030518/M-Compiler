@@ -1,8 +1,4 @@
-// [sum(a)b{b = a+24:i32}];
-
-// type Bool = union
-//     true
-//     false
-
+// Parses WRONG
 function main = () Nil ->
-    1 + 1
+    1 * 2 * 3
+    1 ** 2 ** 3

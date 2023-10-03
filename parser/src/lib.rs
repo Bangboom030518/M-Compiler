@@ -20,6 +20,7 @@ pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
     while let Some(declaration) = parser.parse_line() {
         declarations.push(declaration)
     }
+    dbg!(parser);
     Some(declarations)
 }
 
@@ -36,11 +37,22 @@ impl Parse for Identifier {
     }
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub enum Type {
+    Identifier(Identifier),
+}
+
+impl Parse for Type {
+    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+        Some(Self::Identifier(parser.parse()?))
+    }
+}
+
 mod internal {
     pub mod prelude {
         pub use crate::{
             parser::{self, Parser},
-            Expression, Identifier, Parse,
+            Expression, Identifier, Parse, Type
         };
         pub use itertools::{Itertools, PeekingNext};
         pub use std::iter::Peekable;

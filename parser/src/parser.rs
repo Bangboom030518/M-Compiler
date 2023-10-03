@@ -22,27 +22,25 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
 impl<'a> Parser<'a> {
     /// Peeks without ignoring whitespace
     pub fn peek_whitespace(&mut self) -> Option<Token> {
-        let token = self.tokens.get(self.position).cloned();
-        match token {
-            Some(token) => {
-                if matches!(token, Token::Comment(_)) {
-                    self.take_token().unwrap();
-                    self.peek_token()
-                } else {
-                    Some(token)
-                }
-            }
+        let token = match self.tokens.get(self.position).cloned() {
+            token @ Some(_) => token,
             None => {
                 self.tokens.push(self.tokenizer.next()?);
                 self.tokens.last().cloned()
             }
+        }?;
+        if matches!(token, Token::Comment(_)) {
+            self.position += 1;
+            self.peek_whitespace()
+        } else {
+            Some(token)
         }
     }
-
+    
     pub fn peek_token(&mut self) -> Option<Token> {
         let token = self.peek_whitespace()?;
         if matches!(token, Token::Indent | Token::Newline) {
-            self.take_whitespace().unwrap();
+            self.position += 1;
             self.peek_token()
         } else {
             Some(token)

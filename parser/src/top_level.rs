@@ -1,17 +1,6 @@
 use crate::internal::prelude::*;
 
 #[derive(PartialEq, Debug)]
-pub enum Type {
-    Identifier(Identifier),
-}
-
-impl Parse for Type {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        Some(Self::Identifier(parser.parse()?))
-    }
-}
-
-#[derive(PartialEq, Debug)]
 // TODO: rename
 pub struct TypeBinding {
     r#type: Option<Type>,
@@ -22,7 +11,6 @@ impl TypeBinding {
     fn parse<'a>(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Option<Self> {
         let r#type = parser.parse()?;
         if peek(parser) {
-            // panic!("NEXT TOKEN IS NEWLINE");
             Some(Self {
                 name: match r#type {
                     Type::Identifier(ref ident) => ident.clone(),
@@ -145,8 +133,9 @@ impl Parse for Function {
         let mut parameters = Vec::new();
         while let Some(parameter) = parser.parse() {
             parameters.push(parameter);
-            // TODO: trailing comma
-            parser.next_token_is(&Token::Comma);
+            if !parser.next_token_is(&Token::Comma) {
+                break
+            }
         }
 
         parser.next_token_is(&Token::CloseParen).then_some(())?;
