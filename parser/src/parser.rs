@@ -20,21 +20,46 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn peek_token(&mut self) -> Option<Token> {
+    /// Peeks without ignoring whitespace
+    pub fn peek_whitespace(&mut self) -> Option<Token> {
         let token = self.tokens.get(self.position).cloned();
-        let token = match token {
-            token @ Some(_) => token,
+        match token {
+            Some(token) => {
+                if matches!(token, Token::Comment(_)) {
+                    self.take_token().unwrap();
+                    self.peek_token()
+                } else {
+                    Some(token)
+                }
+            }
             None => {
                 self.tokens.push(self.tokenizer.next()?);
                 self.tokens.last().cloned()
             }
-        };
-        token
+        }
+    }
+
+    pub fn peek_token(&mut self) -> Option<Token> {
+        let token = self.peek_whitespace()?;
+        if matches!(token, Token::Indent | Token::Newline) {
+            self.take_whitespace().unwrap();
+            self.peek_token()
+        } else {
+            Some(token)
+        }
     }
 
     // TODO: clone?
     pub fn take_token(&mut self) -> Option<Token> {
         let token @ Some(_) = self.peek_token() else {
+            return None;
+        };
+        self.position += 1;
+        token
+    }
+
+    pub fn take_whitespace(&mut self) -> Option<Token> {
+        let token @ Some(_) = self.peek_whitespace() else {
             return None;
         };
         self.position += 1;
@@ -61,7 +86,7 @@ impl<'a> Parser<'a> {
     {
         let start = self.position;
         for _ in 0..self.indent {
-            if !self.next_token_is(&Token::Indent) {
+            if !self.next_whitespace_token_is(&Token::Indent) {
                 self.position = start;
                 return None;
             }
@@ -89,14 +114,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn next_whitespace_token_is(&mut self, token: &Token) -> bool {
+        if self.peek_whitespace_token_is(token) {
+            self.position += 1;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn next_newline_or_eof(&mut self) -> bool {
         let value = self.peek_newline_or_eof();
-        self.take_token();
+        self.take_whitespace();
         value
     }
 
     pub fn peek_newline_or_eof(&mut self) -> bool {
-        matches!(self.peek_token(), Some(Token::Newline) | None)
+        matches!(self.peek_whitespace(), Some(Token::Newline) | None)
+    }
+
+    pub fn peek_whitespace_token_is(&mut self, token: &Token) -> bool {
+        self.peek_whitespace().as_ref() == Some(token)
     }
 
     pub fn peek_token_is(&mut self, token: &Token) -> bool {

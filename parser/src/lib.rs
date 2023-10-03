@@ -14,6 +14,16 @@ pub trait Parse {
         Self: Sized;
 }
 
+pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
+    let mut parser = Parser::from(Tokenizer::from(input));
+    let mut declarations = Vec::new();
+    while let Some(declaration) = parser.parse_line() {
+        declarations.push(declaration)
+    }
+    Some(declarations)
+}
+
+
 #[derive(PartialEq, Debug, Clone)]
 pub struct Identifier(String);
 

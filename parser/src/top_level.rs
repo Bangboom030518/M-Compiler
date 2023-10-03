@@ -13,7 +13,7 @@ impl Parse for Type {
 
 #[derive(PartialEq, Debug)]
 // TODO: rename
-struct TypeBinding {
+pub struct TypeBinding {
     r#type: Option<Type>,
     name: Identifier,
 }
@@ -40,7 +40,7 @@ impl TypeBinding {
 }
 
 #[derive(PartialEq, Debug)]
-struct Variant(TypeBinding);
+pub struct Variant(TypeBinding);
 
 impl Parse for Variant {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
@@ -49,7 +49,7 @@ impl Parse for Variant {
 }
 
 #[derive(PartialEq, Debug)]
-struct Field {
+pub struct Field {
     r#type: Type,
     name: Identifier,
 }
@@ -64,7 +64,7 @@ impl Parse for Field {
 }
 
 #[derive(PartialEq, Debug)]
-struct Parameter(TypeBinding);
+pub struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
@@ -81,18 +81,21 @@ pub struct Struct {
 impl Parse for Struct {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         parser.next_token_is(&Token::Union).then_some(())?;
-        parser.next_token_is(&Token::Newline).then_some(())?;
+        parser.next_whitespace_token_is(&Token::Newline).then_some(())?;
         parser.indent();
         let mut fields = Vec::new();
         // TODO: refactor to iter
         while let Some(input) = parser.parse_line() {
             fields.push(input);
         }
+        let mut declarations = Vec::new();
+        while let Some(declaration) = parser.parse_line() {
+            declarations.push(declaration)
+        }
         parser.unindent();
         Some(Self {
             fields,
-            // TODO: parse declarations
-            declarations: Vec::new(),
+            declarations,
         })
     }
 }
@@ -106,24 +109,27 @@ pub struct Union {
 impl Parse for Union {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         parser.next_token_is(&Token::Union).then_some(())?;
-        parser.next_token_is(&Token::Newline).then_some(())?;
+        parser.next_whitespace_token_is(&Token::Newline).then_some(())?;
         parser.indent();
         let mut variants = Vec::new();
         // TODO: refactor to iter
-        while let Some(input) = parser.parse_line() {
-            variants.push(input);
+        while let Some(variant) = parser.parse_line() {
+            variants.push(variant);
+        }
+        let mut declarations = Vec::new();
+        while let Some(declaration) = parser.parse_line() {
+            declarations.push(declaration)
         }
         parser.unindent();
         Some(Self {
             variants,
-            // TODO: parse declarations
-            declarations: Vec::new(),
+            declarations,
         })
     }
 }
 
 #[derive(PartialEq, Debug)]
-struct Function {
+pub struct Function {
     parameters: Vec<Parameter>,
     return_type: Option<Type>,
     body: Vec<Expression>,
@@ -149,7 +155,7 @@ impl Parse for Function {
         parser.next_token_is(&Token::Arrow).then_some(())?;
 
         let mut body = Vec::new();
-        if parser.next_token_is(&Token::Newline) {
+        if parser.next_whitespace_token_is(&Token::Newline) {
             parser.indent();
             while let Some(input) = parser.parse_line() {
                 body.push(input);
@@ -167,7 +173,7 @@ impl Parse for Function {
 }
 
 #[derive(PartialEq, Debug)]
-enum DeclarationKind {
+pub enum DeclarationKind {
     Function(Function),
     Const(Expression),
     Union(Union),
@@ -175,7 +181,7 @@ enum DeclarationKind {
 }
 
 #[derive(PartialEq, Debug)]
-struct Declaration {
+pub struct Declaration {
     name: Identifier,
     kind: DeclarationKind,
 }
