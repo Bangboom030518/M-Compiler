@@ -32,7 +32,7 @@ pub struct Variant(TypeBinding);
 
 impl Parse for Variant {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        TypeBinding::parse(parser, |parser| parser.peek_newline_or_eof()).map(Self)
+        TypeBinding::parse(parser, |parser| parser.peek_newline_or_eof().is_some()).map(Self)
     }
 }
 
@@ -56,7 +56,10 @@ pub struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        TypeBinding::parse(parser, |parser| parser.peek_token_is(&Token::Comma)).map(Self)
+        TypeBinding::parse(parser, |parser| {
+            parser.peek_token_if(&Token::Comma).is_some()
+        })
+        .map(Self)
     }
 }
 
@@ -68,8 +71,8 @@ pub struct Struct {
 
 impl Parse for Struct {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        parser.next_token_is(&Token::Union).then_some(())?;
-        parser.next_whitespace_token_is(&Token::Newline).then_some(())?;
+        parser.take_token_if(&Token::Union)?;
+        parser.take_newline()?;
         parser.indent();
         let mut fields = Vec::new();
         // TODO: refactor to iter
@@ -96,8 +99,8 @@ pub struct Union {
 
 impl Parse for Union {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        parser.next_token_is(&Token::Union).then_some(())?;
-        parser.next_whitespace_token_is(&Token::Newline).then_some(())?;
+        parser.take_token_if(&Token::Union)?;
+        parser.take_newline();
         parser.indent();
         let mut variants = Vec::new();
         // TODO: refactor to iter
@@ -128,23 +131,16 @@ impl Parse for Function {
     where
         Self: Sized,
     {
-        parser.next_token_is(&Token::OpenParen).then_some(())?;
+        parser.take_token_if(&Token::OpenParen);
 
-        let mut parameters = Vec::new();
-        while let Some(parameter) = parser.parse() {
-            parameters.push(parameter);
-            if !parser.next_token_is(&Token::Comma) {
-                break
-            }
-        }
+        let parameters = parser.parse_csv();
 
-        parser.next_token_is(&Token::CloseParen).then_some(())?;
+        parser.take_token_if(&Token::CloseParen);
+        
         let return_type = parser.parse();
-
-        parser.next_token_is(&Token::Arrow).then_some(())?;
-
+        parser.take_token_if(&Token::Arrow);
         let mut body = Vec::new();
-        if parser.next_whitespace_token_is(&Token::Newline) {
+        if parser.take_newline().is_some() {
             parser.indent();
             while let Some(input) = parser.parse_line() {
                 body.push(input);
@@ -166,7 +162,7 @@ pub enum DeclarationKind {
     Function(Function),
     Const(Expression),
     Union(Union),
-    Struct(Struct)
+    Struct(Struct),
 }
 
 #[derive(PartialEq, Debug)]
@@ -179,7 +175,7 @@ impl Parse for Declaration {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         let kind = parser.take_token()?;
         let name = parser.parse()?;
-        parser.next_token_is(&Token::Assignment).then_some(())?;
+        parser.take_token_if(&Token::Assignment)?;
         let kind = match kind {
             Token::Type => match parser.peek_token()? {
                 Token::Union => DeclarationKind::Union(parser.parse()?),

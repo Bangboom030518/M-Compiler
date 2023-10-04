@@ -20,8 +20,7 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    /// Peeks without ignoring whitespace
-    pub fn peek_whitespace(&mut self) -> Option<Token> {
+    pub fn peek_any(&mut self) -> Option<Token> {
         let token = match self.tokens.get(self.position).cloned() {
             token @ Some(_) => token,
             None => {
@@ -31,14 +30,14 @@ impl<'a> Parser<'a> {
         }?;
         if matches!(token, Token::Comment(_)) {
             self.position += 1;
-            self.peek_whitespace()
+            self.peek_any()
         } else {
             Some(token)
         }
     }
-    
+
     pub fn peek_token(&mut self) -> Option<Token> {
-        let token = self.peek_whitespace()?;
+        let token = self.peek_any()?;
         if matches!(token, Token::Indent | Token::Newline) {
             self.position += 1;
             self.peek_token()
@@ -47,17 +46,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // TODO: clone?
     pub fn take_token(&mut self) -> Option<Token> {
         let token @ Some(_) = self.peek_token() else {
-            return None;
-        };
-        self.position += 1;
-        token
-    }
-
-    pub fn take_whitespace(&mut self) -> Option<Token> {
-        let token @ Some(_) = self.peek_whitespace() else {
             return None;
         };
         self.position += 1;
@@ -78,6 +68,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parse_csv<T>(&mut self) -> Vec<T>
+    where
+        T: Parse,
+    {
+        let mut values = Vec::new();
+        while let Some(value) = self.parse() {
+            values.push(value);
+            if self.take_token_if(&Token::Comma).is_none() {
+                break;
+            }
+        }
+        values
+    }
+
     pub fn parse_line<T>(&mut self) -> Option<T>
     where
         T: Parse,
@@ -95,20 +99,11 @@ impl<'a> Parser<'a> {
             return None;
         };
 
-        if self.next_newline_or_eof() {
+        if self.take_newline_or_eof().is_some() {
             Some(value)
         } else {
             self.position = start;
             return None;
-        }
-    }
-
-    pub fn next_token_is(&mut self, token: &Token) -> bool {
-        if self.peek_token_is(token) {
-            self.position += 1;
-            true
-        } else {
-            false
         }
     }
 
@@ -121,22 +116,48 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn next_newline_or_eof(&mut self) -> bool {
+    pub fn take_newline_or_eof(&mut self) -> Option<()> {
         let value = self.peek_newline_or_eof();
-        self.take_whitespace();
+        if value.is_some() {
+            self.position += 1;
+        }
         value
     }
 
-    pub fn peek_newline_or_eof(&mut self) -> bool {
-        matches!(self.peek_whitespace(), Some(Token::Newline) | None)
+    pub fn peek_newline_or_eof(&mut self) -> Option<()> {
+        matches!(self.peek_any(), Some(Token::Newline) | None).then_some(())
     }
 
     pub fn peek_whitespace_token_is(&mut self, token: &Token) -> bool {
-        self.peek_whitespace().as_ref() == Some(token)
+        self.peek_any().as_ref() == Some(token)
     }
 
-    pub fn peek_token_is(&mut self, token: &Token) -> bool {
-        self.peek_token().as_ref() == Some(token)
+    pub fn peek_token_if<'b, 'c>(&'b mut self, token: &'c Token) -> Option<&'c Token> {
+        if self.peek_token().as_ref() == Some(token) {
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    pub fn take_token_if<'b, 'c>(&'b mut self, token: &'c Token) -> Option<&'c Token> {
+        let token = self.peek_token_if(token);
+        if token.is_some() {
+            self.position += 1;
+        }
+        token
+    }
+
+    pub fn take_newline(&mut self) -> Option<()> {
+        let token = self.peek_newline();
+        if token.is_some() {
+            self.position += 1;
+        }
+        token
+    }
+
+    pub fn peek_newline(&mut self) -> Option<()> {
+        matches!(self.peek_any(), Some(Token::Newline)).then_some(())
     }
 
     pub fn indent(&mut self) {

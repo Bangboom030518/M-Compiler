@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use internal::prelude::*;
 pub use expression::Expression;
+use internal::prelude::*;
 
 pub mod expression;
 pub mod parser;
@@ -23,7 +23,6 @@ pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
     dbg!(parser);
     Some(declarations)
 }
-
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Identifier(String);
@@ -52,7 +51,7 @@ mod internal {
     pub mod prelude {
         pub use crate::{
             parser::{self, Parser},
-            Expression, Identifier, Parse, Type
+            Expression, Identifier, Parse, Type,
         };
         pub use itertools::{Itertools, PeekingNext};
         pub use std::iter::Peekable;

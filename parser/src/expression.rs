@@ -47,26 +47,17 @@ impl Parse for Call {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
         let callable = Expression::parse_nonpostfix_term(parser)?;
 
-        let mut type_arguments = Vec::new();
-        if parser.next_token_is(&Token::LessThan) {
-            while let Some(r#type) = parser.parse() {
-                type_arguments.push(r#type);
-                if !parser.next_token_is(&Token::Comma) {
-                    break;
-                }
-            }
-            parser.next_token_is(&Token::GreaterThan).then_some(())?;
+        let type_arguments = 
+        if parser.take_token_if(&Token::LessThan).is_some() {
+            let type_arguments = parser.parse_csv();
+            parser.take_token_if(&Token::GreaterThan)?;
+            type_arguments
+        } else {
+            Vec::new()
         };
-
-        let mut arguments = Vec::new();
-        parser.next_token_is(&Token::OpenParen).then_some(())?;
-        while let Some(r#type) = parser.parse() {
-            arguments.push(r#type);
-            if !parser.next_token_is(&Token::Comma) {
-                break;
-            }
-        }
-        parser.next_token_is(&Token::CloseParen).then_some(())?;
+        parser.take_token_if(&Token::OpenParen)?;
+        let arguments = parser.parse_csv();
+        parser.take_token_if(&Token::CloseParen)?;
 
         Some(Self {
             callable: Box::new(callable),
@@ -87,9 +78,9 @@ pub enum Expression {
 
 impl Expression {
     fn parse_term<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        if parser.next_token_is(&Token::OpenParen) {
+        if parser.take_token_if(&Token::OpenParen).is_some() {
             let expression = parser.parse()?;
-            parser.next_token_is(&Token::CloseParen).then_some(())?;
+            parser.take_token_if(&Token::CloseParen)?;
             return Some(expression);
         }
 
@@ -101,13 +92,15 @@ impl Expression {
 
     // TODO: rename
     fn parse_nonpostfix_term<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        if parser.next_token_is(&Token::OpenParen) {
+        if parser.take_token_if(&Token::OpenParen).is_some() {
             let expression = parser.parse()?;
-            parser.next_token_is(&Token::CloseParen).then_some(())?;
+            parser.take_token_if(&Token::CloseParen)?;
             return Some(expression);
         }
 
-        None.or_else(|| parser.parse::<Literal>().map(Self::Literal))
+        parser
+            .parse::<Literal>()
+            .map(Self::Literal)
             .or_else(|| parser.parse::<Identifier>().map(Self::Identifier))
             .or_else(|| {
                 Some(Self::UnaryPrefix(
