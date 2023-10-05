@@ -165,4 +165,20 @@ fn binary_expression_parses() {
             }))
         })
     );
+
+    let source = r"1 ** 2 ** 3";
+    assert_eq!(
+        Parser::from(Tokenizer::from(source))
+            .parse::<super::Expression>()
+            .unwrap(),
+        super::Expression::Binary(Expression {
+            left: Box::new(super::Expression::Literal(super::Literal::Integer(1))),
+            operator: Operator::Exponent,
+            right: Box::new(super::Expression::Binary(Expression {
+                left: Box::new(super::Expression::Literal(super::Literal::Integer(2))),
+                operator: Operator::Exponent,
+                right: Box::new(super::Expression::Literal(super::Literal::Integer(3))),
+            }))
+        })
+    )
 }

@@ -88,7 +88,9 @@ impl<'a> Parser<'a> {
     {
         let start = self.position;
         for _ in 0..self.indent {
-            if !self.next_whitespace_token_is(&Token::Indent) {
+            if self.peek_any() == Some(Token::Indent) {
+                self.position += 1;
+            } else {
                 self.position = start;
                 return None;
             }
@@ -107,15 +109,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn next_whitespace_token_is(&mut self, token: &Token) -> bool {
-        if self.peek_whitespace_token_is(token) {
-            self.position += 1;
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn take_newline_or_eof(&mut self) -> Option<()> {
         let value = self.peek_newline_or_eof();
         if value.is_some() {
@@ -128,11 +121,7 @@ impl<'a> Parser<'a> {
         matches!(self.peek_any(), Some(Token::Newline) | None).then_some(())
     }
 
-    pub fn peek_whitespace_token_is(&mut self, token: &Token) -> bool {
-        self.peek_any().as_ref() == Some(token)
-    }
-
-    pub fn peek_token_if<'b, 'c>(&'b mut self, token: &'c Token) -> Option<&'c Token> {
+    pub fn peek_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
         if self.peek_token().as_ref() == Some(token) {
             Some(token)
         } else {
@@ -140,7 +129,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn take_token_if<'b, 'c>(&'b mut self, token: &'c Token) -> Option<&'c Token> {
+    pub fn take_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
         let token = self.peek_token_if(token);
         if token.is_some() {
             self.position += 1;

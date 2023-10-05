@@ -71,7 +71,7 @@ pub struct Struct {
 
 impl Parse for Struct {
     fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
-        parser.take_token_if(&Token::Union)?;
+        parser.take_token_if(&Token::Struct)?;
         parser.take_newline()?;
         parser.indent();
         let mut fields = Vec::new();
@@ -93,8 +93,8 @@ impl Parse for Struct {
 
 #[derive(PartialEq, Debug)]
 pub struct Union {
-    variants: Vec<Variant>,
-    declarations: Vec<Declaration>,
+    pub variants: Vec<Variant>,
+    pub declarations: Vec<Declaration>,
 }
 
 impl Parse for Union {
@@ -121,9 +121,9 @@ impl Parse for Union {
 
 #[derive(PartialEq, Debug)]
 pub struct Function {
-    parameters: Vec<Parameter>,
-    return_type: Option<Type>,
-    body: Vec<Expression>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<Type>,
+    pub body: Vec<Expression>,
 }
 
 impl Parse for Function {
@@ -136,7 +136,7 @@ impl Parse for Function {
         let parameters = parser.parse_csv();
 
         parser.take_token_if(&Token::CloseParen);
-        
+
         let return_type = parser.parse();
         parser.take_token_if(&Token::Arrow);
         let mut body = Vec::new();
@@ -167,8 +167,8 @@ pub enum DeclarationKind {
 
 #[derive(PartialEq, Debug)]
 pub struct Declaration {
-    name: Identifier,
-    kind: DeclarationKind,
+    pub name: Identifier,
+    pub kind: DeclarationKind,
 }
 
 impl Parse for Declaration {
@@ -202,6 +202,31 @@ fn top_level_decl_parses() {
             kind: DeclarationKind::Const(Expression::Identifier(Identifier(String::from(
                 "INHERITANCE"
             ))))
+        }
+    );
+    let uint_8 = Type::Identifier(Identifier(String::from("UInt8")));
+    let source = r"type Point = struct
+    UInt8 x
+    UInt8 y";
+    assert_eq!(
+        Parser::from(Tokenizer::from(source))
+            .parse::<Declaration>()
+            .unwrap(),
+        Declaration {
+            name: Identifier(String::from("Point")),
+            kind: DeclarationKind::Struct(Struct {
+                fields: vec![
+                    Field {
+                        r#type: uint_8.clone(),
+                        name: Identifier(String::from("x"))
+                    },
+                    Field {
+                        r#type: uint_8.clone(),
+                        name: Identifier(String::from("y"))
+                    }
+                ],
+                declarations: Vec::new()
+            })
         }
     )
 }
@@ -259,4 +284,8 @@ fn function_parses() {
             ]
         }
     );
+}
+
+pub mod prelude {
+    pub use super::{Function, Struct, Union};
 }

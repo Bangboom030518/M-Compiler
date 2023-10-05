@@ -5,7 +5,7 @@ use internal::prelude::*;
 
 pub mod expression;
 pub mod parser;
-mod top_level;
+pub mod top_level;
 
 pub trait Parse {
     // TODO: errors!
@@ -20,11 +20,10 @@ pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
     while let Some(declaration) = parser.parse_line() {
         declarations.push(declaration)
     }
-    dbg!(parser);
     Some(declarations)
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct Identifier(String);
 
 impl Parse for Identifier {
@@ -49,12 +48,18 @@ impl Parse for Type {
 
 mod internal {
     pub mod prelude {
-        pub use crate::{
-            parser::{self, Parser},
-            Expression, Identifier, Parse, Type,
-        };
+        pub use crate::prelude::*;
         pub use itertools::{Itertools, PeekingNext};
         pub use std::iter::Peekable;
         pub use tokenizer::{Token, Tokenizer};
     }
+}
+
+pub mod prelude {
+    pub use crate::{
+        parse_file,
+        parser::{self, Parser},
+        top_level::{self, prelude::*},
+        Expression, Identifier, Parse, Type,
+    };
 }

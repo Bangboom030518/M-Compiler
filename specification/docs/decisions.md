@@ -6,8 +6,7 @@
 - Do we use `let` for properties?
 - NO SEMICOLONS
 - `.` instead of `::`
-
-
+- ENHANCED ENUMS?????????
 
 # If, while and match
 
@@ -52,7 +51,7 @@ interface Iterator {
 }
 
 function next() -> None!Item {
-  
+
 }
 
 function ask_user_age() -> error {
