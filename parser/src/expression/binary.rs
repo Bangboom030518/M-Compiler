@@ -18,7 +18,7 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {
     Multiply,
     Plus,
@@ -35,7 +35,7 @@ pub enum Operator {
 }
 
 impl Parse for Operator {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         let operator = match parser.take_token()? {
             Token::Multiply => Self::Multiply,
             Token::Plus => Self::Plus,
@@ -81,7 +81,7 @@ pub struct Terms {
 }
 
 impl Parse for Terms {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         let left_term = super::Expression::parse_term(parser)?;
         let mut right_terms = Vec::new();
         while let Some(term) = parser.parse() {
@@ -136,7 +136,7 @@ pub struct Term {
 }
 
 impl Parse for Term {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         Some(Self {
             operator: parser.parse()?,
             expression: super::Expression::parse_term(parser)?,
@@ -180,5 +180,5 @@ fn binary_expression_parses() {
                 right: Box::new(super::Expression::Literal(super::Literal::Integer(3))),
             }))
         })
-    )
+    );
 }

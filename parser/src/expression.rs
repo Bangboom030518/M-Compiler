@@ -2,14 +2,14 @@ use crate::internal::prelude::*;
 
 mod binary;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum UnaryOperator {
     Minus,
     Bang,
 }
 
 impl Parse for UnaryOperator {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         match parser.take_token()? {
             Token::Minus => Some(Self::Minus),
             Token::Bang => Some(Self::Bang),

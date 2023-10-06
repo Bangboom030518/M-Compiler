@@ -1,6 +1,6 @@
 use crate::internal::prelude::*;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 // TODO: rename
 pub struct TypeBinding {
     pub r#type: Option<Type>,
@@ -27,23 +27,23 @@ impl TypeBinding {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Variant(TypeBinding);
 
 impl Parse for Variant {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         TypeBinding::parse(parser, |parser| parser.peek_newline_or_eof().is_some()).map(Self)
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Field {
     pub r#type: Type,
     pub name: Identifier,
 }
 
 impl Parse for Field {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         Some(Self {
             r#type: parser.parse()?,
             name: parser.parse()?,
@@ -51,7 +51,7 @@ impl Parse for Field {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
@@ -172,7 +172,7 @@ pub struct Declaration {
 }
 
 impl Parse for Declaration {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         let kind = parser.take_token()?;
         let name = parser.parse()?;
         parser.take_token_if(&Token::Assignment)?;
@@ -221,14 +221,14 @@ fn top_level_decl_parses() {
                         name: Identifier(String::from("x"))
                     },
                     Field {
-                        r#type: uint_8.clone(),
+                        r#type: uint_8,
                         name: Identifier(String::from("y"))
                     }
                 ],
                 declarations: Vec::new()
             })
         }
-    )
+    );
 }
 
 #[test]

@@ -9,16 +9,17 @@ pub mod top_level;
 
 pub trait Parse {
     // TODO: errors!
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self>
+    fn parse(parser: &mut Parser) -> Option<Self>
     where
         Self: Sized;
 }
 
+#[must_use]
 pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
     let mut parser = Parser::from(Tokenizer::from(input));
     let mut declarations = Vec::new();
     while let Some(declaration) = parser.parse_line() {
-        declarations.push(declaration)
+        declarations.push(declaration);
     }
     Some(declarations)
 }
@@ -27,7 +28,7 @@ pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
 pub struct Identifier(String);
 
 impl Parse for Identifier {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         let Token::Ident(ident) = parser.take_token()? else {
             return None;
         };
@@ -35,13 +36,13 @@ impl Parse for Identifier {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
     Identifier(Identifier),
 }
 
 impl Parse for Type {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         Some(Self::Identifier(parser.parse()?))
     }
 }

@@ -105,7 +105,7 @@ impl<'a> Parser<'a> {
             Some(value)
         } else {
             self.position = start;
-            return None;
+            None
         }
     }
 
