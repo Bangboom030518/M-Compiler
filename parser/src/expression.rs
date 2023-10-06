@@ -26,7 +26,7 @@ pub enum Literal {
 }
 
 impl Parse for Literal {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         match parser.take_token()? {
             Token::String(string) => Some(Self::String(string)),
             Token::Integer(integer) => Some(Self::Integer(integer)),
@@ -44,7 +44,7 @@ pub struct Call {
 }
 
 impl Parse for Call {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         let callable = Expression::parse_nonpostfix_term(parser)?;
 
         let type_arguments = 
@@ -77,7 +77,7 @@ pub enum Expression {
 }
 
 impl Expression {
-    fn parse_term<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse_term(parser: &mut Parser) -> Option<Self> {
         if parser.take_token_if(&Token::OpenParen).is_some() {
             let expression = parser.parse()?;
             parser.take_token_if(&Token::CloseParen)?;
@@ -91,7 +91,7 @@ impl Expression {
     }
 
     // TODO: rename
-    fn parse_nonpostfix_term<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse_nonpostfix_term(parser: &mut Parser) -> Option<Self> {
         if parser.take_token_if(&Token::OpenParen).is_some() {
             let expression = parser.parse()?;
             parser.take_token_if(&Token::CloseParen)?;
@@ -112,7 +112,7 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         Some(parser.parse::<binary::Terms>()?.into())
     }
 }

@@ -3,17 +3,17 @@ use crate::internal::prelude::*;
 #[derive(PartialEq, Debug)]
 // TODO: rename
 pub struct TypeBinding {
-    r#type: Option<Type>,
-    name: Identifier,
+    pub r#type: Option<Type>,
+    pub name: Identifier,
 }
 
 impl TypeBinding {
-    fn parse<'a>(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Option<Self> {
+    fn parse(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Option<Self> {
         let r#type = parser.parse()?;
         if peek(parser) {
             Some(Self {
                 name: match r#type {
-                    Type::Identifier(ref ident) => ident.clone(),
+                    Type::Identifier(ident) => ident,
                     _ => return None,
                 },
                 r#type: None,
@@ -38,8 +38,8 @@ impl Parse for Variant {
 
 #[derive(PartialEq, Debug)]
 pub struct Field {
-    r#type: Type,
-    name: Identifier,
+    pub r#type: Type,
+    pub name: Identifier,
 }
 
 impl Parse for Field {
@@ -55,7 +55,7 @@ impl Parse for Field {
 pub struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         TypeBinding::parse(parser, |parser| {
             parser.peek_token_if(&Token::Comma).is_some()
         })
@@ -65,12 +65,12 @@ impl Parse for Parameter {
 
 #[derive(PartialEq, Debug)]
 pub struct Struct {
-    fields: Vec<Field>,
-    declarations: Vec<Declaration>,
+    pub fields: Vec<Field>,
+    pub declarations: Vec<Declaration>,
 }
 
 impl Parse for Struct {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::Struct)?;
         parser.take_newline()?;
         parser.indent();
@@ -81,7 +81,7 @@ impl Parse for Struct {
         }
         let mut declarations = Vec::new();
         while let Some(declaration) = parser.parse_line() {
-            declarations.push(declaration)
+            declarations.push(declaration);
         }
         parser.unindent();
         Some(Self {
@@ -98,7 +98,7 @@ pub struct Union {
 }
 
 impl Parse for Union {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::Union)?;
         parser.take_newline();
         parser.indent();
@@ -109,7 +109,7 @@ impl Parse for Union {
         }
         let mut declarations = Vec::new();
         while let Some(declaration) = parser.parse_line() {
-            declarations.push(declaration)
+            declarations.push(declaration);
         }
         parser.unindent();
         Some(Self {
@@ -127,7 +127,7 @@ pub struct Function {
 }
 
 impl Parse for Function {
-    fn parse<'a>(parser: &mut Parser<'a>) -> Option<Self>
+    fn parse(parser: &mut Parser) -> Option<Self>
     where
         Self: Sized,
     {
@@ -146,7 +146,7 @@ impl Parse for Function {
                 body.push(input);
             }
         } else {
-            body.push(parser.parse()?)
+            body.push(parser.parse()?);
         };
         parser.unindent();
         Some(Self {
