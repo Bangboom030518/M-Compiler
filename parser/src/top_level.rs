@@ -123,7 +123,7 @@ impl Parse for Union {
 pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Option<Type>,
-    pub body: Vec<Expression>,
+    pub body: Vec<Statement>,
 }
 
 impl Parse for Function {
@@ -138,17 +138,15 @@ impl Parse for Function {
         parser.take_token_if(&Token::CloseParen);
 
         let return_type = parser.parse();
-        parser.take_token_if(&Token::Arrow);
         let mut body = Vec::new();
-        if parser.take_newline().is_some() {
-            parser.indent();
-            while let Some(input) = parser.parse_line() {
-                body.push(input);
-            }
-        } else {
-            body.push(parser.parse()?);
-        };
+        parser.take_newline()?;
+
+        parser.indent();
+        while let Some(input) = parser.parse_line() {
+            body.push(input);
+        }
         parser.unindent();
+
         Some(Self {
             parameters,
             return_type,
@@ -258,12 +256,11 @@ fn union_parses() {
 
 #[test]
 fn function_parses() {
-    let source = r"(String a, b,) UInt32 ->
+    let source = r"(String a, b,) UInt32
     a
     a";
     let mut parser = Parser::from(Tokenizer::from(source));
     let function = parser.parse::<Function>();
-    dbg!(parser);
     assert_eq!(
         function.unwrap(),
         Function {
@@ -279,8 +276,8 @@ fn function_parses() {
             ],
             return_type: Some(Type::Identifier(Identifier(String::from("UInt32")))),
             body: vec![
-                Expression::Identifier(Identifier(String::from("a"))),
-                Expression::Identifier(Identifier(String::from("a")))
+                Statement::Expression(Expression::Identifier(Identifier(String::from("a")))),
+                Statement::Expression(Expression::Identifier(Identifier(String::from("a"))))
             ]
         }
     );

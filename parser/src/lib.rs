@@ -47,6 +47,38 @@ impl Parse for Type {
     }
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub enum Statement {
+    Expression(Expression),
+    Let(Identifier, Expression),
+}
+
+impl Parse for Statement {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        if parser.take_token_if(&Token::Let).is_some() {
+            let name = parser.parse()?;
+            parser.take_token_if(&Token::Assignment)?;
+            Some(Self::Let(name, parser.parse()?))
+        } else {
+            parser.parse().map(Self::Expression)
+        }
+    }
+}
+
+#[test]
+fn test_let() {
+    let source = r"let a = 1";
+    let mut parser = Parser::from(Tokenizer::from(source));
+    let r#let = parser.parse::<Statement>().unwrap();
+    assert_eq!(
+        r#let,
+        Statement::Let(
+            Identifier(String::from("a")),
+            Expression::Literal(Literal::Integer(1))
+        )
+    );
+}
+
 mod internal {
     pub mod prelude {
         pub use crate::prelude::*;
@@ -58,9 +90,10 @@ mod internal {
 
 pub mod prelude {
     pub use crate::{
+        expression::{self, prelude::*},
         parse_file,
         parser::{self, Parser},
         top_level::{self, prelude::*},
-        Expression, Identifier, Parse, Type,
+        Expression, Identifier, Parse, Statement, Type,
     };
 }

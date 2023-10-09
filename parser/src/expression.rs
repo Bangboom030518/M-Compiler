@@ -1,6 +1,7 @@
 use crate::internal::prelude::*;
 
-mod binary;
+pub mod binary;
+pub mod control_flow;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum UnaryOperator {
@@ -47,8 +48,7 @@ impl Parse for Call {
     fn parse(parser: &mut Parser) -> Option<Self> {
         let callable = Expression::parse_nonpostfix_term(parser)?;
 
-        let type_arguments = 
-        if parser.take_token_if(&Token::LessThan).is_some() {
+        let type_arguments = if parser.take_token_if(&Token::LessThan).is_some() {
             let type_arguments = parser.parse_csv();
             parser.take_token_if(&Token::GreaterThan)?;
             type_arguments
@@ -70,10 +70,12 @@ impl Parse for Call {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
     Identifier(Identifier),
+    // TODO: expand
     Literal(Literal),
     Binary(binary::Expression),
     UnaryPrefix(UnaryOperator, Box<Self>),
     Call(Call),
+    If(If),
 }
 
 impl Expression {
@@ -101,6 +103,7 @@ impl Expression {
         parser
             .parse::<Literal>()
             .map(Self::Literal)
+            .or_else(|| parser.parse::<If>().map(Self::If))
             .or_else(|| parser.parse::<Identifier>().map(Self::Identifier))
             .or_else(|| {
                 Some(Self::UnaryPrefix(
@@ -115,4 +118,10 @@ impl Parse for Expression {
     fn parse(parser: &mut Parser) -> Option<Self> {
         Some(parser.parse::<binary::Terms>()?.into())
     }
+}
+
+pub mod prelude {
+    pub use super::binary;
+    pub use super::control_flow::If;
+    pub use super::Literal;
 }

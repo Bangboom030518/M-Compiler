@@ -73,12 +73,12 @@ function add = (Int32 a, Int32 b) !Int32 ->
     asdasd
     asdasd
 
-x.map((a) ->
-    asdasd
-    asdsadda
-    asdasdas
-    asdasdasd
+x.map((a)
+    let x = "1"
+    String.new(x)
 )
+
+x.map($0.a)
 
 const add = struct()
 
@@ -92,4 +92,6 @@ Map {
     main --> ...
 }
 
-function main = () Nil ->
+function main = (List<String> arguments) !Nil
+    let number = arguments.parse<Int32>()
+

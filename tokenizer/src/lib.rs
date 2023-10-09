@@ -9,6 +9,9 @@ pub enum Token {
     Const,
     Function,
     Type,
+    If,
+    Else,
+    Let,
     Newline,
     Exponent,
     Union,
@@ -28,7 +31,6 @@ pub enum Token {
     GreaterThanOrEqual,
     LessThanOrEqual,
     Bang,
-    Arrow,
     OpenParen,
     CloseParen,
     Comma,
@@ -66,6 +68,9 @@ impl<'a> Tokenizer<'a> {
             "union" => Token::Union,
             "function" => Token::Function,
             "type" => Token::Type,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "let" => Token::Let,
             _ => Token::Ident(ident),
         }
     }
@@ -177,14 +182,7 @@ impl<'a> Iterator for Tokenizer<'a> {
         let ch = self.0.next()?;
         let token = match ch {
             '+' => Token::Plus,
-            '-' => {
-                if self.0.peek() == Some(&'>') {
-                    self.0.next();
-                    Token::Arrow
-                } else {
-                    Token::Minus
-                }
-            },
+            '-' => Token::Minus,
             '%' => Token::Remainder,
             '.' => Token::Dot,
             ',' => Token::Comma,
@@ -196,7 +194,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 } else {
                     Token::Bang
                 }
-            },
+            }
             '>' => {
                 if self.0.peek() == Some(&'=') {
                     self.0.next();
@@ -204,7 +202,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 } else {
                     Token::GreaterThan
                 }
-            },
+            }
             '<' => {
                 if self.0.peek() == Some(&'=') {
                     self.0.next();
@@ -212,7 +210,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 } else {
                     Token::LessThan
                 }
-            },
+            }
             '(' => Token::OpenParen,
             ')' => Token::CloseParen,
             // TODO: `\r\n`?

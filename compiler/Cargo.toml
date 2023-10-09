@@ -7,4 +7,5 @@ edition = "2021"
 # resolution = { path = "../resolution" }
 translate = { path = "../translate" }
 parser = { path = "../parser" }
+itertools = "0.11.0"
 # cranelift-jit = "0.98"
