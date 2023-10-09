@@ -7,7 +7,7 @@
 - NO SEMICOLONS
 - `.` instead of `::`
 - ENHANCED ENUMS?????????
-- intrinsics: `@` + identifier + '(' + Expression,* + ')'
+- intrinsics: '@' + identifier + '(' + Expression,* + ')'
 # If, while and match
 
 Do we have required parenthesis and/or curly braces, like this?
