@@ -25,6 +25,7 @@ pub enum Token {
     Dot,
     Remainder,
     Equal,
+    At,
     NotEqual,
     GreaterThan,
     LessThan,
@@ -186,6 +187,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             '%' => Token::Remainder,
             '.' => Token::Dot,
             ',' => Token::Comma,
+            '@' => Token::At,
             '\t' => Token::Indent,
             '!' => {
                 if self.0.peek() == Some(&'=') {

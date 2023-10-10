@@ -3,9 +3,9 @@ use crate::Expression;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct If {
-    condition: Box<Expression>,
-    true_branch: Vec<Statement>,
-    false_branch: Option<Vec<Statement>>,
+    pub condition: Box<Expression>,
+    pub true_branch: (scope::Id, Vec<Statement>),
+    pub false_branch: Option<(scope::Id, Vec<Statement>)>,
 }
 
 impl Parse for If {
@@ -48,14 +48,17 @@ fn test_if() {
     2
 else
     3";
-    let mut parser = Parser::from(Tokenizer::from(source));
-    let r#if = parser.parse::<If>();
-    assert_eq!(
-        r#if.unwrap(),
+    assert_matches!(
+        Parser::from(Tokenizer::from(source)).parse::<If>().unwrap(),
         If {
             condition: Box::new(Expression::Literal(Literal::Integer(1))),
-            true_branch: vec![Statement::Expression(Expression::Literal(Literal::Integer(2)))],
-            false_branch: Some(vec![Statement::Expression(Expression::Literal(Literal::Integer(3)))])
+            true_branch: vec![Statement::Expression(Expression::Literal(
+                Literal::Integer(2)
+            ))],
+            false_branch: Some(vec![Statement::Expression(Expression::Literal(
+                Literal::Integer(3)
+            ))]),
+            sc
         }
     );
 }

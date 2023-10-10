@@ -66,7 +66,8 @@ impl Parse for Parameter {
 #[derive(PartialEq, Debug)]
 pub struct Struct {
     pub fields: Vec<Field>,
-    pub declarations: Vec<Declaration>,
+    // pub declarations: Vec<Declaration>,
+    pub scope: scope::Id,
 }
 
 impl Parse for Struct {
@@ -74,19 +75,26 @@ impl Parse for Struct {
         parser.take_token_if(&Token::Struct)?;
         parser.take_newline()?;
         parser.indent();
+        let scope_id = parser.create_scope();
+        let scope = parser.get_scope(scope_id);
+
         let mut fields = Vec::new();
         // TODO: refactor to iter
         while let Some(input) = parser.parse_line() {
             fields.push(input);
         }
-        let mut declarations = Vec::new();
-        while let Some(declaration) = parser.parse_line() {
-            declarations.push(declaration);
+
+        while let Some(declaration) = parser.parse_line::<Declaration>() {
+            scope
+                .declarations
+                .insert(declaration.name, declaration.kind);
         }
         parser.unindent();
+        parser.exit_scope();
+
         Some(Self {
             fields,
-            declarations,
+            scope: scope_id,
         })
     }
 }
@@ -94,27 +102,34 @@ impl Parse for Struct {
 #[derive(PartialEq, Debug)]
 pub struct Union {
     pub variants: Vec<Variant>,
-    pub declarations: Vec<Declaration>,
+    pub scope: scope::Id,
 }
 
 impl Parse for Union {
     fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::Union)?;
-        parser.take_newline();
+        parser.take_newline()?;
         parser.indent();
+        let scope_id = parser.create_scope();
+        let scope = parser.get_scope(scope_id);
+
         let mut variants = Vec::new();
         // TODO: refactor to iter
-        while let Some(variant) = parser.parse_line() {
-            variants.push(variant);
+        while let Some(input) = parser.parse_line() {
+            variants.push(input);
         }
-        let mut declarations = Vec::new();
-        while let Some(declaration) = parser.parse_line() {
-            declarations.push(declaration);
+
+        while let Some(declaration) = parser.parse_line::<Declaration>() {
+            scope
+                .declarations
+                .insert(declaration.name, declaration.kind);
         }
         parser.unindent();
+        parser.exit_scope();
+
         Some(Self {
             variants,
-            declarations,
+            scope: scope_id,
         })
     }
 }
@@ -127,10 +142,7 @@ pub struct Function {
 }
 
 impl Parse for Function {
-    fn parse(parser: &mut Parser) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::OpenParen);
 
         let parameters = parser.parse_csv();
@@ -207,7 +219,7 @@ fn top_level_decl_parses() {
     UInt8 x
     UInt8 y";
     assert_eq!(
-        Parser::from(Tokenizer::from(source))
+        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
             .parse::<Declaration>()
             .unwrap(),
         Declaration {
@@ -223,7 +235,6 @@ fn top_level_decl_parses() {
                         name: Identifier(String::from("y"))
                     }
                 ],
-                declarations: Vec::new()
             })
         }
     );
@@ -235,7 +246,7 @@ fn union_parses() {
     String a
     b";
     assert_eq!(
-        Parser::from(Tokenizer::from(source))
+        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
             .parse::<Union>()
             .unwrap(),
         Union {
@@ -259,10 +270,10 @@ fn function_parses() {
     let source = r"(String a, b,) UInt32
     a
     a";
-    let mut parser = Parser::from(Tokenizer::from(source));
-    let function = parser.parse::<Function>();
-    assert_eq!(
-        function.unwrap(),
+    assert_matches!(
+        Parser::from(Tokenizer::from(source))
+            .parse::<Function>()
+            .unwrap(),
         Function {
             parameters: vec![
                 Parameter(TypeBinding {
@@ -278,7 +289,8 @@ fn function_parses() {
             body: vec![
                 Statement::Expression(Expression::Identifier(Identifier(String::from("a")))),
                 Statement::Expression(Expression::Identifier(Identifier(String::from("a"))))
-            ]
+            ],
+            scope: _
         }
     );
 }

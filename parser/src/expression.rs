@@ -68,9 +68,15 @@ impl Parse for Call {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum IntrinsicCall {
+    IAdd(Box<Expression>, Box<Expression>),
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
     Identifier(Identifier),
     // TODO: expand
+    IntrinsicCall(IntrinsicCall),
     Literal(Literal),
     Binary(binary::Expression),
     UnaryPrefix(UnaryOperator, Box<Self>),

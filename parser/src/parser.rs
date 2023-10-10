@@ -6,20 +6,41 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     position: usize,
     indent: u8,
+    scope_cache: scope::Cache,
+    scope: scope::Id,
 }
 
 impl<'a> From<Tokenizer<'a>> for Parser<'a> {
     fn from(tokenizer: Tokenizer<'a>) -> Self {
+        let scope_cache = scope::Cache::new();
+        let scope = scope_cache.root_scope();
         Self {
             tokenizer,
             tokens: Vec::new(),
             position: 0,
             indent: 0,
+            scope_cache,
+            scope,
         }
     }
 }
 
 impl<'a> Parser<'a> {
+    pub fn create_scope(&mut self) -> scope::Id {
+        let id = self.scope_cache.create_scope(self.scope);
+        self.scope = id;
+        id
+    }
+
+    pub fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
+        self.scope_cache.get(id)
+    }
+
+    // TODO: scope guard
+    pub fn exit_scope(&mut self) {
+        self.scope = self.scope_cache.get(self.scope).parent.unwrap();
+    }
+
     pub fn peek_any(&mut self) -> Option<Token> {
         let token = match self.tokens.get(self.position).cloned() {
             token @ Some(_) => token,
@@ -132,7 +153,7 @@ impl<'a> Parser<'a> {
     pub fn take_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
         let token = self.peek_token_if(token);
         if token.is_some() {
-            self.position += 1;
+            self.position += 1
         }
         token
     }

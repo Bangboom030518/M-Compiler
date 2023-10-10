@@ -1,10 +1,12 @@
 #![warn(clippy::pedantic, clippy::nursery)]
+#![feature(assert_matches)]
 
 pub use expression::Expression;
 use internal::prelude::*;
 
 pub mod expression;
 pub mod parser;
+pub mod scope;
 pub mod top_level;
 
 pub trait Parse {
@@ -17,11 +19,16 @@ pub trait Parse {
 #[must_use]
 pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
     let mut parser = Parser::from(Tokenizer::from(input));
-    let mut declarations = Vec::new();
-    while let Some(declaration) = parser.parse_line() {
-        declarations.push(declaration);
+    let scope_id = parser.create_scope();
+    let scope = parser.get_scope(scope_id);
+    while let Some(declaration) = parser.parse_line::<top_level::Declaration>() {
+        scope
+            .declarations
+            .insert(declaration.name, declaration.kind);
     }
-    Some(declarations)
+    parser.exit_scope();
+
+    Some(todo!())
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
@@ -68,6 +75,7 @@ impl Parse for Statement {
 #[test]
 fn test_let() {
     let source = r"let a = 1";
+    let cache = &mut scope::Cache::new();
     let mut parser = Parser::from(Tokenizer::from(source));
     let r#let = parser.parse::<Statement>().unwrap();
     assert_eq!(
@@ -83,7 +91,9 @@ mod internal {
     pub mod prelude {
         pub use crate::prelude::*;
         pub use itertools::{Itertools, PeekingNext};
-        pub use std::iter::Peekable;
+        #[cfg(test)]
+        pub use std::assert_matches::assert_matches;
+        pub use std::{collections::HashMap, iter::Peekable};
         pub use tokenizer::{Token, Tokenizer};
     }
 }
@@ -93,6 +103,7 @@ pub mod prelude {
         expression::{self, prelude::*},
         parse_file,
         parser::{self, Parser},
+        scope::{self, Scope},
         top_level::{self, prelude::*},
         Expression, Identifier, Parse, Statement, Type,
     };
