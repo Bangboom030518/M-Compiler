@@ -4,8 +4,8 @@ use crate::Expression;
 #[derive(Debug, Clone, PartialEq)]
 pub struct If {
     pub condition: Box<Expression>,
-    pub true_branch: (scope::Id, Vec<Statement>),
-    pub false_branch: Option<(scope::Id, Vec<Statement>)>,
+    pub true_branch: Vec<Statement>,
+    pub false_branch: Option<Vec<Statement>>,
 }
 
 impl Parse for If {
@@ -48,7 +48,7 @@ fn test_if() {
     2
 else
     3";
-    assert_matches!(
+    assert_eq!(
         Parser::from(Tokenizer::from(source)).parse::<If>().unwrap(),
         If {
             condition: Box::new(Expression::Literal(Literal::Integer(1))),
@@ -58,7 +58,6 @@ else
             false_branch: Some(vec![Statement::Expression(Expression::Literal(
                 Literal::Integer(3)
             ))]),
-            sc
         }
     );
 }

@@ -219,7 +219,7 @@ fn top_level_decl_parses() {
     UInt8 x
     UInt8 y";
     assert_eq!(
-        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
+        Parser::from(Tokenizer::from(source))
             .parse::<Declaration>()
             .unwrap(),
         Declaration {
@@ -235,6 +235,7 @@ fn top_level_decl_parses() {
                         name: Identifier(String::from("y"))
                     }
                 ],
+                
             })
         }
     );
@@ -245,10 +246,12 @@ fn union_parses() {
     let source = r"union
     String a
     b";
+    let union = Parser::from(Tokenizer::from(source))
+        .parse::<Union>()
+        .unwrap();
+    let scope = union.scope;
     assert_eq!(
-        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
-            .parse::<Union>()
-            .unwrap(),
+        union,
         Union {
             variants: vec![
                 Variant(TypeBinding {
@@ -260,7 +263,7 @@ fn union_parses() {
                     name: Identifier(String::from("b")),
                 })
             ],
-            declarations: vec![],
+            scope,
         }
     );
 }
@@ -270,7 +273,7 @@ fn function_parses() {
     let source = r"(String a, b,) UInt32
     a
     a";
-    assert_matches!(
+    assert_eq!(
         Parser::from(Tokenizer::from(source))
             .parse::<Function>()
             .unwrap(),
@@ -290,7 +293,6 @@ fn function_parses() {
                 Statement::Expression(Expression::Identifier(Identifier(String::from("a")))),
                 Statement::Expression(Expression::Identifier(Identifier(String::from("a"))))
             ],
-            scope: _
         }
     );
 }

@@ -148,7 +148,7 @@ impl Parse for Term {
 fn binary_expression_parses() {
     let source = r"1 + 1 * 1 / 1";
     assert_eq!(
-        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
+        Parser::from(Tokenizer::from(source))
             .parse::<super::Expression>()
             .unwrap(),
         super::Expression::Binary(Expression {
@@ -168,7 +168,7 @@ fn binary_expression_parses() {
 
     let source = r"1 ** 2 ** 3";
     assert_eq!(
-        Parser::new(Tokenizer::from(source), &mut scope::Cache::new())
+        Parser::from(Tokenizer::from(source))
             .parse::<super::Expression>()
             .unwrap(),
         super::Expression::Binary(Expression {
