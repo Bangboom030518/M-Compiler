@@ -3,11 +3,24 @@ use crate::internal::prelude::*;
 #[derive(Debug, Default)]
 pub struct Scope {
     pub parent: Option<Id>,
-    pub declarations: HashMap<Identifier, top_level::DeclarationKind>,
+    pub declarations: HashMap<Ident, top_level::DeclarationKind>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
+
+#[derive(Debug)]
+pub struct File {
+    pub root: Id,
+    pub cache: Cache,
+}
+
+impl File {
+    #[must_use]
+    pub fn root(&self) -> &Scope {
+        self.cache.get(self.root)
+    }
+}
 
 #[derive(Debug)]
 pub struct Cache {
@@ -15,21 +28,20 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new() -> Self {
+    #[must_use]
+    pub(crate) fn new() -> Self {
         Self {
             scopes: vec![Scope::default()],
         }
     }
 
     // TODO: ?
-    pub fn root_scope(&self) -> Id {
+    #[must_use]
+    pub const fn root_scope(&self) -> Id {
         Id(0)
     }
 
-    pub fn create_scope(
-        &mut self,
-        parent: Id,
-    ) -> Id {
+    pub fn create_scope(&mut self, parent: Id) -> Id {
         let id = Id(self.scopes.len());
         self.scopes.push(Scope {
             parent: Some(parent),
@@ -38,8 +50,13 @@ impl Cache {
         id
     }
 
+    #[must_use]
+    pub fn get(&self, Id(id): Id) -> &Scope {
+        &self.scopes[id]
+    }
+
     // TODO: index operator instead?
-    pub fn get(&mut self, Id(id): Id) -> &mut Scope {
+    pub fn get_mut(&mut self, Id(id): Id) -> &mut Scope {
         &mut self.scopes[id]
     }
 }

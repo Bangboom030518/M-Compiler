@@ -74,7 +74,7 @@ pub enum IntrinsicCall {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
-    Identifier(Identifier),
+    Identifier(Ident),
     // TODO: expand
     IntrinsicCall(IntrinsicCall),
     Literal(Literal),
@@ -110,7 +110,7 @@ impl Expression {
             .parse::<Literal>()
             .map(Self::Literal)
             .or_else(|| parser.parse::<If>().map(Self::If))
-            .or_else(|| parser.parse::<Identifier>().map(Self::Identifier))
+            .or_else(|| parser.parse::<Ident>().map(Self::Identifier))
             .or_else(|| {
                 Some(Self::UnaryPrefix(
                     parser.parse()?,

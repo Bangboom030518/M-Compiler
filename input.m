@@ -7,6 +7,10 @@ type Point = struct
     type Inner = struct
         String a
 
+type Bool =
+    true
+    false
+
 // function main = () Nil ->
 //     1 * 2 * 3
 //     1 ** 2 ** 3

@@ -25,6 +25,15 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
     }
 }
 
+impl<'a> From<Parser<'a>> for scope::File {
+    fn from(value: Parser<'a>) -> Self {
+        Self {
+            root: value.scope,
+            cache: value.scope_cache,
+        }
+    }
+}
+
 impl<'a> Parser<'a> {
     pub fn create_scope(&mut self) -> scope::Id {
         let id = self.scope_cache.create_scope(self.scope);
@@ -33,12 +42,12 @@ impl<'a> Parser<'a> {
     }
 
     pub fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
-        self.scope_cache.get(id)
+        self.scope_cache.get_mut(id)
     }
 
     // TODO: scope guard
     pub fn exit_scope(&mut self) {
-        self.scope = self.scope_cache.get(self.scope).parent.unwrap();
+        self.scope = self.scope_cache.get_mut(self.scope).parent.unwrap();
     }
 
     pub fn peek_any(&mut self) -> Option<Token> {
@@ -153,7 +162,7 @@ impl<'a> Parser<'a> {
     pub fn take_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
         let token = self.peek_token_if(token);
         if token.is_some() {
-            self.position += 1
+            self.position += 1;
         }
         token
     }

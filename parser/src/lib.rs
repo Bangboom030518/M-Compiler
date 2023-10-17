@@ -17,24 +17,24 @@ pub trait Parse {
 }
 
 #[must_use]
-pub fn parse_file(input: &str) -> Option<Vec<top_level::Declaration>> {
+pub fn parse_file(input: &str) -> Option<scope::File> {
     let mut parser = Parser::from(Tokenizer::from(input));
     let scope_id = parser.create_scope();
-    let scope = parser.get_scope(scope_id);
     while let Some(declaration) = parser.parse_line::<top_level::Declaration>() {
-        scope
+        parser
+            .get_scope(scope_id)
             .declarations
             .insert(declaration.name, declaration.kind);
     }
     parser.exit_scope();
 
-    Some(todo!())
+    Some(parser.into())
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub struct Identifier(String);
+pub struct Ident(pub String);
 
-impl Parse for Identifier {
+impl Parse for Ident {
     fn parse(parser: &mut Parser) -> Option<Self> {
         let Token::Ident(ident) = parser.take_token()? else {
             return None;
@@ -45,7 +45,7 @@ impl Parse for Identifier {
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Type {
-    Identifier(Identifier),
+    Identifier(Ident),
 }
 
 impl Parse for Type {
@@ -57,7 +57,7 @@ impl Parse for Type {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
-    Let(Identifier, Expression),
+    Let(Ident, Expression),
 }
 
 impl Parse for Statement {
@@ -75,13 +75,12 @@ impl Parse for Statement {
 #[test]
 fn test_let() {
     let source = r"let a = 1";
-    let cache = &mut scope::Cache::new();
     let mut parser = Parser::from(Tokenizer::from(source));
     let r#let = parser.parse::<Statement>().unwrap();
     assert_eq!(
         r#let,
         Statement::Let(
-            Identifier(String::from("a")),
+            Ident(String::from("a")),
             Expression::Literal(Literal::Integer(1))
         )
     );
@@ -105,6 +104,6 @@ pub mod prelude {
         parser::{self, Parser},
         scope::{self, Scope},
         top_level::{self, prelude::*},
-        Expression, Identifier, Parse, Statement, Type,
+        Expression, Ident, Parse, Statement, Type,
     };
 }

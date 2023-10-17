@@ -4,7 +4,7 @@ use crate::internal::prelude::*;
 // TODO: rename
 pub struct TypeBinding {
     pub r#type: Option<Type>,
-    pub name: Identifier,
+    pub name: Ident,
 }
 
 impl TypeBinding {
@@ -14,7 +14,7 @@ impl TypeBinding {
             Some(Self {
                 name: match r#type {
                     Type::Identifier(ident) => ident,
-                    _ => return None,
+                    // _ => return None,
                 },
                 r#type: None,
             })
@@ -39,7 +39,7 @@ impl Parse for Variant {
 #[derive(PartialEq, Eq, Debug)]
 pub struct Field {
     pub r#type: Type,
-    pub name: Identifier,
+    pub name: Ident,
 }
 
 impl Parse for Field {
@@ -63,7 +63,7 @@ impl Parse for Parameter {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Struct {
     pub fields: Vec<Field>,
     // pub declarations: Vec<Declaration>,
@@ -76,7 +76,6 @@ impl Parse for Struct {
         parser.take_newline()?;
         parser.indent();
         let scope_id = parser.create_scope();
-        let scope = parser.get_scope(scope_id);
 
         let mut fields = Vec::new();
         // TODO: refactor to iter
@@ -85,7 +84,8 @@ impl Parse for Struct {
         }
 
         while let Some(declaration) = parser.parse_line::<Declaration>() {
-            scope
+            parser
+                .get_scope(scope_id)
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
@@ -99,7 +99,7 @@ impl Parse for Struct {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct Union {
     pub variants: Vec<Variant>,
     pub scope: scope::Id,
@@ -111,8 +111,6 @@ impl Parse for Union {
         parser.take_newline()?;
         parser.indent();
         let scope_id = parser.create_scope();
-        let scope = parser.get_scope(scope_id);
-
         let mut variants = Vec::new();
         // TODO: refactor to iter
         while let Some(input) = parser.parse_line() {
@@ -120,7 +118,8 @@ impl Parse for Union {
         }
 
         while let Some(declaration) = parser.parse_line::<Declaration>() {
-            scope
+            parser
+                .get_scope(scope_id)
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
@@ -177,7 +176,7 @@ pub enum DeclarationKind {
 
 #[derive(PartialEq, Debug)]
 pub struct Declaration {
-    pub name: Identifier,
+    pub name: Ident,
     pub kind: DeclarationKind,
 }
 
@@ -208,13 +207,22 @@ fn top_level_decl_parses() {
             .parse::<Declaration>()
             .unwrap(),
         Declaration {
-            name: Identifier(String::from("MONEY")),
-            kind: DeclarationKind::Const(Expression::Identifier(Identifier(String::from(
+            name: Ident(String::from("MONEY")),
+            kind: DeclarationKind::Const(Expression::Identifier(Ident(String::from(
                 "INHERITANCE"
             ))))
         }
     );
-    let uint_8 = Type::Identifier(Identifier(String::from("UInt8")));
+    let declaration = Parser::from(Tokenizer::from(source))
+        .parse::<Declaration>()
+        .unwrap();
+
+    let scope = match declaration.kind {
+        DeclarationKind::Struct(r#struct) => r#struct.scope,
+        _ => panic!(),
+    };
+
+    let uint_8 = Type::Identifier(Ident(String::from("UInt8")));
     let source = r"type Point = struct
     UInt8 x
     UInt8 y";
@@ -223,19 +231,19 @@ fn top_level_decl_parses() {
             .parse::<Declaration>()
             .unwrap(),
         Declaration {
-            name: Identifier(String::from("Point")),
+            name: Ident(String::from("Point")),
             kind: DeclarationKind::Struct(Struct {
                 fields: vec![
                     Field {
                         r#type: uint_8.clone(),
-                        name: Identifier(String::from("x"))
+                        name: Ident(String::from("x"))
                     },
                     Field {
                         r#type: uint_8,
-                        name: Identifier(String::from("y"))
+                        name: Ident(String::from("y"))
                     }
                 ],
-                
+                scope,
             })
         }
     );
@@ -255,12 +263,12 @@ fn union_parses() {
         Union {
             variants: vec![
                 Variant(TypeBinding {
-                    r#type: Some(Type::Identifier(Identifier(String::from("String")))),
-                    name: Identifier(String::from("a")),
+                    r#type: Some(Type::Identifier(Ident(String::from("String")))),
+                    name: Ident(String::from("a")),
                 }),
                 Variant(TypeBinding {
                     r#type: None,
-                    name: Identifier(String::from("b")),
+                    name: Ident(String::from("b")),
                 })
             ],
             scope,
@@ -280,18 +288,18 @@ fn function_parses() {
         Function {
             parameters: vec![
                 Parameter(TypeBinding {
-                    r#type: Some(Type::Identifier(Identifier(String::from("String")))),
-                    name: Identifier(String::from("a")),
+                    r#type: Some(Type::Identifier(Ident(String::from("String")))),
+                    name: Ident(String::from("a")),
                 }),
                 Parameter(TypeBinding {
                     r#type: None,
-                    name: Identifier(String::from("b")),
+                    name: Ident(String::from("b")),
                 }),
             ],
-            return_type: Some(Type::Identifier(Identifier(String::from("UInt32")))),
+            return_type: Some(Type::Identifier(Ident(String::from("UInt32")))),
             body: vec![
-                Statement::Expression(Expression::Identifier(Identifier(String::from("a")))),
-                Statement::Expression(Expression::Identifier(Identifier(String::from("a"))))
+                Statement::Expression(Expression::Identifier(Ident(String::from("a")))),
+                Statement::Expression(Expression::Identifier(Ident(String::from("a"))))
             ],
         }
     );
