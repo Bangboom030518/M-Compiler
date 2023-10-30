@@ -35,6 +35,18 @@ impl Cache {
         }
     }
 
+    #[must_use]
+    pub fn lookup(
+        &self,
+        scope: Id,
+        ident: Ident,
+    ) -> Option<&top_level::DeclarationKind> {
+        let scope = self.get(scope);
+        scope.declarations
+            .get(&ident)
+            .or_else(|| self.lookup(scope.parent?, ident))
+    }
+
     // TODO: ?
     #[must_use]
     pub const fn root_scope(&self) -> Id {

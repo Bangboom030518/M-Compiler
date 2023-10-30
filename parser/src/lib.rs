@@ -54,6 +54,14 @@ impl Parse for Type {
     }
 }
 
+impl From<Type> for Ident {
+    fn from(value: Type) -> Self {
+        match value {
+            Type::Identifier(ident) => ident,
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
