@@ -1,6 +1,6 @@
 use crate::internal::prelude::*;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 // TODO: rename
 pub struct TypeBinding {
     pub r#type: Option<Type>,
@@ -27,7 +27,7 @@ impl TypeBinding {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Variant(TypeBinding);
 
 impl Parse for Variant {
@@ -36,7 +36,7 @@ impl Parse for Variant {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Field {
     pub r#type: Type,
     pub name: Ident,
@@ -51,7 +51,7 @@ impl Parse for Field {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Parameter(TypeBinding);
 
 impl Parse for Parameter {
@@ -63,7 +63,7 @@ impl Parse for Parameter {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Struct {
     pub fields: Vec<Field>,
     // pub declarations: Vec<Declaration>,
@@ -99,7 +99,7 @@ impl Parse for Struct {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Union {
     pub variants: Vec<Variant>,
     pub scope: scope::Id,
@@ -133,7 +133,7 @@ impl Parse for Union {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Option<Type>,
@@ -166,7 +166,7 @@ impl Parse for Function {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum DeclarationKind {
     Function(Function),
     Const(Expression),
@@ -174,7 +174,7 @@ pub enum DeclarationKind {
     Struct(Struct),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Declaration {
     pub name: Ident,
     pub kind: DeclarationKind,

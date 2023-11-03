@@ -1,90 +1,145 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
-use ::parser::{prelude::*, top_level::DeclarationKind, scope::Cache};
-use itertools::Itertools;
+use ::parser::{prelude::*, top_level::DeclarationKind};
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
-struct TypeId(usize);
+pub struct TypeId(usize);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
-    Struct { fields: Vec<(Ident, TypeId)> },
-    Union { variants: Vec<(Ident, TypeId)> },
+    Struct {
+        fields: Vec<(Ident, TypeId)>,
+        ident: Ident,
+    },
+    Union {
+        variants: Vec<(Ident, TypeId)>,
+        ident: Ident,
+    },
     Int32,
     Int64,
     Float32,
     Float64,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq)]
 struct TypeStore {
-    types: Vec<Type>,
+    types: Vec<Option<Type>>,
+    scopes: HashMap<scope::Id, TypeScope>,
+    file_cache: scope::Cache,
 }
 
-// #[derive(Default)]
-// struct TypeScope {
-//     types: HashMap<Ident, TypeId>,
-// }
-
-// impl TypeScope {
-//     pub fn get(&mut self, r#type: &::parser::Type, type_store: &mut TypeStore) -> TypeId {
-//         self.types.get(match r#type {
-//             ::parser::Type::Identifier(identifier) => identifier,
-//         }).copied().
-//     }
-// }
-
 impl TypeStore {
-    pub fn create(&mut self, r#type: Type) -> TypeId {
-        TypeId(self.types.len())
+    pub fn create_empty(&mut self) -> TypeId {
+        self.types.push(None);
+        TypeId(self.types.len() - 1)
+    }
+
+    pub fn initialise(&mut self, TypeId(index): TypeId, r#type: Type) {
+        self.types[index] = Some(r#type);
     }
 
     #[must_use]
     pub fn get(&self, TypeId(id): TypeId) -> &Type {
-        &self.types[id]
+        self.types.get(id).unwrap().as_ref().unwrap()
+    }
+
+    pub fn lookup(&self, ident: Ident, scope_id: scope::Id) -> Option<TypeId> {
+        self.scopes[&scope_id]
+            .get(&ident, self)
+            .or_else(|| self.lookup(ident, self.file_cache.get(scope_id).parent?))
     }
 }
 
-fn create_type(
-    type_store: &mut TypeStore,
-    // type_scope: &mut TypeScope,
-    declaration: DeclarationKind,
-    root: &Scope,
-    scope_cache: &Cache
-) -> TypeId {
-    match declaration {
-        DeclarationKind::Struct(r#struct) => {
-            // TODO: create TypeId before types
-            let id = type_store.create(Type::Struct {
-                fields: r#struct
-                    .fields
-                    .into_iter()
-                    .map(|top_level::Field { r#type, name }| {
-                        let scope = scope_cache.get(r#struct.scope);
-                        (
-                            name,
-                            scope_cache.lookup(r#struct.scope, match r#type {
-                                ::parser::Type::Identifier(ident) => ident,
-                            }).unwrap(),
-                        )
-                    })
-                    .collect_vec(),
-            });
-            type_scope.types.insert(name.clone(), id);
-            id
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TypeScope {
+    types: HashMap<Ident, TypeId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("Type Not Found")]
+struct TypeNotFound;
+
+impl TypeScope {
+    fn append_new(type_store: &mut TypeStore, scope_id: scope::Id) -> Result<(), TypeNotFound> {
+        let declarations = type_store.file_cache.get(scope_id).declarations.clone();
+        let types = declarations
+            .iter()
+            .filter_map(|(ident, declaration)| {
+                if !matches!(
+                    declaration,
+                    DeclarationKind::Struct(_) | DeclarationKind::Union(_)
+                ) {
+                    return None;
+                }
+
+                let r#type = type_store.create_empty();
+                Some((ident.clone(), r#type))
+            })
+            .collect();
+
+        type_store.scopes.insert(scope_id, Self { types });
+        // TODO: remove clone
+        let type_scope = &type_store.scopes[&scope_id].clone();
+
+        for (ident, type_id) in &type_scope.types {
+            let declaration = &declarations[&ident];
+            match declaration {
+                DeclarationKind::Struct(r#struct) => {
+                    Self::append_new(type_store, r#struct.scope)?;
+                    let r#type = Type::Struct {
+                        fields: r#struct
+                            .fields
+                            .iter()
+                            .map(|top_level::Field { r#type, name }| {
+                                // TODO: will need to handle generics
+                                let type_id = type_store
+                                    .lookup(
+                                        match r#type {
+                                            ::parser::Type::Identifier(identifier) => {
+                                                identifier.clone()
+                                            }
+                                        },
+                                        r#struct.scope,
+                                    )
+                                    .map_or_else(|| Err(TypeNotFound), Ok)?;
+                                Ok((name.clone(), type_id))
+                            })
+                            .collect::<Result<Vec<_>, TypeNotFound>>()?,
+                        ident: ident.clone(),
+                    };
+                    type_store.initialise(*type_id, r#type);
+                }
+                DeclarationKind::Union(_) => todo!(),
+                _ => unimplemented!(),
+            }
         }
+
+        Ok(())
+    }
+
+    pub fn get(&self, ident: &Ident, type_store: &TypeStore) -> Option<TypeId> {
+        self.types.get(ident).copied()
     }
 }
 
 fn main() {
     let file = parse_file(include_str!("../../input.m")).unwrap();
-    let root = file.root();
-    let file_cache = &file.cache;
-    let mut type_store = TypeStore::default();
+
+    let mut type_store = TypeStore {
+        types: Vec::new(),
+        scopes: HashMap::new(),
+        file_cache: file.cache,
+    };
+
+    TypeScope::append_new(&mut type_store, file.root).unwrap();
+    dbg!(type_store.scopes);
+    dbg!(type_store.types);
     // let mut type_scope = TypeScope::default();
-    for (name, declaration) in root.declarations {
-        create_type(&mut type_store, declaration, root, file_cache);
-    }
+
+    // for (name, declaration) in root.declarations {
+    //     create_type(&mut type_store, declaration, root, file_cache);
+    // }
 
     // let top_level::DeclarationKind::Function(main) = root
     //     .declarations

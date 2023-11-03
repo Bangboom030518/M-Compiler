@@ -1,0 +1,103 @@
+[
+    Scope {
+        parent: None,
+        declarations: {},
+    },
+    Scope {
+        parent: Some(
+            Id(
+                0,
+            ),
+        ),
+        declarations: {
+            Ident(
+                "Point",
+            ): Struct(
+                Struct {
+                    fields: [
+                        Field {
+                            type: Identifier(
+                                Ident(
+                                    "UInt8",
+                                ),
+                            ),
+                            name: Ident(
+                                "x",
+                            ),
+                        },
+                        Field {
+                            type: Identifier(
+                                Ident(
+                                    "UInt8",
+                                ),
+                            ),
+                            name: Ident(
+                                "y",
+                            ),
+                        },
+                        Field {
+                            type: Identifier(
+                                Ident(
+                                    "UInt8",
+                                ),
+                            ),
+                            name: Ident(
+                                "z",
+                            ),
+                        },
+                        Field {
+                            type: Identifier(
+                                Ident(
+                                    "UInt8",
+                                ),
+                            ),
+                            name: Ident(
+                                "w",
+                            ),
+                        },
+                    ],
+                    scope: Id(
+                        2,
+                    ),
+                },
+            ),
+            Ident(
+                "Inner",
+            ): Struct(
+                Struct {
+                    fields: [
+                        Field {
+                            type: Identifier(
+                                Ident(
+                                    "String",
+                                ),
+                            ),
+                            name: Ident(
+                                "a",
+                            ),
+                        },
+                    ],
+                    scope: Id(
+                        3,
+                    ),
+                },
+            ),
+        },
+    },
+    Scope {
+        parent: Some(
+            Id(
+                1,
+            ),
+        ),
+        declarations: {},
+    },
+    Scope {
+        parent: Some(
+            Id(
+                1,
+            ),
+        ),
+        declarations: {},
+    },
+]

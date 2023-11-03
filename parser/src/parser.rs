@@ -7,7 +7,7 @@ pub struct Parser<'a> {
     position: usize,
     indent: u8,
     scope_cache: scope::Cache,
-    scope: scope::Id,
+    pub(crate) scope: scope::Id,
 }
 
 impl<'a> From<Tokenizer<'a>> for Parser<'a> {

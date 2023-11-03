@@ -19,15 +19,13 @@ pub trait Parse {
 #[must_use]
 pub fn parse_file(input: &str) -> Option<scope::File> {
     let mut parser = Parser::from(Tokenizer::from(input));
-    let scope_id = parser.create_scope();
+    let scope_id = parser.scope;
     while let Some(declaration) = parser.parse_line::<top_level::Declaration>() {
         parser
             .get_scope(scope_id)
             .declarations
             .insert(declaration.name, declaration.kind);
     }
-    parser.exit_scope();
-
     Some(parser.into())
 }
 
@@ -43,7 +41,7 @@ impl Parse for Ident {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum Type {
     Identifier(Ident),
 }

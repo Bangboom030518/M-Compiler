@@ -1,6 +1,6 @@
 use crate::internal::prelude::*;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Scope {
     pub parent: Option<Id>,
     pub declarations: HashMap<Ident, top_level::DeclarationKind>,
@@ -22,7 +22,7 @@ impl File {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Cache {
     scopes: Vec<Scope>,
 }
