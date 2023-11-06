@@ -166,12 +166,72 @@ impl Parse for Function {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct Primitive {
+    pub kind: PrimitiveKind,
+    pub scope: scope::Id,
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum PrimitiveKind {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    F32,
+    F64,
+}
+
+impl Parse for PrimitiveKind {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        let Token::Ident(ident) = parser.take_token()? else {
+            return None;
+        };
+        let kind = match ident.as_str() {
+            "i8" => Self::I8,
+            "i16" => Self::I16,
+            "i32" => Self::I32,
+            "i64" => Self::I64,
+            "i128" => Self::I128,
+            "f32" => Self::F32,
+            "f64" => Self::F64,
+            _ => return None,
+        };
+        Some(kind)
+    }
+}
+
+impl Parse for Primitive {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        parser.take_token_if(&Token::At)?;
+        let kind = parser.parse()?;
+        parser.take_newline()?;
+        parser.indent();
+        let scope_id = parser.create_scope();
+        while let Some(declaration) = parser.parse_line::<Declaration>() {
+            parser
+                .get_scope(scope_id)
+                .declarations
+                .insert(declaration.name, declaration.kind);
+        }
+        parser.unindent();
+        parser.exit_scope();
+
+        Some(Self {
+            scope: scope_id,
+            kind,
+        })
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum DeclarationKind {
     Function(Function),
     Const(Expression),
     Union(Union),
     Struct(Struct),
+    Primitive(Primitive),
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -200,6 +260,24 @@ impl Parse for Declaration {
 }
 
 #[test]
+fn test_primitive() {
+    let source = r#"@i32
+        function hi = () ->
+            "hello""#;
+    let primitive = Parser::from(Tokenizer::from(source))
+        .parse::<Primitive>()
+        .unwrap();
+    let scope = primitive.scope;
+    assert_eq!(
+        primitive,
+        Primitive {
+            kind: PrimitiveKind::I32,
+            scope
+        }
+    );
+}
+
+#[test]
 fn top_level_decl_parses() {
     let source = r"const MONEY = INHERITANCE";
     assert_eq!(
@@ -213,23 +291,22 @@ fn top_level_decl_parses() {
             ))))
         }
     );
-    let declaration = Parser::from(Tokenizer::from(source))
-        .parse::<Declaration>()
-        .unwrap();
-
-    let scope = match declaration.kind {
-        DeclarationKind::Struct(r#struct) => r#struct.scope,
-        _ => panic!(),
-    };
 
     let uint_8 = Type::Identifier(Ident(String::from("UInt8")));
     let source = r"type Point = struct
     UInt8 x
     UInt8 y";
+    let declaration = Parser::from(Tokenizer::from(source))
+        .parse::<Declaration>()
+        .unwrap();
+
+    let scope = match declaration.kind {
+        DeclarationKind::Struct(ref r#struct) => r#struct.scope,
+        _ => panic!(),
+    };
+
     assert_eq!(
-        Parser::from(Tokenizer::from(source))
-            .parse::<Declaration>()
-            .unwrap(),
+        declaration,
         Declaration {
             name: Ident(String::from("Point")),
             kind: DeclarationKind::Struct(Struct {

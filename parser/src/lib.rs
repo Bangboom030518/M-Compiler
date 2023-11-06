@@ -1,6 +1,8 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(assert_matches)]
 
+use std::fmt::Display;
+
 pub use expression::Expression;
 use internal::prelude::*;
 
@@ -31,6 +33,12 @@ pub fn parse_file(input: &str) -> Option<scope::File> {
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct Ident(pub String);
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl Parse for Ident {
     fn parse(parser: &mut Parser) -> Option<Self> {

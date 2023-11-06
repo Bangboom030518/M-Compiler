@@ -24,6 +24,7 @@ pub enum Literal {
     String(String),
     Integer(u64),
     Float(f64),
+    Char(char),
 }
 
 impl Parse for Literal {
@@ -32,6 +33,7 @@ impl Parse for Literal {
             Token::String(string) => Some(Self::String(string)),
             Token::Integer(integer) => Some(Self::Integer(integer)),
             Token::Float(float) => Some(Self::Float(float)),
+            Token::Char(char) => Some(Self::Char(char)),
             _ => None,
         }
     }
@@ -70,6 +72,38 @@ impl Parse for Call {
 #[derive(PartialEq, Debug, Clone)]
 pub enum IntrinsicCall {
     IAdd(Box<Expression>, Box<Expression>),
+    I32(u64),
+}
+
+impl Parse for IntrinsicCall {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        parser.take_token_if(&Token::At)?;
+        let Token::Ident(ident) = parser.take_token()? else {
+            return None;
+        };
+
+        parser.take_token_if(&Token::OpenParen)?;
+        let value = match ident.as_str() {
+            "iadd" => {
+                let left = Box::new(parser.parse()?);
+                parser.take_token_if(&Token::Comma)?;
+                let right = Box::new(parser.parse()?);
+
+                Self::IAdd(left, right)
+            }
+            "i32" => {
+                let Token::Integer(integer) = parser.take_token()? else {
+                    return None;
+                };
+
+                Self::I32(integer)
+            }
+            _ => return None,
+        };
+
+        parser.take_token_if(&Token::CloseParen)?;
+        Some(value)
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -82,6 +116,14 @@ pub enum Expression {
     UnaryPrefix(UnaryOperator, Box<Self>),
     Call(Call),
     If(If),
+}
+
+// TODO:
+#[cfg(ignore)]
+pub enum Path {
+    Ident(Ident),
+    Generic(Vec<Ident>, ScopeAccessor),
+    NamespaceOrFieldAccess { parent: Ident, child: Ident },
 }
 
 impl Expression {
