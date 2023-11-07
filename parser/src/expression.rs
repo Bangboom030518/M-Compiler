@@ -7,6 +7,7 @@ pub mod control_flow;
 pub enum UnaryOperator {
     Minus,
     Bang,
+    Return,
 }
 
 impl Parse for UnaryOperator {
@@ -14,6 +15,7 @@ impl Parse for UnaryOperator {
         match parser.take_token()? {
             Token::Minus => Some(Self::Minus),
             Token::Bang => Some(Self::Bang),
+            Token::Return => Some(Self::Return),
             _ => None,
         }
     }
@@ -22,7 +24,7 @@ impl Parse for UnaryOperator {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
     String(String),
-    Integer(u64),
+    Integer(u128),
     Float(f64),
     Char(char),
 }
@@ -72,7 +74,6 @@ impl Parse for Call {
 #[derive(PartialEq, Debug, Clone)]
 pub enum IntrinsicCall {
     IAdd(Box<Expression>, Box<Expression>),
-    I32(u64),
 }
 
 impl Parse for IntrinsicCall {
@@ -90,13 +91,6 @@ impl Parse for IntrinsicCall {
                 let right = Box::new(parser.parse()?);
 
                 Self::IAdd(left, right)
-            }
-            "i32" => {
-                let Token::Integer(integer) = parser.take_token()? else {
-                    return None;
-                };
-
-                Self::I32(integer)
             }
             _ => return None,
         };
@@ -116,6 +110,7 @@ pub enum Expression {
     UnaryPrefix(UnaryOperator, Box<Self>),
     Call(Call),
     If(If),
+    Return(Box<Expression>),
 }
 
 // TODO:
@@ -137,6 +132,11 @@ impl Expression {
         parser
             .parse::<Call>()
             .map(Self::Call)
+            .or_else(|| {
+                parser.take_token_if(&Token::Return)?;
+                Some(Self::Return(Box::new(parser.parse()?)))
+            })
+            .or_else(|| parser.parse::<IntrinsicCall>().map(Self::IntrinsicCall))
             .or_else(|| Self::parse_nonpostfix_term(parser))
     }
 

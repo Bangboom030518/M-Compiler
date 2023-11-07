@@ -12,6 +12,7 @@ pub enum Token {
     If,
     Else,
     Let,
+    Return,
     Newline,
     Exponent,
     Union,
@@ -41,7 +42,7 @@ pub enum Token {
     Char(char),
     Ident(String),
     Comment(String),
-    Integer(u64),
+    Integer(u128),
     Float(f64),
 }
 
@@ -72,6 +73,7 @@ impl<'a> Tokenizer<'a> {
             "if" => Token::If,
             "else" => Token::Else,
             "let" => Token::Let,
+            "return" => Token::Return,
             _ => Token::Ident(ident),
         }
     }
@@ -118,7 +120,7 @@ impl<'a> Tokenizer<'a> {
     fn take_number_base(&mut self, base: u32) -> Token {
         self.0.next();
         let digits: String = self.0.peeking_take_while(|ch| ch.is_digit(base)).collect();
-        u64::from_str_radix(&digits, base)
+        u128::from_str_radix(&digits, base)
             .map(Token::Integer)
             .unwrap_or_default()
     }

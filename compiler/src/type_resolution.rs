@@ -1,4 +1,7 @@
-use ::parser::{prelude::*, top_level::DeclarationKind};
+use ::parser::{
+    prelude::*,
+    top_level::{DeclarationKind, PrimitiveKind},
+};
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -14,10 +17,36 @@ pub enum Type {
         variants: Vec<(Ident, Id)>,
         ident: Ident,
     },
-    Int32,
-    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    IInt8,
+    IInt16,
+    IInt32,
+    IInt64,
+    IInt128,
     Float32,
     Float64,
+}
+
+impl Type {
+    fn size(&self) -> usize {
+        match self {
+            Self::UInt8 | Self::IInt8 => 1,
+            Self::UInt16 | Self::IInt16 => 2,
+            Self::Float32 | Self::UInt32 | Self::IInt32 => 4,
+            Self::Float64 | Self::UInt64 | Self::IInt64 => 8,
+            Self::UInt128 | Self::IInt128 => 16,
+            Self::Struct { fields, .. } => {
+                todo!("handle struct")
+            }
+            Self::Union { variants, .. } => {
+                todo!("handle union")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,7 +95,9 @@ impl TypeScope {
             .filter_map(|(ident, declaration)| {
                 if !matches!(
                     declaration,
-                    DeclarationKind::Struct(_) | DeclarationKind::Union(_)
+                    DeclarationKind::Struct(_)
+                        | DeclarationKind::Union(_)
+                        | DeclarationKind::Primitive(_)
                 ) {
                     return None;
                 }
@@ -108,6 +139,18 @@ impl TypeScope {
                     type_store.initialise(*type_id, r#type);
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
+                DeclarationKind::Primitive(primitive) => {
+                    let r#type = match primitive.kind {
+                        PrimitiveKind::I8 => Type::UInt8,
+                        PrimitiveKind::I16 => Type::UInt16,
+                        PrimitiveKind::I32 => Type::UInt32,
+                        PrimitiveKind::I64 => Type::UInt64,
+                        PrimitiveKind::I128 => Type::UInt128,
+                        PrimitiveKind::F32 => Type::Float32,
+                        PrimitiveKind::F64 => Type::Float64,
+                    };
+                    type_store.initialise(*type_id, r#type);
+                }
                 _ => unimplemented!(),
             }
         }

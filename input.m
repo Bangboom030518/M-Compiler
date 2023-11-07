@@ -1,8 +1,7 @@
 type Int32 = @i32
-    function add = (self, Self other) Self ->
+    function add = (Self self, Self other) Self
         // if @icmp(self, 2) & @icmp(other, 2)
         //     return 5
-        
         @iadd(self, other)
 
 // type Point = struct

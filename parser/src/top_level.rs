@@ -174,6 +174,11 @@ pub struct Primitive {
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum PrimitiveKind {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
     I8,
     I16,
     I32,
@@ -194,6 +199,11 @@ impl Parse for PrimitiveKind {
             "i32" => Self::I32,
             "i64" => Self::I64,
             "i128" => Self::I128,
+            "u8" => Self::U8,
+            "u16" => Self::U16,
+            "u32" => Self::U32,
+            "u64" => Self::U64,
+            "u128" => Self::U128,
             "f32" => Self::F32,
             "f64" => Self::F64,
             _ => return None,
@@ -249,6 +259,7 @@ impl Parse for Declaration {
             Token::Type => match parser.peek_token()? {
                 Token::Union => DeclarationKind::Union(parser.parse()?),
                 Token::Struct => DeclarationKind::Struct(parser.parse()?),
+                Token::At => DeclarationKind::Primitive(parser.parse()?),
                 _ => return None,
             },
             Token::Function => DeclarationKind::Function(parser.parse()?),

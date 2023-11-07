@@ -28,6 +28,8 @@ pub fn parse_file(input: &str) -> Option<scope::File> {
             .declarations
             .insert(declaration.name, declaration.kind);
     }
+    dbg!(&parser.take_token());
+    parser.peek_eof()?;
     Some(parser.into())
 }
 
