@@ -15,7 +15,12 @@ enum Value {
     U32Const(u32),
     U64Const(u64),
     U128Const(u128),
-    IAdd(Box<Value>, Box<Value>)
+    I8Const(i8),
+    I16Const(i16),
+    I32Const(i32),
+    I64Const(i64),
+    I128Const(i128),
+    IAdd(Box<Value>, Box<Value>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -54,8 +59,9 @@ fn get_expression_information(
         Expression::IntrinsicCall(intrinsic) => match intrinsic {
             IntrinsicCall::IAdd(left, right) => {
                 let left = get_expression_information(left, type_store, return_type, context_type)?;
-                let right = get_expression_information(right, type_store, return_type, Some(left.1))?;
-                Value::IAdd(left.0, ())
+                let right =
+                    get_expression_information(right, type_store, return_type, Some(left.1))?;
+                Ok((Value::IAdd(Box::new(left.0), Box::new(right.0)), left.1))
             }
         },
         Expression::Return(expression) => {
