@@ -398,7 +398,6 @@ impl<'a> FunctionTranslator<'a> {
         // For simplicity for now, just make all calls return a single I64.
         sig.returns.push(AbiParam::new(self.int));
 
-        // TODO: Streamline the API here?
         let callee = self
             .module
             .declare_function(&name, Linkage::Import, &sig)

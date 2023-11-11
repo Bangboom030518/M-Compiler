@@ -44,11 +44,11 @@ fn get_expression_information(
                 let r#type = type_store.get(type_id);
 
                 let value = match r#type {
-                    Type::UInt8 => Value::U8Const(u8::try_from(*integer)?),
-                    Type::UInt16 => Value::U16Const(u16::try_from(*integer)?),
-                    Type::UInt32 => Value::U32Const(u32::try_from(*integer)?),
-                    Type::UInt64 => Value::U64Const(u64::try_from(*integer)?),
-                    Type::UInt128 => Value::U128Const(*integer),
+                    Type::U8 => Value::U8Const(u8::try_from(*integer)?),
+                    Type::U16 => Value::U16Const(u16::try_from(*integer)?),
+                    Type::U32 => Value::U32Const(u32::try_from(*integer)?),
+                    Type::U64 => Value::U64Const(u64::try_from(*integer)?),
+                    Type::U128 => Value::U128Const(*integer),
                     _ => return Err(TypeError::InvalidIntegerLiteral),
                 };
 
@@ -83,10 +83,8 @@ fn main() {
 
     type_resolution::TypeScope::append_new(&mut type_store, file.root).unwrap();
 
-    dbg!(type_store.scopes);
-    dbg!(type_store.types);
 
-    for (ident, declaration) in &type_store.file_cache.get(root).declarations {
+    for (ident, declaration) in &type_store.file_cache[root].declarations {
         let DeclarationKind::Function(function) = declaration else {
             continue;
         };
@@ -98,9 +96,14 @@ fn main() {
 
         for statement in statements {
             match statement {
-                Statement::Expression(expression) => get_expression_information(expression, None),
+                Statement::Expression(expression) => {
+                    get_expression_information(expression, &type_store, None, None);
+                }
                 Statement::Let(ident, expression) => stack_slots.push((ident, expression)),
             }
         }
     }
+    
+    dbg!(type_store.scopes);
+    dbg!(type_store.types);
 }

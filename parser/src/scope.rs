@@ -18,7 +18,7 @@ pub struct File {
 impl File {
     #[must_use]
     pub fn root(&self) -> &Scope {
-        self.cache.get(self.root)
+        &self.cache[self.root]
     }
 }
 
@@ -28,6 +28,8 @@ pub struct Cache {
 }
 
 impl Cache {
+    pub const ROOT_SCOPE: Id = Id(0);
+
     #[must_use]
     pub(crate) fn new() -> Self {
         Self {
@@ -41,16 +43,10 @@ impl Cache {
         scope: Id,
         ident: Ident,
     ) -> Option<&top_level::DeclarationKind> {
-        let scope = self.get(scope);
+        let scope = &self[scope];
         scope.declarations
             .get(&ident)
             .or_else(|| self.lookup(scope.parent?, ident))
-    }
-
-    // TODO: ?
-    #[must_use]
-    pub const fn root_scope(&self) -> Id {
-        Id(0)
     }
 
     pub fn create_scope(&mut self, parent: Id) -> Id {
@@ -61,14 +57,18 @@ impl Cache {
         });
         id
     }
+}
 
-    #[must_use]
-    pub fn get(&self, Id(id): Id) -> &Scope {
+impl std::ops::Index<Id> for Cache {
+    type Output = Scope;
+
+    fn index(&self, Id(id): Id) -> &Self::Output {
         &self.scopes[id]
     }
+}
 
-    // TODO: index operator instead?
-    pub fn get_mut(&mut self, Id(id): Id) -> &mut Scope {
+impl std::ops::IndexMut<Id> for Cache {
+    fn index_mut(&mut self, Id(id): Id) -> &mut Self::Output {
         &mut self.scopes[id]
     }
 }

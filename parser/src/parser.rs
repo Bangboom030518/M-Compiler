@@ -12,15 +12,13 @@ pub struct Parser<'a> {
 
 impl<'a> From<Tokenizer<'a>> for Parser<'a> {
     fn from(tokenizer: Tokenizer<'a>) -> Self {
-        let scope_cache = scope::Cache::new();
-        let scope = scope_cache.root_scope();
         Self {
             tokenizer,
             tokens: Vec::new(),
             position: 0,
             indent: 0,
-            scope_cache,
-            scope,
+            scope_cache: scope::Cache::new(),
+            scope: scope::Cache::ROOT_SCOPE,
         }
     }
 }
@@ -42,12 +40,12 @@ impl<'a> Parser<'a> {
     }
 
     pub fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
-        self.scope_cache.get_mut(id)
+        &mut self.scope_cache[id]
     }
 
     // TODO: scope guard
     pub fn exit_scope(&mut self) {
-        self.scope = self.scope_cache.get_mut(self.scope).parent.unwrap();
+        self.scope = self.scope_cache[self.scope].parent.unwrap();
     }
 
     pub fn peek_any(&mut self) -> Option<Token> {

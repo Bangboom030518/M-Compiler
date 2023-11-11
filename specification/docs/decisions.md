@@ -43,6 +43,10 @@ type Result<T, E: Error> = union {
   Error: E,
 }
 
+type Result<T, E: Error> = union
+  T ok
+  E error
+
 interface Iterator {
   type Item
   function next() Item?

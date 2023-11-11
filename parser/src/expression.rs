@@ -103,7 +103,6 @@ impl Parse for IntrinsicCall {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
     Identifier(Ident),
-    // TODO: expand
     IntrinsicCall(IntrinsicCall),
     Literal(Literal),
     Binary(binary::Expression),
@@ -140,7 +139,6 @@ impl Expression {
             .or_else(|| Self::parse_nonpostfix_term(parser))
     }
 
-    // TODO: rename
     fn parse_nonpostfix_term(parser: &mut Parser) -> Option<Self> {
         if parser.take_token_if(&Token::OpenParen).is_some() {
             let expression = parser.parse()?;

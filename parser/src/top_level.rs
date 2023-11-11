@@ -1,7 +1,8 @@
+use std::iter;
+
 use crate::internal::prelude::*;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-// TODO: rename
 pub struct TypeBinding {
     pub r#type: Option<Type>,
     pub name: Ident,
@@ -77,12 +78,8 @@ impl Parse for Struct {
         parser.indent();
         let scope_id = parser.create_scope();
 
-        let mut fields = Vec::new();
-        // TODO: refactor to iter
-        while let Some(input) = parser.parse_line() {
-            fields.push(input);
-        }
-
+        let fields = iter::from_fn(|| parser.parse_line()).collect();
+        
         while let Some(declaration) = parser.parse_line::<Declaration>() {
             parser
                 .get_scope(scope_id)
@@ -111,11 +108,7 @@ impl Parse for Union {
         parser.take_newline()?;
         parser.indent();
         let scope_id = parser.create_scope();
-        let mut variants = Vec::new();
-        // TODO: refactor to iter
-        while let Some(input) = parser.parse_line() {
-            variants.push(input);
-        }
+        let variants = iter::from_fn(|| parser.parse_line()).collect_vec();
 
         while let Some(declaration) = parser.parse_line::<Declaration>() {
             parser

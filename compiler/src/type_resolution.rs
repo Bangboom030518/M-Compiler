@@ -17,28 +17,28 @@ pub enum Type {
         variants: Vec<(Ident, Id)>,
         ident: Ident,
     },
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    UInt128,
-    IInt8,
-    IInt16,
-    IInt32,
-    IInt64,
-    IInt128,
-    Float32,
-    Float64,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    F32,
+    F64,
 }
 
 impl Type {
     fn size(&self) -> usize {
         match self {
-            Self::UInt8 | Self::IInt8 => 1,
-            Self::UInt16 | Self::IInt16 => 2,
-            Self::Float32 | Self::UInt32 | Self::IInt32 => 4,
-            Self::Float64 | Self::UInt64 | Self::IInt64 => 8,
-            Self::UInt128 | Self::IInt128 => 16,
+            Self::U8 | Self::I8 => 1,
+            Self::U16 | Self::I16 => 2,
+            Self::F32 | Self::U32 | Self::I32 => 4,
+            Self::F64 | Self::U64 | Self::I64 => 8,
+            Self::U128 | Self::I128 => 16,
             Self::Struct { fields, .. } => {
                 todo!("handle struct")
             }
@@ -74,7 +74,7 @@ impl TypeStore {
     pub fn lookup(&self, ident: Ident, scope_id: scope::Id) -> Option<Id> {
         self.scopes[&scope_id]
             .get(&ident)
-            .or_else(|| self.lookup(ident, self.file_cache.get(scope_id).parent?))
+            .or_else(|| self.lookup(ident, self.file_cache[scope_id].parent?))
     }
 }
 
@@ -89,7 +89,7 @@ pub struct TypeNotFound;
 
 impl TypeScope {
     pub fn append_new(type_store: &mut TypeStore, scope_id: scope::Id) -> Result<(), TypeNotFound> {
-        let declarations = type_store.file_cache.get(scope_id).declarations.clone();
+        let declarations = type_store.file_cache[scope_id].declarations.clone();
         let types = declarations
             .iter()
             .filter_map(|(ident, declaration)| {
@@ -141,13 +141,18 @@ impl TypeScope {
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {
                     let r#type = match primitive.kind {
-                        PrimitiveKind::I8 => Type::UInt8,
-                        PrimitiveKind::I16 => Type::UInt16,
-                        PrimitiveKind::I32 => Type::UInt32,
-                        PrimitiveKind::I64 => Type::UInt64,
-                        PrimitiveKind::I128 => Type::UInt128,
-                        PrimitiveKind::F32 => Type::Float32,
-                        PrimitiveKind::F64 => Type::Float64,
+                        PrimitiveKind::I8 => Type::I8,
+                        PrimitiveKind::I16 => Type::I16,
+                        PrimitiveKind::I32 => Type::I32,
+                        PrimitiveKind::I64 => Type::I64,
+                        PrimitiveKind::I128 => Type::I128,
+                        PrimitiveKind::U8 => Type::U8,
+                        PrimitiveKind::U16 => Type::U16,
+                        PrimitiveKind::U32 => Type::U32,
+                        PrimitiveKind::U64 => Type::U64,
+                        PrimitiveKind::U128 => Type::U128,
+                        PrimitiveKind::F32 => Type::F32,
+                        PrimitiveKind::F64 => Type::F64,
                     };
                     type_store.initialise(*type_id, r#type);
                 }
