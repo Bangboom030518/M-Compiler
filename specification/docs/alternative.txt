@@ -95,3 +95,5 @@ Map {
 function main = (List<String> arguments) !Nil
     let number = arguments.parse<Int32>()
 
+x: stack_slot<size>
+stack_store x i32const(1)

@@ -3,7 +3,7 @@ use crate::internal::prelude::*;
 pub mod binary;
 pub mod control_flow;
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum UnaryOperator {
     Minus,
     Bang,

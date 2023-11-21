@@ -74,6 +74,20 @@ impl From<Type> for Ident {
 pub enum Statement {
     Expression(Expression),
     Let(Ident, Expression),
+    // TODO: accessors!
+    Assignment(Assignment),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Assignment(pub Ident, pub Expression);
+
+impl Parse for Assignment {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        let ident = parser.parse()?;
+
+        let expression = parser.parse()?;
+        Some(Self(ident, expression))
+    }
 }
 
 impl Parse for Statement {
@@ -83,7 +97,10 @@ impl Parse for Statement {
             parser.take_token_if(&Token::Assignment)?;
             Some(Self::Let(name, parser.parse()?))
         } else {
-            parser.parse().map(Self::Expression)
+            parser
+                .parse()
+                .map(Self::Assignment)
+                .or_else(|| parser.parse().map(Self::Expression))
         }
     }
 }
