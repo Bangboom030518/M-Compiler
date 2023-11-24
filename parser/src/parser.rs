@@ -116,12 +116,12 @@ impl<'a> Parser<'a> {
     {
         // TODO: below
         /*
-            function add = (Self self, Self other) Self
-                // if @icmp(self, 2) & @icmp(other, 2)
-                //     return 5
-                a
-                // a
-         */
+           function add = (Self self, Self other) Self
+               // if @icmp(self, 2) & @icmp(other, 2)
+               //     return 5
+               a
+               // a
+        */
         let start = self.position;
         for _ in 0..self.indent {
             if self.peek_any() == Some(Token::Indent) {
@@ -158,7 +158,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn peek_eof(&mut self) -> Option<()> {
-        self.peek_any().is_none().then_some(())
+        self.peek_token().is_none().then_some(())
     }
 
     pub fn peek_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {

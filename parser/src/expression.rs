@@ -74,6 +74,7 @@ impl Parse for Call {
 #[derive(PartialEq, Debug, Clone)]
 pub enum IntrinsicCall {
     IAdd(Box<Expression>, Box<Expression>),
+    AssertType(Box<Expression>, Type)
 }
 
 impl Parse for IntrinsicCall {
@@ -91,7 +92,13 @@ impl Parse for IntrinsicCall {
                 let right = Box::new(parser.parse()?);
 
                 Self::IAdd(left, right)
-            }
+            },
+            "assert_type" => {
+                let expression = Box::new(parser.parse()?);
+                parser.take_token_if(&Token::Comma)?;
+                Self::AssertType(expression, parser.parse()?)
+
+            },
             _ => return None,
         };
 

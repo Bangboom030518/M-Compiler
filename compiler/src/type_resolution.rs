@@ -71,9 +71,9 @@ impl TypeStore {
         self.types.get(id).unwrap().as_ref().unwrap()
     }
 
-    pub fn lookup(&self, ident: Ident, scope_id: scope::Id) -> Option<Id> {
+    pub fn lookup(&self, ident: &Ident, scope_id: scope::Id) -> Option<Id> {
         self.scopes[&scope_id]
-            .get(&ident)
+            .get(ident)
             .or_else(|| self.lookup(ident, self.file_cache[scope_id].parent?))
     }
 }
@@ -124,9 +124,7 @@ impl TypeScope {
                                 let type_id = type_store
                                     .lookup(
                                         match r#type {
-                                            ::parser::Type::Identifier(identifier) => {
-                                                identifier.clone()
-                                            }
+                                            ::parser::Type::Identifier(identifier) => identifier,
                                         },
                                         r#struct.scope,
                                     )
