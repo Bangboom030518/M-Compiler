@@ -39,10 +39,10 @@ impl Type {
             Self::F32 | Self::U32 | Self::I32 => 4,
             Self::F64 | Self::U64 | Self::I64 => 8,
             Self::U128 | Self::I128 => 16,
-            Self::Struct { fields, .. } => {
+            Self::Struct {  .. } => {
                 todo!("handle struct")
             }
-            Self::Union { variants, .. } => {
+            Self::Union {  .. } => {
                 todo!("handle union")
             }
         }

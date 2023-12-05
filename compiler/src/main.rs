@@ -1,7 +1,7 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 
 mod type_resolution;
-use itertools::Itertools as _;
+
 use std::collections::HashMap;
 // use cranelift::prelude::*;
 use parser::{
@@ -41,73 +41,36 @@ enum Value {
 }
 
 impl Value {
-    fn ensure_type(self, r#type: &Type) -> Result<Self, SemanticError> {
-        macro_rules! int_assert_branch {
-            ($type_name:ident) => {
-                match r#type {
-                    Type::$type_name => Ok(self),
-                    _ => Err(SemanticError::MismatchedType),
-                }
-            };
-        }
-
+    /// remove unknowns
+    fn promote(self, r#type: &Type) -> Result<Self, SemanticError> {
         match self {
-            Self::U8Const(_) => int_assert_branch!(U8),
-            Self::U16Const(_) => int_assert_branch!(U16),
-            Self::U32Const(_) => int_assert_branch!(U32),
-            Self::U64Const(_) => int_assert_branch!(U64),
-            Self::U128Const(_) => int_assert_branch!(U128),
-            Self::I8Const(_) => int_assert_branch!(I8),
-            Self::I16Const(_) => int_assert_branch!(I16),
-            Self::I32Const(_) => int_assert_branch!(I32),
-            Self::I64Const(_) => int_assert_branch!(I64),
-            Self::I128Const(_) => int_assert_branch!(I128),
-            Self::F32Const(_) => int_assert_branch!(F32),
-            Self::F64Const(_) => int_assert_branch!(F64),
-        }
-
-        match (self, r#type) {
-            (Self::U8Const(_), Type::U8) => Ok(self),
-            (Self::U16Const(_), Type::U16) => Ok(self),
-            (Self::U32Const(_), Type::U32) => Ok(self),
-            (Self::U64Const(_), Type::U64) => Ok(self),
-            (Self::U128Const(_), Type::U128) => Ok(self),
-            (Self::I8Const(_), Type::I8) => Ok(self),
-            (Self::I16Const(_), Type::I16) => Ok(self),
-            (Self::I32Const(_), Type::I32) => Ok(self),
-            (Self::I64Const(_), Type::I64) => Ok(self),
-            (Self::I128Const(_), Type::I128) => Ok(self),
-            (Self::F32Const(_), Type::F32) => Ok(self),
-            (Self::F64Const(_), Type::F64) => Ok(self),
-            (Self::UnknownIntegerConst(int), Type::U8) => Ok(Value::U8Const(u8::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::U16) => Ok(Value::U16Const(u16::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::U32) => Ok(Value::U32Const(u32::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::U64) => Ok(Value::U64Const(u64::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::U128) => Ok(Value::U128Const(int)),
-            (Self::UnknownIntegerConst(int), Type::I8) => Ok(Value::I8Const(i8::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::I16) => Ok(Value::I16Const(i16::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::I32) => Ok(Value::I32Const(i32::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::I64) => Ok(Value::I64Const(i64::try_from(int)?)),
-            (Self::UnknownIntegerConst(int), Type::I128) => {
-                Ok(Value::I128Const(i128::try_from(int)?))
-            }
-            (Self::UnknownSignedIntegerConst(int), Type::I8) => {
-                Ok(Value::I8Const(i8::try_from(int)?))
-            }
-            (Self::UnknownSignedIntegerConst(int), Type::I16) => {
-                Ok(Value::I16Const(i16::try_from(int)?))
-            }
-            (Self::UnknownSignedIntegerConst(int), Type::I32) => {
-                Ok(Value::I32Const(i32::try_from(int)?))
-            }
-            (Self::UnknownSignedIntegerConst(int), Type::I64) => {
-                Ok(Value::I64Const(i64::try_from(int)?))
-            }
-            (Self::UnknownSignedIntegerConst(int), Type::I128) => Ok(Value::I128Const(int)),
-            (Self::UnknownFloatConst(float), Type::F32) => Ok(Value::F32Const(float as f32)),
-            (Self::UnknownFloatConst(float), Type::F64) => Ok(Value::F64Const(float)),
-
-            _ => Err(SemanticError::MismatchedType),
+            Self::UnknownIntegerConst(int) => match r#type {
+                Type::U8 => Ok(Self::U8Const(u8::try_from(int)?)),
+                Type::U16 => Ok(Self::U16Const(u16::try_from(int)?)),
+                Type::U32 => Ok(Self::U32Const(u32::try_from(int)?)),
+                Type::U64 => Ok(Self::U64Const(u64::try_from(int)?)),
+                Type::U128 => Ok(Self::U128Const(int)),
+                Type::I8 => Ok(Self::I8Const(i8::try_from(int)?)),
+                Type::I16 => Ok(Self::I16Const(i16::try_from(int)?)),
+                Type::I32 => Ok(Self::I32Const(i32::try_from(int)?)),
+                Type::I64 => Ok(Self::I64Const(i64::try_from(int)?)),
+                Type::I128 => Ok(Self::I128Const(i128::try_from(int)?)),
+                _ => Err(SemanticError::UnexpectedIntegerLiteral),
+            },
+            Self::UnknownSignedIntegerConst(int) => match r#type {
+                Type::I8 => Ok(Self::I8Const(i8::try_from(int)?)),
+                Type::I16 => Ok(Self::I16Const(i16::try_from(int)?)),
+                Type::I32 => Ok(Self::I32Const(i32::try_from(int)?)),
+                Type::I64 => Ok(Self::I64Const(i64::try_from(int)?)),
+                Type::I128 => Ok(Self::I128Const(int)),
+                _ => Err(SemanticError::UnexpectedIntegerLiteral),
+            },
+            Self::UnknownFloatConst(float) => match r#type {
+                Type::F32 => Ok(Self::F32Const(float as f32)),
+                Type::F64 => Ok(Self::F64Const(float)),
+                _ => Err(SemanticError::UnexpectedIntegerLiteral),
+            },
+            _ => Ok(self),
         }
     }
 }
@@ -116,7 +79,7 @@ impl Value {
 #[error("Type error :)")]
 // TODO: annotated results
 enum SemanticError {
-    InvalidIntegerLiteral,
+    UnexpectedIntegerLiteral,
     IntegerOverflow(#[from] std::num::TryFromIntError),
     UnknownType,
     MismatchedType,
@@ -147,7 +110,7 @@ impl LocalScope {
 struct StackSlotId(usize);
 
 #[derive(Debug)]
-struct ExpressionContext<'a> {
+struct ValueBuilder<'a> {
     type_store: &'a type_resolution::TypeStore,
     return_type: Option<type_resolution::Id>,
     current_type: Option<type_resolution::Id>,
@@ -156,7 +119,7 @@ struct ExpressionContext<'a> {
     scope_id: parser::scope::Id,
 }
 
-impl<'a> ExpressionContext<'a> {
+impl<'a> ValueBuilder<'a> {
     fn new(
         type_store: &'a type_resolution::TypeStore,
         local_scope: &'a mut LocalScope,
@@ -184,10 +147,10 @@ impl<'a> ExpressionContext<'a> {
         identifier: &parser::Ident,
         expression: &Expression,
     ) -> Result<Statement, SemanticError> {
-        let (value, r#type) = self.get_expression_information(expression)?;
-        let stack_slot = self.local_scope.create_slot(r#type);
+        let value = self.expression(expression)?;
+        let stack_slot = self.local_scope.create_slot(self.current_type);
         self.names.insert(identifier.clone(), stack_slot);
-        if r#type != self.local_scope.get(stack_slot) {
+        if self.current_type != self.local_scope.get(stack_slot) {
             return Err(SemanticError::InvalidAssignment);
         };
         Ok(Statement::Assignment(stack_slot, value))
@@ -200,8 +163,8 @@ impl<'a> ExpressionContext<'a> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
                 let stack_slot = *self.names.get(name).unwrap_or_else(|| todo!());
-                let (value, r#type) = self.get_expression_information(expression)?;
-                if r#type != self.local_scope.get(stack_slot) {
+                let value = self.expression(expression)?;
+                if self.current_type != self.local_scope.get(stack_slot) {
                     return Err(SemanticError::InvalidAssignment);
                 };
                 Ok(Statement::Assignment(stack_slot, value))
@@ -213,18 +176,18 @@ impl<'a> ExpressionContext<'a> {
                 if let Expression::Return(expression) = expression {
                     self.current_type = self.return_type;
                     Ok(Statement::Return(
-                        self.get_expression_information(&expression.clone())?,
+                        self.expression(&expression.clone())?,
                     ))
                 } else {
                     Ok(Statement::Ignore(
-                        self.get_expression_information(expression)?,
+                        self.expression(expression)?,
                     ))
                 }
             }
         }
     }
 
-    fn get_integer_value(&self, integer: u128) -> Result<Value, SemanticError> {
+    fn integer(&self, integer: u128) -> Result<Value, SemanticError> {
         let value = match self.current_type() {
             Some(Type::U8) => Value::U8Const(u8::try_from(integer)?),
             Some(Type::U16) => Value::U16Const(u16::try_from(integer)?),
@@ -237,25 +200,25 @@ impl<'a> ExpressionContext<'a> {
             Some(Type::I64) => Value::I64Const(i64::try_from(integer)?),
             Some(Type::I128) => Value::I128Const(i128::try_from(integer)?),
             None => Value::UnknownIntegerConst(integer),
-            Some(_) => return Err(SemanticError::InvalidIntegerLiteral),
+            Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
         Ok(value)
     }
 
-    fn get_float_value(&self, float: f64) -> Result<Value, SemanticError> {
+    fn float(&self, float: f64) -> Result<Value, SemanticError> {
         let value = match self.current_type() {
             Some(Type::F32) => Value::F32Const(float as f32),
             Some(Type::F64) => Value::F64Const(float),
             None => Value::UnknownFloatConst(float),
-            Some(_) => return Err(SemanticError::InvalidIntegerLiteral),
+            Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
         Ok(value)
     }
 
-    fn get_literal_value(&self, literal: &Literal) -> Result<Value, SemanticError> {
+    fn literal(&self, literal: &Literal) -> Result<Value, SemanticError> {
         match literal {
-            Literal::Integer(integer) => Ok(self.get_integer_value(*integer)?),
-            Literal::Float(float) => Ok(self.get_float_value(*float)?),
+            Literal::Integer(integer) => Ok(self.integer(*integer)?),
+            Literal::Float(float) => Ok(self.float(*float)?),
             _ => todo!(),
         }
     }
@@ -264,17 +227,37 @@ impl<'a> ExpressionContext<'a> {
         self.current_type
             .map(|type_id| self.type_store.get(type_id))
     }
+    
+    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<Value, SemanticError> {
+        match intrinsic {
+            IntrinsicCall::IAdd(left, right) => {
+                let mut left = self.expression(left)?;
+                let right = self.expression(right)?;
+                if let Some(current_type) = self.current_type() {
+                    left = left.promote(current_type)?;
+                }
+                Ok(Value::IAdd(Box::new(left), Box::new(right)))
+            }
+            IntrinsicCall::AssertType(expression, r#type) => {
+                let r#type = self
+                    .type_store
+                    .lookup(
+                        match r#type {
+                            parser::Type::Identifier(identifier) => identifier,
+                        },
+                        self.scope_id,
+                    )
+                    .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
+                self.current_type = Some(r#type);
+                Ok(self.expression(expression)?)
+            }
+        }
+    }
 
-    fn get_expression_information(
-        &mut self,
-        expression: &Expression,
-    ) -> Result<Value, SemanticError> {
-        match expression {
-            Expression::Literal(literal) => self.get_literal_value(literal),
-            Expression::UnaryPrefix(operator, expression) => match (*operator, expression.as_ref())
+    fn unary_prefix(&mut self, operator: UnaryOperator, expression: &Expression) -> Result<Value, SemanticError> {
+        match (operator, expression)
             {
                 (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
-                    // TODO: use `self.get_integer_value()`?
                     let value = match self.current_type() {
                         Some(Type::I8) => Value::I8Const(-i8::try_from(*integer)?),
                         Some(Type::I16) => Value::I16Const(-i16::try_from(*integer)?),
@@ -282,49 +265,26 @@ impl<'a> ExpressionContext<'a> {
                         Some(Type::I64) => Value::I64Const(-i64::try_from(*integer)?),
                         Some(Type::I128) => Value::I128Const(-i128::try_from(*integer)?),
                         None => Value::UnknownSignedIntegerConst(-i128::try_from(*integer)?),
-                        Some(_) => return Err(SemanticError::InvalidIntegerLiteral),
+                        Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
                     };
                     Ok(value)
                 }
-                (UnaryOperator::Minus, Expression::Literal(Literal::Float(float))) => {
-                    // TODO: use `self.get_float_value()`?
-                    let value = match self.current_type() {
-                        Some(Type::F32) => Value::F32Const(-(*float as f32)),
-                        Some(Type::F64) => Value::F64Const(-*float),
-                        None => Value::UnknownFloatConst(-*float),
-                        Some(_) => return Err(SemanticError::InvalidIntegerLiteral),
-                    };
-                    Ok(value)
-                }
+                (UnaryOperator::Minus, Expression::Literal(Literal::Float(float))) => self.float(-float),
                 _ => todo!(),
-            },
-            Expression::IntrinsicCall(intrinsic) => match intrinsic {
-                IntrinsicCall::IAdd(left, right) => {
-                    // TODO: infer left type from right
-                    let mut left = self.get_expression_information(left)?;
-                    let right = self.get_expression_information(right)?;
-                    if let Some(current_type) = self.current_type() {
-                        left = left.ensure_type(current_type)?
-                    }
-                    Ok(Value::IAdd(Box::new(left), Box::new(right)))
-                }
-                IntrinsicCall::AssertType(expression, r#type) => {
-                    let r#type = self
-                        .type_store
-                        .lookup(
-                            match r#type {
-                                parser::Type::Identifier(identifier) => identifier,
-                            },
-                            self.scope_id,
-                        )
-                        .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
-                    self.current_type = Some(r#type);
-                    Ok(self.get_expression_information(expression)?)
-                }
-            },
+            }
+    }
+
+    fn expression(
+        &mut self,
+        expression: &Expression,
+    ) -> Result<Value, SemanticError> {
+        match expression {
+            Expression::Literal(literal) => self.literal(literal),
+            Expression::UnaryPrefix(operator, expression) => self.unary_prefix(*operator, expression),
+            Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             Expression::Return(expression) => {
                 self.current_type = self.return_type;
-                self.get_expression_information(expression)
+                self.expression(expression)
             }
             Expression::Identifier(ident) => {
                 let stack_slot = *self
@@ -332,7 +292,6 @@ impl<'a> ExpressionContext<'a> {
                     .get(ident)
                     .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
                 self.current_type = self.local_scope.get(stack_slot);
-                let value = Value::StackSlot(stack_slot);
                 Ok(Value::StackSlot(stack_slot))
             }
             _ => todo!(),
@@ -367,7 +326,7 @@ fn main() {
         };
 
         let mut local_scope = LocalScope::new();
-        let context = ExpressionContext::new(&type_store, &mut local_scope, root);
+        let context = ValueBuilder::new(&type_store, &mut local_scope, root);
         // TODO: not root
         let mut context = context.with_return_type(
             type_store
