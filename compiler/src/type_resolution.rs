@@ -31,20 +31,36 @@ pub enum Type {
     F64,
 }
 
-impl Type {
-    fn size(&self) -> usize {
-        match self {
-            Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
-            Self::F32 | Self::U32 | Self::I32 => 4,
-            Self::F64 | Self::U64 | Self::I64 => 8,
-            Self::U128 | Self::I128 => 16,
-            Self::Struct {  .. } => {
-                todo!("handle struct")
-            }
-            Self::Union {  .. } => {
-                todo!("handle union")
-            }
+// impl Type {
+//     fn size(&self) -> usize {
+//         match self {
+//             Self::U8 | Self::I8 => 1,
+//             Self::U16 | Self::I16 => 2,
+//             Self::F32 | Self::U32 | Self::I32 => 4,
+//             Self::F64 | Self::U64 | Self::I64 => 8,
+//             Self::U128 | Self::I128 => 16,
+//             Self::Struct {  .. } => {
+//                 todo!("handle struct")
+//             }
+//             Self::Union {  .. } => {
+//                 todo!("handle union")
+//             }
+//         }
+//     }
+// }
+
+impl From<Type> for cranelift::prelude::Type {
+    fn from(value: Type) -> Self {
+        use cranelift::prelude::types;
+        match value {
+            Type::U8 |  Type::I8 => types::I8,
+            Type::U16 | Type::I16 => types::I16,
+            Type::F32 => types::F32,
+            Type::U32 | Type::I32 => types::I32,
+            Type::F64 => types::F64,
+            Type::U64 | Type::I64 => types::I64,
+            Type::U128 | Type::I128 => types::I128,
+            _ => todo!("handle complex data structures")
         }
     }
 }

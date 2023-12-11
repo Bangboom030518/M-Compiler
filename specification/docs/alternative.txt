@@ -97,3 +97,16 @@ function main = (List<String> arguments) !Nil
 
 x: stack_slot<size>
 stack_store x i32const(1)
+
+        type A = union {
+
+        }
+        
+        type Value = { KnownValue | { UnknownI32, UnknownI64 } };
+        type UnknownI32 = struct
+        
+
+        type A = Int32;
+        type Int = { A, Int32, Int64 };
+        let a = @assert_type(0, Int64);
+        let b = @assert_type(Int::Int64(b), Int);
