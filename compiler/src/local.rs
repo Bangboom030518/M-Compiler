@@ -69,9 +69,9 @@ impl Value {
         }
     }
 
-    pub fn cranelift_value<'a, 'b>(
+    pub fn cranelift_value(
         &self,
-        builder: &mut cranelift::prelude::FunctionBuilder<'b>,
+        builder: &mut cranelift::prelude::FunctionBuilder,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
         // use cranelift::codegen::ir::immediates::{Imm64, Uimm32, Uimm64, Uimm8};
 
@@ -114,6 +114,7 @@ pub enum SemanticError {
     InvalidAssignment,
     DeclarationNotFound,
     ExpectedReturnType,
+    UndefinedVariable,
 }
 
 #[derive(Default, Debug)]
@@ -140,7 +141,7 @@ impl Scope {
         self.0
             .iter()
             .enumerate()
-            .map(|(index, r#type)| (VariableId(index), r#type.clone()))
+            .map(|(index, r#type)| (VariableId(index), *r#type))
     }
 }
 
@@ -182,7 +183,7 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    fn lookup_name(&self, ident: &Ident) -> Option<type_resolution::Id> {
+    fn lookup_name(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
         self.parameters
             .iter()
             .find_map(|(name, r#type)| (name == ident).then_some(r#type))
@@ -192,6 +193,7 @@ impl<'a> FunctionBuilder<'a> {
                     .get(ident)
                     .and_then(|&stack_slot| self.local_scope.get(stack_slot))
             })
+            .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
     }
 
     pub fn with_return_type(self, r#type: type_resolution::Id) -> Self {
@@ -221,12 +223,14 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<Statement, SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
-                let stack_slot = *self.names.get(name).unwrap_or_else(|| todo!());
+                let stack_slot = self.lookup_name(name)?;
                 let value = self.expression(expression)?;
-                if self.current_type != self.local_scope.get(stack_slot) {
-                    return Err(SemanticError::InvalidAssignment);
+                if let Some(current_type) = self.current_type {
+                    if current_type != stack_slot {
+                        return Err(SemanticError::InvalidAssignment);
+                    }
                 };
-                Ok(Statement::Assignment(stack_slot, value))
+                Ok(Statement::Assignment(*self.names.get(name).unwrap(), value))
             }
             parser::Statement::Let(ident, expression) => {
                 self.add_let_declaration(ident, expression)

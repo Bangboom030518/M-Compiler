@@ -62,9 +62,7 @@ fn main() {
                 |parser::top_level::Parameter(parser::top_level::TypeBinding { r#type, name })| {
                     let r#type = r#type
                         .and_then(|r#type| {
-                            let ident = match r#type {
-                                parser::Type::Identifier(ident) => ident.clone(),
-                            };
+                            let parser::Type::Identifier(ident) = r#type;
                             type_store.lookup(&ident, scope)
                         })
                         .unwrap_or_else(|| todo!("semantic error!"));
@@ -123,7 +121,7 @@ fn main() {
                     .unwrap()
                     .clone()
                     .into(),
-            )
+            );
         }
 
         for statement in statements {
