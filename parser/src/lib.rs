@@ -41,6 +41,12 @@ impl Display for Ident {
     }
 }
 
+impl AsRef<str> for Ident {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
 impl Parse for Ident {
     fn parse(parser: &mut Parser) -> Option<Self> {
         let Token::Ident(ident) = parser.take_token()? else {

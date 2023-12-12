@@ -1,4 +1,5 @@
 use crate::type_resolution::{self, Type};
+use cranelift::prelude::*;
 use parser::{
     expression::{IntrinsicCall, UnaryOperator},
     prelude::Literal,
@@ -8,7 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Assignment(StackSlotId, Value),
+    Assignment(VariableId, Value),
     Ignore(Value),
     Return(Value),
 }
@@ -31,7 +32,7 @@ pub enum Value {
     UnknownIntegerConst(u128),
     UnknownFloatConst(f64),
     IAdd(Box<Value>, Box<Value>),
-    StackSlot(StackSlotId),
+    Variable(VariableId),
 }
 
 impl Value {
@@ -67,6 +68,39 @@ impl Value {
             _ => Ok(self),
         }
     }
+
+    pub fn cranelift_value<'a, 'b>(
+        &self,
+        builder: &mut cranelift::prelude::FunctionBuilder<'b>,
+    ) -> Result<cranelift::prelude::Value, SemanticError> {
+        // use cranelift::codegen::ir::immediates::{Imm64, Uimm32, Uimm64, Uimm8};
+
+        let value = match self {
+            Self::I8Const(value) => builder.ins().iconst(types::I8, *value as i64),
+            Self::I16Const(value) => builder.ins().iconst(types::I16, *value as i64),
+            Self::I32Const(value) => builder.ins().iconst(types::I32, *value as i64),
+            Self::I64Const(value) => builder.ins().iconst(types::I64, *value),
+            Self::I128Const(value) => todo!(),
+            Self::U8Const(value) => todo!(),
+            Self::U16Const(value) => todo!(),
+            Self::U32Const(value) => todo!(),
+            Self::U64Const(value) => todo!(),
+            Self::U128Const(value) => todo!(),
+            Self::F32Const(value) => builder.ins().f32const(Ieee32::from(*value)),
+            Self::F64Const(value) => builder.ins().f64const(Ieee64::from(*value)),
+            Self::UnknownSignedIntegerConst(_)
+            | Self::UnknownIntegerConst(_)
+            | Self::UnknownFloatConst(_) => return Err(SemanticError::UnknownType),
+            Self::IAdd(left, right) => {
+                let left = left.cranelift_value(builder)?;
+                let right = right.cranelift_value(builder)?;
+
+                builder.ins().iadd(left, right)
+            }
+            Self::Variable(variable) => builder.use_var((*variable).into()),
+        };
+        Ok(value)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -79,6 +113,7 @@ pub enum SemanticError {
     MismatchedType,
     InvalidAssignment,
     DeclarationNotFound,
+    ExpectedReturnType,
 }
 
 #[derive(Default, Debug)]
@@ -90,31 +125,46 @@ impl Scope {
     }
 
     // TODO: index operator
-    pub fn get(&self, StackSlotId(index): StackSlotId) -> Option<type_resolution::Id> {
+    pub fn get(&self, VariableId(index): VariableId) -> Option<type_resolution::Id> {
         *self.0.get(index).unwrap()
     }
 
-    pub fn create_slot(&mut self, r#type: Option<type_resolution::Id>) -> StackSlotId {
+    pub fn create_slot(&mut self, r#type: Option<type_resolution::Id>) -> VariableId {
         self.0.push(r#type);
-        StackSlotId(self.0.len() - 1)
+        VariableId(self.0.len() - 1)
+    }
+
+    pub fn variables(
+        &self,
+    ) -> impl Iterator<Item = (VariableId, Option<type_resolution::Id>)> + '_ {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(index, r#type)| (VariableId(index), r#type.clone()))
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct StackSlotId(usize);
+pub struct VariableId(usize);
+
+impl From<VariableId> for Variable {
+    fn from(VariableId(id): VariableId) -> Self {
+        Self::new(id)
+    }
+}
 
 #[derive(Debug)]
-pub struct ValueBuilder<'a> {
+pub struct FunctionBuilder<'a> {
     type_store: &'a type_resolution::TypeStore,
     return_type: Option<type_resolution::Id>,
     current_type: Option<type_resolution::Id>,
-    names: HashMap<parser::Ident, StackSlotId>,
-    local_scope: &'a mut Scope,
+    names: HashMap<parser::Ident, VariableId>,
+    pub local_scope: &'a mut Scope,
     scope_id: parser::scope::Id,
     parameters: Vec<(parser::Ident, type_resolution::Id)>,
 }
 
-impl<'a> ValueBuilder<'a> {
+impl<'a> FunctionBuilder<'a> {
     pub fn new(
         type_store: &'a type_resolution::TypeStore,
         local_scope: &'a mut Scope,
@@ -133,7 +183,15 @@ impl<'a> ValueBuilder<'a> {
     }
 
     fn lookup_name(&self, ident: &Ident) -> Option<type_resolution::Id> {
-        self.parameters.get(ident).copied()
+        self.parameters
+            .iter()
+            .find_map(|(name, r#type)| (name == ident).then_some(r#type))
+            .copied()
+            .or_else(|| {
+                self.names
+                    .get(ident)
+                    .and_then(|&stack_slot| self.local_scope.get(stack_slot))
+            })
     }
 
     pub fn with_return_type(self, r#type: type_resolution::Id) -> Self {
@@ -288,14 +346,35 @@ impl<'a> ValueBuilder<'a> {
                 self.expression(expression)
             }
             Expression::Identifier(ident) => {
-                let stack_slot = *self
+                let variable = *self
                     .names
                     .get(ident)
                     .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
-                self.current_type = self.local_scope.get(stack_slot);
-                Ok(Value::StackSlot(stack_slot))
+                self.current_type = self.local_scope.get(variable);
+                Ok(Value::Variable(variable.into()))
             }
             _ => todo!(),
         }
+    }
+
+    pub fn signature(&self) -> Result<Signature, SemanticError> {
+        let mut signature = Signature::new(isa::CallConv::Fast);
+        self.parameters
+            .iter()
+            .map(|(_, r#type)| {
+                let r#type = self.type_store.get(*r#type).clone().into();
+                AbiParam::new(r#type)
+            })
+            .collect_into(&mut signature.params);
+        signature.returns = vec![AbiParam::new(
+            self.type_store
+                .get(
+                    self.return_type
+                        .map_or_else(|| Err(SemanticError::ExpectedReturnType), Ok)?,
+                )
+                .clone()
+                .into(),
+        )];
+        Ok(signature)
     }
 }

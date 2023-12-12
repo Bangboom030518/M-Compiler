@@ -53,7 +53,7 @@ impl Parse for Field {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Parameter(TypeBinding);
+pub struct Parameter(pub TypeBinding);
 
 impl Parse for Parameter {
     fn parse(parser: &mut Parser) -> Option<Self> {
@@ -79,7 +79,7 @@ impl Parse for Struct {
         let scope_id = parser.create_scope();
 
         let fields = iter::from_fn(|| parser.parse_line()).collect();
-        
+
         while let Some(declaration) = parser.parse_line::<Declaration>() {
             parser
                 .get_scope(scope_id)

@@ -1,9 +1,9 @@
 #![warn(clippy::pedantic, clippy::nursery)]
+#![feature(iter_collect_into)]
 
 mod local;
 mod type_resolution;
 
-use cranelift::codegen::ir::InstBuilder;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::{top_level::DeclarationKind, Expression};
@@ -30,12 +30,14 @@ fn main() {
     let builder =
         cranelift_jit::JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
-    let module = cranelift_jit::JITModule::new(builder);
-    let context = module.make_context();
-    let function_builder_context = FunctionBuilderContext::new();
+    let mut module = cranelift_jit::JITModule::new(builder);
+    let mut context = module.make_context();
+    let mut function_builder_context = FunctionBuilderContext::new();
 
     type_resolution::TypeScope::append_new(&mut type_store, file.root).unwrap();
-    for declaration in type_store.file_cache[root].declarations.values() {
+    for (name, declaration) in type_store.file_cache[root].declarations.clone() {
+        // TODO: not root
+        let scope = root;
         let DeclarationKind::Function(function) = declaration else {
             continue;
         };
@@ -52,22 +54,37 @@ fn main() {
         };
 
         let mut local_scope = local::Scope::new();
-        // TODO: params!
-        let value_builder =
-            local::ValueBuilder::new(&type_store, &mut local_scope, root, function.parameters.iter().map(|parser::top_level::Parameter(parameter)| {
-                (parameter.name, parameter.type)
-            }));
-        // TODO: not root
-        let mut value_builder = value_builder.with_return_type(
-            type_store
-                .lookup(
-                    match function.return_type.as_ref().unwrap() {
-                        parser::Type::Identifier(ident) => ident,
-                    },
-                    root,
-                )
-                .unwrap(),
-        );
+
+        let parameters = function
+            .parameters
+            .into_iter()
+            .map(
+                |parser::top_level::Parameter(parser::top_level::TypeBinding { r#type, name })| {
+                    let r#type = r#type
+                        .and_then(|r#type| {
+                            let ident = match r#type {
+                                parser::Type::Identifier(ident) => ident.clone(),
+                            };
+                            type_store.lookup(&ident, scope)
+                        })
+                        .unwrap_or_else(|| todo!("semantic error!"));
+                    (name, r#type)
+                },
+            )
+            .collect();
+
+        let mut value_builder =
+            local::FunctionBuilder::new(&type_store, &mut local_scope, root, parameters)
+                .with_return_type(
+                    type_store
+                        .lookup(
+                            match function.return_type.as_ref().unwrap() {
+                                parser::Type::Identifier(ident) => ident,
+                            },
+                            scope,
+                        )
+                        .unwrap(),
+                );
 
         let statements = statements
             .iter()
@@ -76,29 +93,16 @@ fn main() {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
-        // Then, translate the AST nodes into Cranelift IR.
-        // Our toy language currently only supports I64 values, though Cranelift
-        // supports other types.
-        let int = module.target_config().pointer_type();
-        
-        for _p in &params {
-            context.func.signature.params.push(AbiParam::new(int));
-        }
+        context.func.signature = value_builder
+            .signature()
+            .unwrap_or_else(|error| todo!("handle me properly: {error}"));
 
-        // Our toy language currently only supports one return value, though
-        // Cranelift is designed to support more.
-        context.func.signature.returns.push(AbiParam::new(int));
-
-        // Create the builder to build a function.
         let mut builder = FunctionBuilder::new(&mut context.func, &mut function_builder_context);
 
         // Create the entry block, to start emitting code in.
         let entry_block = builder.create_block();
 
-        // Since this is the entry block, add block parameters corresponding to
-        // the function's parameters.
-        //
-        // TODO: Streamline the API here.
+        // Since this is the entry block, add block parameters corresponding to the function's parameters.
         builder.append_block_params_for_function_params(entry_block);
 
         // Tell the builder to emit code in this block.
@@ -109,64 +113,78 @@ fn main() {
         // predecessors.
         builder.seal_block(entry_block);
 
-        // The toy language allows variables to be declared implicitly.
-        // Walk the AST and declare all implicitly-declared variables.
-        let variables =
-            declare_variables(int, &mut builder, &params, &the_return, &stmts, entry_block);
-
-        // Now translate the statements of the function body.
-        let mut trans = FunctionTranslator {
-            int,
-            builder,
-            variables,
-            module: &mut self.module,
-        };
-        for expr in stmts {
-            trans.translate_expr(expr);
+        // builder.declare_var(Variable, ty);
+        // builder.use_var(var);
+        for (variable, r#type) in value_builder.local_scope.variables() {
+            builder.declare_var(
+                variable.into(),
+                r#type
+                    .map(|r#type| type_store.get(r#type))
+                    .unwrap()
+                    .clone()
+                    .into(),
+            )
         }
 
-        // Set up the return variable of the function. Above, we declared a
-        // variable to hold the return value. Here, we just do a use of that
-        // variable.
-        let return_variable = trans.variables.get(&the_return).unwrap();
-        let return_value = trans.builder.use_var(*return_variable);
+        for statement in statements {
+            match statement {
+                local::Statement::Assignment(variable, value) => {
+                    let value = value
+                        .cranelift_value(&mut builder)
+                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
-        // Emit the return instruction.
-        trans.builder.ins().return_(&[return_value]);
+                    builder.def_var(variable.into(), value);
+                }
+                local::Statement::Ignore(value) => {
+                    value
+                        .cranelift_value(&mut builder)
+                        .unwrap_or_else(|error| todo!("handle me :) {error}"));
+                }
+                local::Statement::Return(value) => {
+                    let value = value
+                        .cranelift_value(&mut builder)
+                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
-        // Tell the builder we're done with this function.
-        trans.builder.finalize();
+                    builder.ins().return_(&[value]);
+                }
+            };
+        }
+
+        builder.finalize();
 
         // Next, declare the function to jit. Functions must be declared
         // before they can be called, or defined.
         //
         // we have a version of `declare_function` that automatically declares
         // the function?
-        let id = self
-            .module
-            .declare_function(&name, Linkage::Export, &self.ctx.func.signature)
-            .map_err(|e| e.to_string())?;
+        let id = module
+            .declare_function(
+                name.as_ref(),
+                cranelift_module::Linkage::Export,
+                &context.func.signature,
+            )
+            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
 
         // Define the function to jit. This finishes compilation, although
         // there may be outstanding relocations to perform. Currently, jit
         // cannot finish relocations until all functions to be called are
         // defined. For this toy demo for now, we'll just finalize the
         // function below.
-        self.module
-            .define_function(id, &mut self.ctx)
-            .map_err(|e| e.to_string())?;
+        module
+            .define_function(id, &mut context)
+            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
 
         // Now that compilation is finished, we can clear out the context state.
-        self.module.clear_context(&mut self.ctx);
+        module.clear_context(&mut context);
+
+        // Finalize the functions which we just defined, which resolves any
+        // outstanding relocations (patching in addresses, now that they're
+        // available).
+        module.finalize_definitions().unwrap();
+
+        // We can now retrieve a pointer to the machine code.
+        let code = module.get_finalized_function(id);
+        let add = unsafe { std::mem::transmute::<*const u8, unsafe fn(i64, i64) -> i64>(code) };
+        dbg!(unsafe { add(1, 1) });
     }
-
-    // Finalize the functions which we just defined, which resolves any
-    // outstanding relocations (patching in addresses, now that they're
-    // available).
-    self.module.finalize_definitions().unwrap();
-
-    // We can now retrieve a pointer to the machine code.
-    let code = self.module.get_finalized_function(id);
-
-    Ok(code)
 }
