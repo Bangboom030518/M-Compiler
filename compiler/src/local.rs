@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Assignment(VariableId, Value),
+    Assignment(Variable, Value),
     Ignore(Value),
     Return(Value),
 }
@@ -32,7 +32,7 @@ pub enum Value {
     UnknownIntegerConst(u128),
     UnknownFloatConst(f64),
     IAdd(Box<Value>, Box<Value>),
-    Variable(VariableId),
+    Variable(Variable),
 }
 
 impl Value {
@@ -117,42 +117,43 @@ pub enum SemanticError {
     UndefinedVariable,
 }
 
-#[derive(Default, Debug)]
-pub struct Scope(Vec<Option<type_resolution::Id>>);
+// #[derive(Default, Debug)]
+// pub struct Scope(Vec<Option<type_resolution::Id>>);
 
-impl Scope {
-    pub fn new() -> Self {
-        Self::default()
-    }
+// impl Scope {
+//     pub fn new() -> Self {
+//         Self::default()
+//     }
 
-    // TODO: index operator
-    pub fn get(&self, VariableId(index): VariableId) -> Option<type_resolution::Id> {
-        *self.0.get(index).unwrap()
-    }
+//     // TODO: index operator
+//     pub fn get(&self, VariableId(index): VariableId) -> Option<type_resolution::Id> {
+//         *self.0.get(index).unwrap()
+//     }
 
-    pub fn create_slot(&mut self, r#type: Option<type_resolution::Id>) -> VariableId {
-        self.0.push(r#type);
-        VariableId(self.0.len() - 1)
-    }
+//     pub fn create_slot(&mut self, r#type: Option<type_resolution::Id>) -> VariableId {
+//         self.0.push(r#type);
+//         VariableId(self.0.len() - 1)
+//     }
 
-    pub fn variables(
-        &self,
-    ) -> impl Iterator<Item = (VariableId, Option<type_resolution::Id>)> + '_ {
-        self.0
-            .iter()
-            .enumerate()
-            .map(|(index, r#type)| (VariableId(index), *r#type))
-    }
-}
+//     pub fn variables(
+//         &self,
+//     ) -> impl Iterator<Item = (VariableId, Option<type_resolution::Id>)> + '_ {
+//         self.0
+//             .iter()
+//             .enumerate()
+//             .map(|(index, r#type)| (VariableId(index), *r#type))
+//     }
+// }
 
 pub struct FunctionBuilder<'a> {
     type_store: &'a type_resolution::TypeStore,
     scope_id: parser::scope::Id,
     return_type: type_resolution::Id,
     current_type: Option<type_resolution::Id>,
-    names: HashMap<parser::Ident, Variable>,
+    names: HashMap<parser::Ident, (Variable, Option<type_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
-    local_scope: Scope,
+    new_variable_index: usize,
+    // local_scope: Scope,
     parameters: &'a [(parser::Ident, type_resolution::Id)],
 }
 
@@ -173,44 +174,34 @@ impl<'a> FunctionBuilder<'a> {
         builder.seal_block(entry_block);
 
         let mut signature = Signature::new(isa::CallConv::Fast);
+        let mut names = HashMap::new();
+        let mut new_variable_index = 0;
 
-        parameters
-            .iter()
-            .map(|(_, r#type)| {
-                let r#type = type_store.get(*r#type).clone().into();
-                AbiParam::new(r#type)
-            })
-            .collect_into(&mut signature.params);
+        for ((name, type_id), value) in parameters.iter().zip(builder.block_params(entry_block)) {
+            let r#type = type_store.get(*type_id).clone().into();
+            signature.params.push(AbiParam::new(r#type));
 
-        let mut index = 0;
-        for (param, value) in signature
-            .params
-            .iter()
-            .zip(builder.block_params(entry_block))
-        {
-            let var = Variable::new(index);
-            builder.declare_var(var, param.value_type);
+            let variable = Variable::new(new_variable_index);
+            builder.declare_var(variable, r#type);
             // TODO: `.clone()`?
-            builder.def_var(var, value.clone());
-            index += 1;
+            builder.def_var(variable, value.clone());
+            names.insert(name.clone(), (variable, Some(*type_id)));
+
+            new_variable_index += 1;
         }
 
-        signature.returns = vec![AbiParam::new(
-            type_store
-                .get(return_type)
-                .clone()
-                .into(),
-        )];
+        signature.returns = vec![AbiParam::new(type_store.get(return_type).clone().into())];
+        function.signature = signature;
 
         Self {
             type_store,
             return_type,
             current_type: None,
-            local_scope: Scope::new(),
             scope_id,
-            names: HashMap::new(),
+            names,
             parameters,
             builder,
+            new_variable_index,
         }
     }
 
@@ -227,24 +218,23 @@ impl<'a> FunctionBuilder<'a> {
     //         .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
     // }
 
-    fn lookup_local_type(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
-        self.parameters
-            .iter()
-            .find_map(|(name, r#type)| (name == ident).then_some(r#type))
-            .copied()
-            .or_else(|| {
-                self.names
-                    .get(ident)
-                    .and_then(|&stack_slot| self.local_scope.get(stack_slot))
-            })
-            .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
-    }
+    // fn lookup_local_type(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
+    //     self.parameters
+    //         .iter()
+    //         .find_map(|(name, r#type)| (name == ident).then_some(r#type))
+    //         .copied()
+    //         .or_else(|| {
+    //             self.names
+    //                 .get(ident)
+    //                 .and_then(|&stack_slot| self.local_scope.get(stack_slot))
+    //         })
+    //         .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
+    // }
 
-    pub fn with_return_type(self, r#type: type_resolution::Id) -> Self {
-        Self {
-            return_type: Some(r#type),
-            ..self
-        }
+    fn create_variable(&mut self) -> Variable {
+        let variable = Variable::new(self.new_variable_index);
+        self.new_variable_index += 1;
+        variable
     }
 
     fn add_let_declaration(
@@ -253,12 +243,20 @@ impl<'a> FunctionBuilder<'a> {
         expression: &Expression,
     ) -> Result<Statement, SemanticError> {
         let value = self.expression(expression)?;
-        let stack_slot = self.local_scope.create_slot(self.current_type);
-        self.names.insert(identifier.clone(), stack_slot);
-        if self.current_type != self.local_scope.get(stack_slot) {
-            return Err(SemanticError::InvalidAssignment);
-        };
-        Ok(Statement::Assignment(stack_slot, value))
+        let variable = self.create_variable();
+        let m_type = self
+            .current_type
+            .map(|r#type| self.type_store.get(r#type).clone());
+
+        let cranelift_type = m_type
+            .map(cranelift::prelude::Type::from)
+            .unwrap_or(cranelift::prelude::types::INVALID);
+
+        self.builder.declare_var(variable, cranelift_type);
+
+        self.names
+            .insert(identifier.clone(), (variable, self.current_type));
+        Ok(Statement::Assignment(variable, value))
     }
 
     pub fn handle_statement(
@@ -267,21 +265,25 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<Statement, SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
-                let variable_type = self.lookup_local_type(name)?;
+                let (variable, r#type) = self
+                    .names
+                    .get(name)
+                    .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
                 let value = self.expression(expression)?;
-                if let Some(current_type) = self.current_type {
-                    if current_type != variable_type {
-                        return Err(SemanticError::InvalidAssignment);
-                    }
+                if *r#type == self.current_type {
+                    return Err(SemanticError::InvalidAssignment);
                 };
-                Ok(Statement::Assignment(*self.names.get(name).unwrap(), value))
+                Ok(Statement::Assignment(
+                    self.names.get(name).unwrap().0.clone(),
+                    value,
+                ))
             }
             parser::Statement::Let(ident, expression) => {
                 self.add_let_declaration(ident, expression)
             }
             parser::Statement::Expression(expression) => {
                 if let Expression::Return(expression) = expression {
-                    self.current_type = self.return_type;
+                    self.current_type = Some(self.return_type);
                     Ok(Statement::Return(self.expression(&expression.clone())?))
                 } else {
                     Ok(Statement::Ignore(self.expression(expression)?))
@@ -391,18 +393,19 @@ impl<'a> FunctionBuilder<'a> {
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             Expression::Return(expression) => {
-                self.current_type = self.return_type;
+                self.current_type = Some(self.return_type);
                 self.expression(expression)
             }
             Expression::Identifier(ident) => {
+                // TODO: fix error!
                 dbg!(ident);
                 dbg!(self.names);
                 let variable = *self
                     .names
                     .get(ident)
                     .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
-                self.current_type = self.local_scope.get(variable);
-                Ok(Value::Variable(variable))
+                self.current_type = self.names.get(variable);
+                Ok(Value::Variable(variable.0))
             }
             _ => todo!(),
         }
