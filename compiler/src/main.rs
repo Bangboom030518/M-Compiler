@@ -70,39 +70,21 @@ fn main() {
             )
             .collect();
 
-        // let mut builder = FunctionBuilder::new(&mut context.func, &mut function_builder_context);
-
-        // // Create the entry block, to start emitting code in.
-        // let entry_block = builder.create_block();
-
-        // // Since this is the entry block, add block parameters corresponding to the function's parameters.
-        // builder.append_block_params_for_function_params(entry_block);
-
-        // // Tell the builder to emit code in this block.
-        // builder.switch_to_block(entry_block);
-
-        // // And, tell the builder that this block will have no further
-        // // predecessors. Since it's the entry block, it won't have any
-        // // predecessors.
-        // builder.seal_block(entry_block);
-
         for (param, value) in parameters.iter().zip(builder.block_params(entry_block)) {
 
             builder.def_var(, value)
         }
 
         let mut value_builder =
-            local::FunctionBuilder::new(&type_store, root, parameters)
-                .with_return_type(
-                    type_store
-                        .lookup(
-                            match function.return_type.as_ref().unwrap() {
-                                parser::Type::Identifier(ident) => ident,
-                            },
-                            scope,
-                        )
-                        .unwrap(),
-                );
+            local::FunctionBuilder::new(&type_store, root, parameters, type_store
+                .lookup(
+                    match function.return_type.as_ref().unwrap() {
+                        parser::Type::Identifier(ident) => ident,
+                    },
+                    scope,
+                )
+                .unwrap())
+                ;
 
         let statements = statements
             .iter()
@@ -151,7 +133,7 @@ fn main() {
                 }
             };
         }
-
+        
         builder.finalize();
 
         // Next, declare the function to jit. Functions must be declared

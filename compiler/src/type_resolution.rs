@@ -123,8 +123,7 @@ impl TypeScope {
             .collect();
 
         type_store.scopes.insert(scope_id, Self { types });
-        // TODO: remove clone
-        let type_scope = &type_store.scopes[&scope_id].clone();
+        let type_scope = &type_store.scopes[&scope_id];
 
         for (ident, type_id) in &type_scope.types {
             let declaration = &declarations[&ident];
@@ -144,7 +143,7 @@ impl TypeScope {
                                         },
                                         r#struct.scope,
                                     )
-                                    .map_or_else(|| Err(TypeNotFound), Ok)?;
+                                    .map_or(Err(TypeNotFound), Ok)?;
                                 Ok((name.clone(), type_id))
                             })
                             .collect::<Result<Vec<_>, TypeNotFound>>()?,

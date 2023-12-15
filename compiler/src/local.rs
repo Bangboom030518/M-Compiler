@@ -3,7 +3,7 @@ use cranelift::{codegen::ir::Function, prelude::*};
 use parser::{
     expression::{IntrinsicCall, UnaryOperator},
     prelude::Literal,
-    Expression, Ident,
+    Expression,
 };
 use std::collections::HashMap;
 
@@ -117,34 +117,6 @@ pub enum SemanticError {
     UndefinedVariable,
 }
 
-// #[derive(Default, Debug)]
-// pub struct Scope(Vec<Option<type_resolution::Id>>);
-
-// impl Scope {
-//     pub fn new() -> Self {
-//         Self::default()
-//     }
-
-//     // TODO: index operator
-//     pub fn get(&self, VariableId(index): VariableId) -> Option<type_resolution::Id> {
-//         *self.0.get(index).unwrap()
-//     }
-
-//     pub fn create_slot(&mut self, r#type: Option<type_resolution::Id>) -> VariableId {
-//         self.0.push(r#type);
-//         VariableId(self.0.len() - 1)
-//     }
-
-//     pub fn variables(
-//         &self,
-//     ) -> impl Iterator<Item = (VariableId, Option<type_resolution::Id>)> + '_ {
-//         self.0
-//             .iter()
-//             .enumerate()
-//             .map(|(index, r#type)| (VariableId(index), *r#type))
-//     }
-// }
-
 pub struct FunctionBuilder<'a> {
     type_store: &'a type_resolution::TypeStore,
     scope_id: parser::scope::Id,
@@ -153,7 +125,6 @@ pub struct FunctionBuilder<'a> {
     names: HashMap<parser::Ident, (Variable, Option<type_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
     new_variable_index: usize,
-    // local_scope: Scope,
     parameters: &'a [(parser::Ident, type_resolution::Id)],
 }
 
@@ -205,32 +176,6 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    // fn lookup_local(&self, ident: &Ident) -> Result<VariableId, SemanticError> {
-    //     self.parameters
-    //         .iter()
-    //         .find_map(|(name, r#type)| (name == ident).then_some(r#type))
-    //         .copied()
-    //         .or_else(|| {
-    //             self.names
-    //                 .get(ident)
-    //                 .and_then(|&stack_slot| self.local_scope.get(stack_slot))
-    //         })
-    //         .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
-    // }
-
-    // fn lookup_local_type(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
-    //     self.parameters
-    //         .iter()
-    //         .find_map(|(name, r#type)| (name == ident).then_some(r#type))
-    //         .copied()
-    //         .or_else(|| {
-    //             self.names
-    //                 .get(ident)
-    //                 .and_then(|&stack_slot| self.local_scope.get(stack_slot))
-    //         })
-    //         .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
-    // }
-
     fn create_variable(&mut self) -> Variable {
         let variable = Variable::new(self.new_variable_index);
         self.new_variable_index += 1;
@@ -268,7 +213,7 @@ impl<'a> FunctionBuilder<'a> {
                 let (variable, r#type) = self
                     .names
                     .get(name)
-                    .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
+                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
                 let value = self.expression(expression)?;
                 if *r#type == self.current_type {
                     return Err(SemanticError::InvalidAssignment);
@@ -344,7 +289,6 @@ impl<'a> FunctionBuilder<'a> {
                 Ok(Value::IAdd(Box::new(left), Box::new(right)))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
-                dbg!("assert type");
                 let r#type = self
                     .type_store
                     .lookup(
@@ -353,7 +297,7 @@ impl<'a> FunctionBuilder<'a> {
                         },
                         self.scope_id,
                     )
-                    .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
+                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
                 self.current_type = Some(r#type);
                 Ok(self.expression(expression)?)
             }
@@ -403,8 +347,8 @@ impl<'a> FunctionBuilder<'a> {
                 let variable = *self
                     .names
                     .get(ident)
-                    .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
-                self.current_type = self.names.get(variable);
+                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
+                self.current_type = variable.1;
                 Ok(Value::Variable(variable.0))
             }
             _ => todo!(),

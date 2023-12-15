@@ -460,7 +460,6 @@ fn declare_variables_in_stmt(
     index: &mut usize,
     expr: &Expression,
 ) {
-    // TODO: uncomment
     /*
     match *expr {
         Expr::Assign(ref name, _) => {
