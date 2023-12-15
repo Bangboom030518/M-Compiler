@@ -1,5 +1,5 @@
 use crate::type_resolution::{self, Type};
-use cranelift::prelude::*;
+use cranelift::{codegen::ir::Function, prelude::*};
 use parser::{
     expression::{IntrinsicCall, UnaryOperator},
     prelude::Literal,
@@ -145,45 +145,89 @@ impl Scope {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct VariableId(usize);
-
-impl From<VariableId> for Variable {
-    fn from(VariableId(id): VariableId) -> Self {
-        Self::new(id)
-    }
-}
-
-#[derive(Debug)]
 pub struct FunctionBuilder<'a> {
     type_store: &'a type_resolution::TypeStore,
-    return_type: Option<type_resolution::Id>,
-    current_type: Option<type_resolution::Id>,
-    names: HashMap<parser::Ident, VariableId>,
-    pub local_scope: &'a mut Scope,
     scope_id: parser::scope::Id,
-    parameters: Vec<(parser::Ident, type_resolution::Id)>,
+    return_type: type_resolution::Id,
+    current_type: Option<type_resolution::Id>,
+    names: HashMap<parser::Ident, Variable>,
+    builder: cranelift::prelude::FunctionBuilder<'a>,
+    local_scope: Scope,
+    parameters: &'a [(parser::Ident, type_resolution::Id)],
 }
 
 impl<'a> FunctionBuilder<'a> {
     pub fn new(
         type_store: &'a type_resolution::TypeStore,
-        local_scope: &'a mut Scope,
         scope_id: parser::scope::Id,
-        parameters: Vec<(parser::Ident, type_resolution::Id)>,
+        parameters: &'a [(parser::Ident, type_resolution::Id)],
+        return_type: type_resolution::Id,
+        function_builder_context: &mut FunctionBuilderContext,
+        function: &mut Function,
     ) -> Self {
+        let mut builder =
+            cranelift::prelude::FunctionBuilder::new(function, function_builder_context);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let mut signature = Signature::new(isa::CallConv::Fast);
+
+        parameters
+            .iter()
+            .map(|(_, r#type)| {
+                let r#type = type_store.get(*r#type).clone().into();
+                AbiParam::new(r#type)
+            })
+            .collect_into(&mut signature.params);
+
+        let mut index = 0;
+        for (param, value) in signature
+            .params
+            .iter()
+            .zip(builder.block_params(entry_block))
+        {
+            let var = Variable::new(index);
+            builder.declare_var(var, param.value_type);
+            // TODO: `.clone()`?
+            builder.def_var(var, value.clone());
+            index += 1;
+        }
+
+        signature.returns = vec![AbiParam::new(
+            type_store
+                .get(return_type)
+                .clone()
+                .into(),
+        )];
+
         Self {
             type_store,
-            return_type: None,
+            return_type,
             current_type: None,
-            local_scope,
+            local_scope: Scope::new(),
             scope_id,
             names: HashMap::new(),
             parameters,
+            builder,
         }
     }
 
-    fn lookup_name(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
+    // fn lookup_local(&self, ident: &Ident) -> Result<VariableId, SemanticError> {
+    //     self.parameters
+    //         .iter()
+    //         .find_map(|(name, r#type)| (name == ident).then_some(r#type))
+    //         .copied()
+    //         .or_else(|| {
+    //             self.names
+    //                 .get(ident)
+    //                 .and_then(|&stack_slot| self.local_scope.get(stack_slot))
+    //         })
+    //         .map_or_else(|| Err(SemanticError::UndefinedVariable), Ok)
+    // }
+
+    fn lookup_local_type(&self, ident: &Ident) -> Result<type_resolution::Id, SemanticError> {
         self.parameters
             .iter()
             .find_map(|(name, r#type)| (name == ident).then_some(r#type))
@@ -223,10 +267,10 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<Statement, SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
-                let stack_slot = self.lookup_name(name)?;
+                let variable_type = self.lookup_local_type(name)?;
                 let value = self.expression(expression)?;
                 if let Some(current_type) = self.current_type {
-                    if current_type != stack_slot {
+                    if current_type != variable_type {
                         return Err(SemanticError::InvalidAssignment);
                     }
                 };
@@ -298,6 +342,7 @@ impl<'a> FunctionBuilder<'a> {
                 Ok(Value::IAdd(Box::new(left), Box::new(right)))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
+                dbg!("assert type");
                 let r#type = self
                     .type_store
                     .lookup(
@@ -350,35 +395,16 @@ impl<'a> FunctionBuilder<'a> {
                 self.expression(expression)
             }
             Expression::Identifier(ident) => {
+                dbg!(ident);
+                dbg!(self.names);
                 let variable = *self
                     .names
                     .get(ident)
                     .map_or_else(|| Err(SemanticError::DeclarationNotFound), Ok)?;
                 self.current_type = self.local_scope.get(variable);
-                Ok(Value::Variable(variable.into()))
+                Ok(Value::Variable(variable))
             }
             _ => todo!(),
         }
-    }
-
-    pub fn signature(&self) -> Result<Signature, SemanticError> {
-        let mut signature = Signature::new(isa::CallConv::Fast);
-        self.parameters
-            .iter()
-            .map(|(_, r#type)| {
-                let r#type = self.type_store.get(*r#type).clone().into();
-                AbiParam::new(r#type)
-            })
-            .collect_into(&mut signature.params);
-        signature.returns = vec![AbiParam::new(
-            self.type_store
-                .get(
-                    self.return_type
-                        .map_or_else(|| Err(SemanticError::ExpectedReturnType), Ok)?,
-                )
-                .clone()
-                .into(),
-        )];
-        Ok(signature)
     }
 }
