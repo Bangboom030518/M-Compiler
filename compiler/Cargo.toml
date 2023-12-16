@@ -4,12 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-translate = { path = "../translate" }
 parser = { path = "../parser" }
-itertools = "0.11.0"
-cranelift = "0.100"
-cranelift-jit = "0.100"
-cranelift-module = "0.100"
-cranelift-native = "0.100"
-cranelift-reader = "0.100"
+itertools = "0.12"
+cranelift = "0.102"
+cranelift-jit = "0.102"
+cranelift-module = "0.102"
+cranelift-native = "0.102"
+cranelift-reader = "0.102"
 thiserror = "1.0.50"
