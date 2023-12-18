@@ -31,24 +31,6 @@ pub enum Type {
     F64,
 }
 
-// impl Type {
-//     fn size(&self) -> usize {
-//         match self {
-//             Self::U8 | Self::I8 => 1,
-//             Self::U16 | Self::I16 => 2,
-//             Self::F32 | Self::U32 | Self::I32 => 4,
-//             Self::F64 | Self::U64 | Self::I64 => 8,
-//             Self::U128 | Self::I128 => 16,
-//             Self::Struct {  .. } => {
-//                 todo!("handle struct")
-//             }
-//             Self::Union {  .. } => {
-//                 todo!("handle union")
-//             }
-//         }
-//     }
-// }
-
 impl Type {
     pub fn cranelift_type(&self) -> cranelift::prelude::Type {
         use cranelift::prelude::types;

@@ -8,13 +8,6 @@ use parser::{
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Assignment(Variable, Value),
-    Ignore(Value),
-    Return(Value),
-}
-
-#[derive(Debug, Clone)]
 pub enum Value {
     U8Const(u8),
     U16Const(u16),
@@ -97,7 +90,7 @@ impl Value {
 
                 builder.ins().iadd(left, right)
             }
-            Self::Variable(variable) => builder.use_var((*variable).into()),
+            Self::Variable(variable) => builder.use_var(*variable),
         };
         Ok(value)
     }

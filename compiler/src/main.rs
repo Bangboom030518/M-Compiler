@@ -6,7 +6,6 @@ mod type_resolution;
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use itertools::Itertools;
 use parser::{top_level::DeclarationKind, Expression};
 use std::collections::HashMap;
 
