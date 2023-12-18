@@ -65,7 +65,7 @@ fn main() {
                 },
             )
             .collect();
-        
+
         let value_builder = local::FunctionBuilder::new(
             &type_store,
             root,
@@ -82,7 +82,11 @@ fn main() {
             &mut context.func,
         );
 
-        value_builder.compile(&function.body).unwrap_or_else(|error| todo!("handle me! {error:?}"));
+        value_builder
+            .compile(&function.body)
+            .unwrap_or_else(|error| todo!("handle me! {error:?}"));
+
+        std::fs::write("function-ir.clif", context.func.display().to_string()).unwrap();
 
         // Next, declare the function to jit. Functions must be declared
         // before they can be called, or defined.
@@ -102,6 +106,7 @@ fn main() {
         // cannot finish relocations until all functions to be called are
         // defined. For this toy demo for now, we'll just finalize the
         // function below.
+
         module
             .define_function(id, &mut context)
             .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
@@ -116,7 +121,9 @@ fn main() {
 
         // We can now retrieve a pointer to the machine code.
         let code = module.get_finalized_function(id);
-        let add = unsafe { std::mem::transmute::<*const u8, unsafe fn(i64, i64) -> i64>(code) };
-        dbg!(unsafe { add(1, 1) });
+        let add = unsafe {
+            std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i64>(code)
+        };
+        dbg!(unsafe { add(2, 2) });
     }
 }

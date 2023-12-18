@@ -53,13 +53,13 @@ impl Type {
     pub fn cranelift_type(&self) -> cranelift::prelude::Type {
         use cranelift::prelude::types;
         match self {
-            Type::U8 | Type::I8 => types::I8,
-            Type::U16 | Type::I16 => types::I16,
-            Type::F32 => types::F32,
-            Type::U32 | Type::I32 => types::I32,
-            Type::F64 => types::F64,
-            Type::U64 | Type::I64 => types::I64,
-            Type::U128 | Type::I128 => types::I128,
+            Self::U8 | Self::I8 => types::I8,
+            Self::U16 | Self::I16 => types::I16,
+            Self::F32 => types::F32,
+            Self::U32 | Self::I32 => types::I32,
+            Self::F64 => types::F64,
+            Self::U64 | Self::I64 => types::I64,
+            Self::U128 | Self::I128 => types::I128,
             _ => todo!("handle complex data structures"),
         }
     }

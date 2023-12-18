@@ -136,7 +136,7 @@ impl<'a> FunctionBuilder<'a> {
         function_builder_context: &'a mut FunctionBuilderContext,
         function: &'a mut Function,
     ) -> Self {
-        let mut signature = Signature::new(isa::CallConv::Fast);
+        let mut signature = Signature::new(isa::CallConv::SystemV);
         signature.params = parameters
             .iter()
             .map(|(_, type_id)| {
@@ -318,7 +318,7 @@ impl<'a> FunctionBuilder<'a> {
                         },
                         self.scope_id,
                     )
-                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
+                    .ok_or(SemanticError::DeclarationNotFound)?;
                 self.current_type = Some(r#type);
                 Ok(self.expression(expression)?)
             }
@@ -367,7 +367,7 @@ impl<'a> FunctionBuilder<'a> {
                 let variable = *self
                     .names
                     .get(ident)
-                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
+                    .ok_or(SemanticError::DeclarationNotFound)?;
                 self.current_type = variable.1;
                 Ok(Value::Variable(variable.0))
             }
