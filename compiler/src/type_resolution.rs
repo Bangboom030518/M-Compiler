@@ -49,18 +49,18 @@ pub enum Type {
 //     }
 // }
 
-impl From<Type> for cranelift::prelude::Type {
-    fn from(value: Type) -> Self {
+impl Type {
+    pub fn cranelift_type(&self) -> cranelift::prelude::Type {
         use cranelift::prelude::types;
-        match value {
-            Type::U8 |  Type::I8 => types::I8,
+        match self {
+            Type::U8 | Type::I8 => types::I8,
             Type::U16 | Type::I16 => types::I16,
             Type::F32 => types::F32,
             Type::U32 | Type::I32 => types::I32,
             Type::F64 => types::F64,
             Type::U64 | Type::I64 => types::I64,
             Type::U128 | Type::I128 => types::I128,
-            _ => todo!("handle complex data structures")
+            _ => todo!("handle complex data structures"),
         }
     }
 }
@@ -123,7 +123,8 @@ impl TypeScope {
             .collect();
 
         type_store.scopes.insert(scope_id, Self { types });
-        let type_scope = &type_store.scopes[&scope_id];
+        // TODO: clone?
+        let type_scope = type_store.scopes[&scope_id].clone();
 
         for (ident, type_id) in &type_scope.types {
             let declaration = &declarations[&ident];
@@ -143,7 +144,7 @@ impl TypeScope {
                                         },
                                         r#struct.scope,
                                     )
-                                    .map_or(Err(TypeNotFound), Ok)?;
+                                    .ok_or(TypeNotFound)?;
                                 Ok((name.clone(), type_id))
                             })
                             .collect::<Result<Vec<_>, TypeNotFound>>()?,

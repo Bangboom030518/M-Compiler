@@ -125,55 +125,72 @@ pub struct FunctionBuilder<'a> {
     names: HashMap<parser::Ident, (Variable, Option<type_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
     new_variable_index: usize,
-    parameters: &'a [(parser::Ident, type_resolution::Id)],
 }
 
 impl<'a> FunctionBuilder<'a> {
     pub fn new(
         type_store: &'a type_resolution::TypeStore,
         scope_id: parser::scope::Id,
-        parameters: &'a [(parser::Ident, type_resolution::Id)],
+        parameters: Vec<(parser::Ident, type_resolution::Id)>,
         return_type: type_resolution::Id,
-        function_builder_context: &mut FunctionBuilderContext,
-        function: &mut Function,
+        function_builder_context: &'a mut FunctionBuilderContext,
+        function: &'a mut Function,
     ) -> Self {
+        let mut signature = Signature::new(isa::CallConv::Fast);
+        signature.params = parameters
+            .iter()
+            .map(|(_, type_id)| {
+                let r#type = type_store.get(*type_id).cranelift_type();
+                AbiParam::new(r#type)
+            })
+            .collect();
+
+        signature.returns = vec![AbiParam::new(type_store.get(return_type).cranelift_type())];
+
         let mut builder =
             cranelift::prelude::FunctionBuilder::new(function, function_builder_context);
+        builder.func.signature = signature;
+
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
-        let mut signature = Signature::new(isa::CallConv::Fast);
-        let mut names = HashMap::new();
-        let mut new_variable_index = 0;
+        // TODO: `to_vec()`?
+        let block_params = builder.block_params(entry_block).to_vec();
+        dbg!(&block_params);
 
-        for ((name, type_id), value) in parameters.iter().zip(builder.block_params(entry_block)) {
-            let r#type = type_store.get(*type_id).clone().into();
-            signature.params.push(AbiParam::new(r#type));
-
-            let variable = Variable::new(new_variable_index);
-            builder.declare_var(variable, r#type);
-            // TODO: `.clone()`?
-            builder.def_var(variable, value.clone());
-            names.insert(name.clone(), (variable, Some(*type_id)));
-
-            new_variable_index += 1;
-        }
-
-        signature.returns = vec![AbiParam::new(type_store.get(return_type).clone().into())];
-        function.signature = signature;
+        let names = parameters
+            .into_iter()
+            .zip(block_params)
+            .enumerate()
+            .map(|(index, ((name, type_id), value))| {
+                let variable = Variable::new(index);
+                // TODO: get type again?
+                let r#type = type_store.get(type_id).cranelift_type();
+                builder.declare_var(variable, r#type);
+                builder.def_var(variable, value);
+                (name, (variable, Some(type_id)))
+            })
+            .collect::<HashMap<_, _>>();
 
         Self {
             type_store,
             return_type,
             current_type: None,
             scope_id,
+            new_variable_index: names.len(),
             names,
-            parameters,
             builder,
-            new_variable_index,
         }
+    }
+
+    pub fn compile(mut self, statements: &[parser::Statement]) -> Result<(), SemanticError> {
+        for statement in statements {
+            self.handle_statement(statement)?;
+        }
+        self.builder.finalize();
+        Ok(())
     }
 
     fn create_variable(&mut self) -> Variable {
@@ -182,59 +199,63 @@ impl<'a> FunctionBuilder<'a> {
         variable
     }
 
-    fn add_let_declaration(
-        &mut self,
-        identifier: &parser::Ident,
-        expression: &Expression,
-    ) -> Result<Statement, SemanticError> {
-        let value = self.expression(expression)?;
-        let variable = self.create_variable();
-        let m_type = self
-            .current_type
-            .map(|r#type| self.type_store.get(r#type).clone());
-
-        let cranelift_type = m_type
-            .map(cranelift::prelude::Type::from)
-            .unwrap_or(cranelift::prelude::types::INVALID);
-
-        self.builder.declare_var(variable, cranelift_type);
-
-        self.names
-            .insert(identifier.clone(), (variable, self.current_type));
-        Ok(Statement::Assignment(variable, value))
-    }
-
-    pub fn handle_statement(
-        &mut self,
-        statement: &parser::Statement,
-    ) -> Result<Statement, SemanticError> {
+    pub fn handle_statement(&mut self, statement: &parser::Statement) -> Result<(), SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
-                let (variable, r#type) = self
+                let (variable, r#type) = *self
                     .names
                     .get(name)
-                    .map_or(Err(SemanticError::DeclarationNotFound), Ok)?;
+                    .ok_or(SemanticError::DeclarationNotFound)?;
+
                 let value = self.expression(expression)?;
-                if *r#type == self.current_type {
+                if r#type == self.current_type {
                     return Err(SemanticError::InvalidAssignment);
                 };
-                Ok(Statement::Assignment(
-                    self.names.get(name).unwrap().0.clone(),
-                    value,
-                ))
+                let value = value
+                    .cranelift_value(&mut self.builder)
+                    .unwrap_or_else(|error| todo!("handle me :( {error}"));
+
+                self.builder.def_var(variable, value);
             }
             parser::Statement::Let(ident, expression) => {
-                self.add_let_declaration(ident, expression)
+                let value = self.expression(expression)?;
+                let variable = self.create_variable();
+                let m_type = self
+                    .current_type
+                    .map(|r#type| self.type_store.get(r#type).clone());
+
+                let cranelift_type = m_type
+                    .map_or(cranelift::prelude::types::INVALID, |r#type| r#type.cranelift_type());
+
+                self.builder.declare_var(variable, cranelift_type);
+
+                self.names
+                    .insert(ident.clone(), (variable, self.current_type));
+
+                let value = value
+                    .cranelift_value(&mut self.builder)
+                    .unwrap_or_else(|error| todo!("handle me :( {error}"));
+
+                self.builder.def_var(variable, value);
             }
             parser::Statement::Expression(expression) => {
                 if let Expression::Return(expression) = expression {
                     self.current_type = Some(self.return_type);
-                    Ok(Statement::Return(self.expression(&expression.clone())?))
+                    let value = self
+                        .expression(&expression.clone())?
+                        .cranelift_value(&mut self.builder)
+                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
+
+                    self.builder.ins().return_(&[value]);
                 } else {
-                    Ok(Statement::Ignore(self.expression(expression)?))
+                    self.expression(expression)?
+                        .cranelift_value(&mut self.builder)
+                        .unwrap_or_else(|error| todo!("handle me :) {error}"));
                 }
             }
-        }
+        };
+
+        Ok(())
     }
 
     fn integer(&self, integer: u128) -> Result<Value, SemanticError> {
@@ -341,9 +362,8 @@ impl<'a> FunctionBuilder<'a> {
                 self.expression(expression)
             }
             Expression::Identifier(ident) => {
-                // TODO: fix error!
                 dbg!(ident);
-                dbg!(self.names);
+                dbg!(&self.names);
                 let variable = *self
                     .names
                     .get(ident)

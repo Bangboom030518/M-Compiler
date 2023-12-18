@@ -6,6 +6,7 @@ mod type_resolution;
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
+use itertools::Itertools;
 use parser::{top_level::DeclarationKind, Expression};
 use std::collections::HashMap;
 
@@ -38,21 +39,16 @@ fn main() {
     for (name, declaration) in type_store.file_cache[root].declarations.clone() {
         // TODO: not root
         let scope = root;
-        let DeclarationKind::Function(function) = declaration else {
+        let DeclarationKind::Function(mut function) = declaration else {
             continue;
         };
 
-        let Some((return_statement, statements)) = function.body.split_last() else {
-            todo!("handle empty body")
+        if let Some(return_statement) = function.body.last_mut() {
+            if let parser::Statement::Expression(expression) = return_statement {
+                *return_statement =
+                    parser::Statement::Expression(Expression::Return(Box::new(expression.clone())));
+            }
         };
-
-        // TODO: `.clone()`?
-        let return_statement = if let parser::Statement::Expression(expression) = return_statement {
-            parser::Statement::Expression(Expression::Return(Box::new(expression.clone())))
-        } else {
-            return_statement.clone()
-        };
-
 
         let parameters: Vec<(parser::prelude::Ident, type_resolution::Id)> = function
             .parameters
@@ -69,72 +65,24 @@ fn main() {
                 },
             )
             .collect();
-
-        for (param, value) in parameters.iter().zip(builder.block_params(entry_block)) {
-
-            builder.def_var(, value)
-        }
-
-        let mut value_builder =
-            local::FunctionBuilder::new(&type_store, root, parameters, type_store
+        
+        let value_builder = local::FunctionBuilder::new(
+            &type_store,
+            root,
+            parameters,
+            type_store
                 .lookup(
                     match function.return_type.as_ref().unwrap() {
                         parser::Type::Identifier(ident) => ident,
                     },
                     scope,
                 )
-                .unwrap())
-                ;
+                .unwrap(),
+            &mut function_builder_context,
+            &mut context.func,
+        );
 
-        let statements = statements
-            .iter()
-            .chain(std::iter::once(&return_statement))
-            .map(|statement| value_builder.handle_statement(statement))
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-
-        context.func.signature = value_builder
-            .signature()
-            .unwrap_or_else(|error| todo!("handle me properly: {error}"));
-
-        // builder.declare_var(Variable, ty);
-        // builder.use_var(var);
-        for (variable, r#type) in value_builder.local_scope.variables() {
-            builder.declare_var(
-                variable.into(),
-                r#type
-                    .map(|r#type| type_store.get(r#type))
-                    .unwrap()
-                    .clone()
-                    .into(),
-            );
-        }
-
-        for statement in statements {
-            match statement {
-                local::Statement::Assignment(variable, value) => {
-                    let value = value
-                        .cranelift_value(&mut builder)
-                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
-
-                    builder.def_var(variable.into(), value);
-                }
-                local::Statement::Ignore(value) => {
-                    value
-                        .cranelift_value(&mut builder)
-                        .unwrap_or_else(|error| todo!("handle me :) {error}"));
-                }
-                local::Statement::Return(value) => {
-                    let value = value
-                        .cranelift_value(&mut builder)
-                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
-
-                    builder.ins().return_(&[value]);
-                }
-            };
-        }
-        
-        builder.finalize();
+        value_builder.compile(&function.body).unwrap_or_else(|error| todo!("handle me! {error:?}"));
 
         // Next, declare the function to jit. Functions must be declared
         // before they can be called, or defined.
