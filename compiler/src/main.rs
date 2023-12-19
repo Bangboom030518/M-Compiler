@@ -10,7 +10,7 @@ use parser::{top_level::DeclarationKind, Expression};
 use std::collections::HashMap;
 
 fn main() {
-    let file = parser::parse_file(include_str!("../../input.m")).unwrap();
+    let file = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
     let root = file.root;
     let mut type_store = type_resolution::TypeStore {
         types: Vec::new(),
@@ -27,6 +27,9 @@ fn main() {
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
         .unwrap();
+
+    let call_convention = isa.default_call_conv();
+
     let builder =
         cranelift_jit::JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
 
@@ -79,12 +82,13 @@ fn main() {
                 .unwrap(),
             &mut function_builder_context,
             &mut context.func,
+            call_convention,
         );
 
         value_builder
             .compile(&function.body)
             .unwrap_or_else(|error| todo!("handle me! {error:?}"));
-
+        // context.func.name = name.to_string();
         std::fs::write("function-ir.clif", context.func.display().to_string()).unwrap();
 
         // Next, declare the function to jit. Functions must be declared
@@ -117,12 +121,9 @@ fn main() {
         // outstanding relocations (patching in addresses, now that they're
         // available).
         module.finalize_definitions().unwrap();
-
         // We can now retrieve a pointer to the machine code.
         let code = module.get_finalized_function(id);
-        let add = unsafe {
-            std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i64>(code)
-        };
+        let add = unsafe { std::mem::transmute::<_, unsafe extern "C" fn(i64, i64) -> i64>(code) };
         dbg!(unsafe { add(2, 2) });
     }
 }

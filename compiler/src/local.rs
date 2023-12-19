@@ -1,5 +1,8 @@
 use crate::type_resolution::{self, Type};
-use cranelift::{codegen::ir::Function, prelude::*};
+use cranelift::{
+    codegen::{ir::Function, isa::CallConv},
+    prelude::*,
+};
 use parser::{
     expression::{IntrinsicCall, UnaryOperator},
     prelude::Literal,
@@ -69,9 +72,9 @@ impl Value {
         // use cranelift::codegen::ir::immediates::{Imm64, Uimm32, Uimm64, Uimm8};
 
         let value = match self {
-            Self::I8Const(value) => builder.ins().iconst(types::I8, *value as i64),
-            Self::I16Const(value) => builder.ins().iconst(types::I16, *value as i64),
-            Self::I32Const(value) => builder.ins().iconst(types::I32, *value as i64),
+            Self::I8Const(value) => builder.ins().iconst(types::I8, i64::from(*value)),
+            Self::I16Const(value) => builder.ins().iconst(types::I16, i64::from(*value)),
+            Self::I32Const(value) => builder.ins().iconst(types::I32, i64::from(*value)),
             Self::I64Const(value) => builder.ins().iconst(types::I64, *value),
             Self::I128Const(value) => todo!(),
             Self::U8Const(value) => todo!(),
@@ -97,17 +100,14 @@ impl Value {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("Type error :)")]
+#[error("{:?}", &self)]
 // TODO: annotated results
 pub enum SemanticError {
     UnexpectedIntegerLiteral,
     IntegerOverflow(#[from] std::num::TryFromIntError),
     UnknownType,
-    MismatchedType,
     InvalidAssignment,
     DeclarationNotFound,
-    ExpectedReturnType,
-    UndefinedVariable,
 }
 
 pub struct FunctionBuilder<'a> {
@@ -128,8 +128,9 @@ impl<'a> FunctionBuilder<'a> {
         return_type: type_resolution::Id,
         function_builder_context: &'a mut FunctionBuilderContext,
         function: &'a mut Function,
+        call_convention: CallConv,
     ) -> Self {
-        let mut signature = Signature::new(isa::CallConv::SystemV);
+        let mut signature = Signature::new(call_convention);
         signature.params = parameters
             .iter()
             .map(|(_, type_id)| {
@@ -217,14 +218,15 @@ impl<'a> FunctionBuilder<'a> {
                     .current_type
                     .map(|r#type| self.type_store.get(r#type).clone());
 
-                let cranelift_type = m_type
-                    .map_or(cranelift::prelude::types::INVALID, |r#type| r#type.cranelift_type());
+                let cranelift_type = m_type.map_or(cranelift::prelude::types::INVALID, |r#type| {
+                    r#type.cranelift_type()
+                });
 
                 self.builder.declare_var(variable, cranelift_type);
 
                 self.names
                     .insert(ident.clone(), (variable, self.current_type));
-
+                // TODO: lazily promote
                 let value = value
                     .cranelift_value(&mut self.builder)
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
