@@ -65,17 +65,17 @@ pub enum Declaration {
 }
 
 impl Declaration {
-    fn expect_type(&self) -> Result<&Type, SemanticError> {
+    pub const fn expect_type(&self) -> Result<&Type, SemanticError> {
         match self {
             Self::Type(r#type) => Ok(r#type),
-            _ => Err(SemanticError::FunctionUsedAsType),
+            Self::Function(_) => Err(SemanticError::FunctionUsedAsType),
         }
     }
 
-    fn expect_function(&self) -> Result<&Function, SemanticError> {
+    pub const fn expect_function(&self) -> Result<&Function, SemanticError> {
         match self {
             Self::Function(function) => Ok(function),
-            _ => Err(SemanticError::TypeUsedAsFunction),
+            Self::Type(_) => Err(SemanticError::TypeUsedAsFunction),
         }
     }
 }

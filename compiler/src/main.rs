@@ -12,9 +12,8 @@ use parser::Expression;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 // TODO: annotated results
-
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SemanticError {
     #[error("Integer literal used as non-integer")]
     UnexpectedIntegerLiteral,
