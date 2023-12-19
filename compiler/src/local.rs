@@ -1,13 +1,10 @@
-use crate::type_resolution::{self, Type};
-use cranelift::{
-    codegen::{ir::Function, isa::CallConv},
-    prelude::*,
-};
-use parser::{
-    expression::{IntrinsicCall, UnaryOperator},
-    prelude::Literal,
-    Expression,
-};
+use crate::top_level_resolution::{self, Type};
+use crate::SemanticError;
+use cranelift::codegen::ir::Function;
+use cranelift::prelude::*;
+use parser::expression::{Call, IntrinsicCall, UnaryOperator};
+use parser::prelude::Literal;
+use parser::Expression;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -99,48 +96,26 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("{:?}", &self)]
-// TODO: annotated results
-pub enum SemanticError {
-    UnexpectedIntegerLiteral,
-    IntegerOverflow(#[from] std::num::TryFromIntError),
-    UnknownType,
-    InvalidAssignment,
-    DeclarationNotFound,
-}
-
 pub struct FunctionBuilder<'a> {
-    type_store: &'a type_resolution::TypeStore,
+    type_store: &'a top_level_resolution::TopLevelDeclarations,
     scope_id: parser::scope::Id,
-    return_type: type_resolution::Id,
-    current_type: Option<type_resolution::Id>,
-    names: HashMap<parser::Ident, (Variable, Option<type_resolution::Id>)>,
+    return_type: top_level_resolution::Id,
+    current_type: Option<top_level_resolution::Id>,
+    names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
     new_variable_index: usize,
 }
 
 impl<'a> FunctionBuilder<'a> {
     pub fn new(
-        type_store: &'a type_resolution::TypeStore,
+        type_store: &'a top_level_resolution::TopLevelDeclarations,
         scope_id: parser::scope::Id,
-        parameters: Vec<(parser::Ident, type_resolution::Id)>,
-        return_type: type_resolution::Id,
+        parameters: Vec<(parser::Ident, top_level_resolution::Id)>,
+        return_type: top_level_resolution::Id,
         function_builder_context: &'a mut FunctionBuilderContext,
         function: &'a mut Function,
-        call_convention: CallConv,
-    ) -> Self {
-        let mut signature = Signature::new(call_convention);
-        signature.params = parameters
-            .iter()
-            .map(|(_, type_id)| {
-                let r#type = type_store.get(*type_id).cranelift_type();
-                AbiParam::new(r#type)
-            })
-            .collect();
-
-        signature.returns = vec![AbiParam::new(type_store.get(return_type).cranelift_type())];
-
+        signature: Signature,
+    ) -> Result<Self, SemanticError> {
         let mut builder =
             cranelift::prelude::FunctionBuilder::new(function, function_builder_context);
         builder.func.signature = signature;
@@ -152,7 +127,6 @@ impl<'a> FunctionBuilder<'a> {
 
         // TODO: `to_vec()`?
         let block_params = builder.block_params(entry_block).to_vec();
-        dbg!(&block_params);
 
         let names = parameters
             .into_iter()
@@ -161,14 +135,14 @@ impl<'a> FunctionBuilder<'a> {
             .map(|(index, ((name, type_id), value))| {
                 let variable = Variable::new(index);
                 // TODO: get type again?
-                let r#type = type_store.get(type_id).cranelift_type();
+                let r#type = type_store.get_type(type_id)?.cranelift_type();
                 builder.declare_var(variable, r#type);
                 builder.def_var(variable, value);
-                (name, (variable, Some(type_id)))
+                Ok((name, (variable, Some(type_id))))
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Result<HashMap<_, _>, SemanticError>>()?;
 
-        Self {
+        Ok(Self {
             type_store,
             return_type,
             current_type: None,
@@ -176,7 +150,7 @@ impl<'a> FunctionBuilder<'a> {
             new_variable_index: names.len(),
             names,
             builder,
-        }
+        })
     }
 
     pub fn compile(mut self, statements: &[parser::Statement]) -> Result<(), SemanticError> {
@@ -214,9 +188,10 @@ impl<'a> FunctionBuilder<'a> {
             parser::Statement::Let(ident, expression) => {
                 let value = self.expression(expression)?;
                 let variable = self.create_variable();
-                let m_type = self
-                    .current_type
-                    .map(|r#type| self.type_store.get(r#type).clone());
+                let m_type = match self.current_type {
+                    Some(r#type) => Some(self.type_store.get_type(r#type)?.clone()),
+                    None => None,
+                };
 
                 let cranelift_type = m_type.map_or(cranelift::prelude::types::INVALID, |r#type| {
                     r#type.cranelift_type()
@@ -254,7 +229,7 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     fn integer(&self, integer: u128) -> Result<Value, SemanticError> {
-        let value = match self.current_type() {
+        let value = match self.current_type()? {
             Some(Type::U8) => Value::U8Const(u8::try_from(integer)?),
             Some(Type::U16) => Value::U16Const(u16::try_from(integer)?),
             Some(Type::U32) => Value::U32Const(u32::try_from(integer)?),
@@ -272,7 +247,7 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     fn float(&self, float: f64) -> Result<Value, SemanticError> {
-        let value = match self.current_type() {
+        let value = match self.current_type()? {
             Some(Type::F32) => Value::F32Const(float as f32),
             Some(Type::F64) => Value::F64Const(float),
             None => Value::UnknownFloatConst(float),
@@ -289,9 +264,13 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    fn current_type(&self) -> Option<&Type> {
-        self.current_type
-            .map(|type_id| self.type_store.get(type_id))
+    fn current_type(&self) -> Result<Option<&Type>, SemanticError> {
+        let result = match self.current_type {
+            Some(r#type) => Some(self.type_store.get_type(r#type)?),
+            None => None,
+        };
+
+        Ok(result)
     }
 
     fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<Value, SemanticError> {
@@ -299,7 +278,7 @@ impl<'a> FunctionBuilder<'a> {
             IntrinsicCall::IAdd(left, right) => {
                 let mut left = self.expression(left)?;
                 let right = self.expression(right)?;
-                if let Some(current_type) = self.current_type() {
+                if let Some(current_type) = self.current_type()? {
                     left = left.promote(current_type)?;
                 }
                 Ok(Value::IAdd(Box::new(left), Box::new(right)))
@@ -327,7 +306,7 @@ impl<'a> FunctionBuilder<'a> {
     ) -> Result<Value, SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
-                let value = match self.current_type() {
+                let value = match self.current_type()? {
                     Some(Type::I8) => Value::I8Const(-i8::try_from(*integer)?),
                     Some(Type::I16) => Value::I16Const(-i16::try_from(*integer)?),
                     Some(Type::I32) => Value::I32Const(-i32::try_from(*integer)?),
@@ -357,14 +336,24 @@ impl<'a> FunctionBuilder<'a> {
                 self.expression(expression)
             }
             Expression::Identifier(ident) => {
-                dbg!(ident);
-                dbg!(&self.names);
                 let variable = *self
                     .names
                     .get(ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 self.current_type = variable.1;
                 Ok(Value::Variable(variable.0))
+            }
+            Expression::Call(Call {
+                callable,
+                arguments,
+                ..
+            }) => {
+                todo!()
+                // TODO: what about if not ident
+                // let callable = match callable {
+                //     Expression::Identifier(ident) => ident,
+                // };
+                // self.type_store
             }
             _ => todo!(),
         }

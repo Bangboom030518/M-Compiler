@@ -4,8 +4,36 @@ use itertools::{Itertools, PeekingNext};
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub enum Token {
+macro_rules! define_token_enums {
+    ($($variants:ident),*) => {
+        #[derive(Clone, Debug, Default, PartialEq)]
+        pub enum Token {
+            $($variants),*,
+            #[default]
+            Illegal,
+            String(String),
+            Char(char),
+            Ident(String),
+            Comment(String),
+            Integer(u128),
+            Float(f64),
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq)]
+        pub enum TokenType {
+            $($variants),*,
+            String,
+            Char,
+            Ident,
+            Comment,
+            Integer,
+            Float,
+            Eoi,
+        }
+    };
+}
+
+define_token_enums!(
     Const,
     Function,
     Type,
@@ -35,16 +63,8 @@ pub enum Token {
     Bang,
     OpenParen,
     CloseParen,
-    Comma,
-    #[default]
-    Illegal,
-    String(String),
-    Char(char),
-    Ident(String),
-    Comment(String),
-    Integer(u128),
-    Float(f64),
-}
+    Comma
+);
 
 #[derive(Debug)]
 pub struct Tokenizer<'a>(Peekable<Chars<'a>>);

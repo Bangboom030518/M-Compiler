@@ -1,7 +1,7 @@
-use ::parser::{
-    prelude::*,
-    top_level::{DeclarationKind, PrimitiveKind},
-};
+use crate::SemanticError;
+use ::parser::prelude::*;
+use ::parser::top_level::{DeclarationKind, PrimitiveKind};
+use cranelift::codegen::ir::Signature;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -47,26 +47,67 @@ impl Type {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub struct FunctionId(usize);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Function {
+    parameters: Vec<Id>,
+    r#return: Id,
+    signature: Signature,
+    name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Declaration {
+    Type(Type),
+    Function(Function),
+}
+
+impl Declaration {
+    fn expect_type(&self) -> Result<&Type, SemanticError> {
+        match self {
+            Self::Type(r#type) => Ok(r#type),
+            _ => Err(SemanticError::FunctionUsedAsType),
+        }
+    }
+
+    fn expect_function(&self) -> Result<&Function, SemanticError> {
+        match self {
+            Self::Function(function) => Ok(function),
+            _ => Err(SemanticError::TypeUsedAsFunction),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
-pub struct TypeStore {
-    pub types: Vec<Option<Type>>,
-    pub scopes: HashMap<scope::Id, TypeScope>,
+pub struct TopLevelDeclarations {
+    pub declarations: Vec<Option<Declaration>>,
+    pub scopes: HashMap<scope::Id, TopLevelScope>,
     pub file_cache: scope::Cache,
 }
 
-impl TypeStore {
+impl TopLevelDeclarations {
     pub fn create_empty(&mut self) -> Id {
-        self.types.push(None);
-        Id(self.types.len() - 1)
+        self.declarations.push(None);
+        Id(self.declarations.len() - 1)
     }
 
-    pub fn initialise(&mut self, Id(index): Id, r#type: Type) {
-        self.types[index] = Some(r#type);
+    pub fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
+        self.declarations[index] = Some(declaration);
     }
 
     #[must_use]
-    pub fn get(&self, Id(id): Id) -> &Type {
-        self.types.get(id).unwrap().as_ref().unwrap()
+    pub fn get(&self, Id(id): Id) -> &Declaration {
+        self.declarations.get(id).unwrap().as_ref().unwrap()
+    }
+
+    pub fn get_type(&self, id: Id) -> Result<&Type, SemanticError> {
+        self.get(id).expect_type()
+    }
+
+    pub fn get_function(&self, id: Id) -> Result<&Function, SemanticError> {
+        self.get(id).expect_function()
     }
 
     pub fn lookup(&self, ident: &Ident, scope_id: scope::Id) -> Option<Id> {
@@ -77,38 +118,33 @@ impl TypeStore {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TypeScope {
-    pub types: HashMap<Ident, Id>,
+pub struct TopLevelScope {
+    pub declarations: HashMap<Ident, Id>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("Type Not Found")]
 pub struct TypeNotFound;
 
-impl TypeScope {
-    pub fn append_new(type_store: &mut TypeStore, scope_id: scope::Id) -> Result<(), TypeNotFound> {
+impl TopLevelScope {
+    pub fn append_new(
+        type_store: &mut TopLevelDeclarations,
+        scope_id: scope::Id,
+    ) -> Result<(), TypeNotFound> {
         let declarations = type_store.file_cache[scope_id].declarations.clone();
-        let types = declarations
-            .iter()
-            .filter_map(|(ident, declaration)| {
-                if !matches!(
-                    declaration,
-                    DeclarationKind::Struct(_)
-                        | DeclarationKind::Union(_)
-                        | DeclarationKind::Primitive(_)
-                ) {
-                    return None;
-                }
 
-                Some((ident.clone(), type_store.create_empty()))
-            })
-            .collect();
+        {
+            let declarations = declarations
+                .iter()
+                .map(|(ident, ..)| (ident.clone(), type_store.create_empty()))
+                .collect();
+            type_store.scopes.insert(scope_id, Self { declarations });
+        }
 
-        type_store.scopes.insert(scope_id, Self { types });
         // TODO: clone?
         let type_scope = type_store.scopes[&scope_id].clone();
 
-        for (ident, type_id) in &type_scope.types {
+        for (ident, id) in &type_scope.declarations {
             let declaration = &declarations[&ident];
             match declaration {
                 DeclarationKind::Struct(r#struct) => {
@@ -132,7 +168,7 @@ impl TypeScope {
                             .collect::<Result<Vec<_>, TypeNotFound>>()?,
                         ident: ident.clone(),
                     };
-                    type_store.initialise(*type_id, r#type);
+                    type_store.initialise(*id, Declaration::Type(r#type));
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {
@@ -150,9 +186,13 @@ impl TypeScope {
                         PrimitiveKind::F32 => Type::F32,
                         PrimitiveKind::F64 => Type::F64,
                     };
-                    type_store.initialise(*type_id, r#type);
+                    type_store.initialise(*id, Declaration::Type(r#type));
                 }
-                _ => unimplemented!(),
+                DeclarationKind::Function(function) => {
+                    todo!()
+                    // type_store.initialise(*id, );
+                }
+                DeclarationKind::Const(_) => todo!(),
             }
         }
 
@@ -160,6 +200,6 @@ impl TypeScope {
     }
 
     pub fn get(&self, ident: &Ident) -> Option<Id> {
-        self.types.get(ident).copied()
+        self.declarations.get(ident).copied()
     }
 }
