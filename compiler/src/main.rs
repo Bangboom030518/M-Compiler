@@ -35,53 +35,6 @@ pub enum SemanticError {
     MissingReturnType,
 }
 
-fn function_signature(
-    function: &parser::top_level::Function,
-    call_conv: CallConv,
-    declarations: &top_level_resolution::TopLevelDeclarations,
-    scope_id: parser::scope::Id,
-) -> Result<Signature, SemanticError> {
-    let mut signature = Signature::new(call_conv);
-
-    signature.params = function
-        .parameters
-        .iter()
-        .map(|Parameter(TypeBinding { r#type, .. })| {
-            let r#type = r#type
-                .as_ref()
-                .map(|r#type| match r#type {
-                    parser::Type::Identifier(ident) => ident,
-                })
-                .ok_or(SemanticError::UntypedParameter)?;
-
-            let type_id = declarations
-                .lookup(r#type, scope_id)
-                .ok_or(SemanticError::DeclarationNotFound)?;
-
-            let r#type = declarations.get_type(type_id)?.cranelift_type();
-
-            Ok(AbiParam::new(r#type))
-        })
-        .collect::<Result<Vec<_>, SemanticError>>()?;
-
-    let return_type = function
-        .return_type
-        .as_ref()
-        .map(|r#type| match r#type {
-            parser::Type::Identifier(ident) => ident,
-        })
-        .ok_or(SemanticError::MissingReturnType)?;
-
-    let return_type = declarations
-        .lookup(return_type, scope_id)
-        .ok_or(SemanticError::DeclarationNotFound)?;
-
-    let return_type = declarations.get_type(return_type)?.cranelift_type();
-
-    signature.returns = vec![AbiParam::new(return_type)];
-    Ok(signature)
-}
-
 fn main() {
     let file = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
     let root = file.root;
@@ -110,42 +63,45 @@ fn main() {
     let mut context = module.make_context();
     let mut function_builder_context = FunctionBuilderContext::new();
 
-    top_level_resolution::TopLevelScope::append_new(&mut declarations, file.root).unwrap();
+    top_level_resolution::TopLevelScope::append_new(
+        &mut declarations,
+        file.root,
+        isa.default_call_conv(),
+    )
+    .unwrap();
+
     let mut functions = HashMap::new();
-    for (name, declaration) in declarations.file_cache[root].declarations.clone() {
+    for declaration in declarations.declarations.iter().flatten() {
         // TODO: not root
         let scope = root;
 
-        let DeclarationKind::Function(mut function) = declaration else {
+        let top_level_resolution::Declaration::Function(mut function) = declaration else {
             continue;
         };
 
-        let signature =
-            function_signature(&function, isa.default_call_conv(), &declarations, scope)
-                .unwrap_or_else(|error| todo!("handle me! {error}"));
+        // TODO: VVV
+        // if let Some(return_statement) = function.body.last_mut() {
+        //     if let parser::Statement::Expression(expression) = return_statement {
+        //         *return_statement =
+        //             parser::Statement::Expression(Expression::Return(Box::new(expression.clone())));
+        //     }
+        // };
 
-        if let Some(return_statement) = function.body.last_mut() {
-            if let parser::Statement::Expression(expression) = return_statement {
-                *return_statement =
-                    parser::Statement::Expression(Expression::Return(Box::new(expression.clone())));
-            }
-        };
-
-        let parameters: Vec<(parser::prelude::Ident, top_level_resolution::Id)> = function
-            .parameters
-            .into_iter()
-            .map(
-                |parser::top_level::Parameter(parser::top_level::TypeBinding { r#type, name })| {
-                    let r#type = r#type
-                        .and_then(|r#type| {
-                            let parser::Type::Identifier(ident) = r#type;
-                            declarations.lookup(&ident, scope)
-                        })
-                        .unwrap_or_else(|| todo!("semantic error!"));
-                    (name, r#type)
-                },
-            )
-            .collect();
+        // let parameters: Vec<(parser::prelude::Ident, top_level_resolution::Id)> = function
+        //     .parameters
+        //     .into_iter()
+        //     .map(
+        //         |parser::top_level::Parameter(parser::top_level::TypeBinding { r#type, name })| {
+        //             let r#type = r#type
+        //                 .and_then(|r#type| {
+        //                     let parser::Type::Identifier(ident) = r#type;
+        //                     declarations.lookup(&ident, scope)
+        //                 })
+        //                 .unwrap_or_else(|| todo!("semantic error!"));
+        //             (name, r#type)
+        //         },
+        //     )
+        //     .collect();
 
         let function_builder = local::FunctionBuilder::new(
             &declarations,
@@ -161,7 +117,7 @@ fn main() {
                 .unwrap(),
             &mut function_builder_context,
             &mut context.func,
-            signature,
+            function,
         )
         .unwrap_or_else(|error| todo!("handle me! {error}"));
 

@@ -1,7 +1,8 @@
 use crate::SemanticError;
 use ::parser::prelude::*;
-use ::parser::top_level::{DeclarationKind, PrimitiveKind};
-use cranelift::codegen::ir::Signature;
+use ::parser::top_level::{DeclarationKind, Parameter, PrimitiveKind, TypeBinding};
+use cranelift::codegen::ir::{AbiParam, Signature};
+use cranelift::codegen::isa::CallConv;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -52,10 +53,72 @@ pub struct FunctionId(usize);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Function {
-    parameters: Vec<Id>,
-    r#return: Id,
-    signature: Signature,
-    name: String,
+    pub parameters: Vec<(Ident, Id)>,
+    pub r#return: Id,
+    pub signature: Signature,
+    pub name: String,
+}
+
+impl Function {
+    fn new(
+        function: &::parser::top_level::Function,
+        call_conv: CallConv,
+        declarations: &TopLevelDeclarations,
+        scope_id: ::parser::scope::Id,
+        name: &Ident,
+    ) -> Result<Self, SemanticError> {
+        let mut signature = Signature::new(call_conv);
+
+        let parameters = function
+            .parameters
+            .into_iter()
+            .map(|Parameter(TypeBinding { r#type, name })| {
+                let r#type = r#type
+                    .as_ref()
+                    .map(|r#type| match r#type {
+                        ::parser::Type::Identifier(ident) => ident,
+                    })
+                    .ok_or(SemanticError::UntypedParameter)?;
+
+                let r#type = declarations
+                    .lookup(r#type, scope_id)
+                    .ok_or(SemanticError::DeclarationNotFound)?;
+
+                Ok((name, r#type))
+            })
+            .collect::<Result<Vec<_>, SemanticError>>()?;
+
+        signature.params = parameters
+            .iter()
+            .map(|r#type| {
+                Ok(AbiParam::new(
+                    declarations.get_type(r#type.1)?.cranelift_type(),
+                ))
+            })
+            .collect::<Result<Vec<_>, SemanticError>>()?;
+
+        let return_type = function
+            .return_type
+            .as_ref()
+            .map(|r#type| match r#type {
+                ::parser::Type::Identifier(ident) => ident,
+            })
+            .ok_or(SemanticError::MissingReturnType)?;
+
+        let return_type_id = declarations
+            .lookup(return_type, scope_id)
+            .ok_or(SemanticError::DeclarationNotFound)?;
+
+        let return_type = declarations.get_type(return_type_id)?.cranelift_type();
+
+        signature.returns = vec![AbiParam::new(return_type)];
+        Ok(Self {
+            signature,
+            parameters,
+            r#return: return_type_id,
+            name: name.to_string(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,15 +185,12 @@ pub struct TopLevelScope {
     pub declarations: HashMap<Ident, Id>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("Type Not Found")]
-pub struct TypeNotFound;
-
 impl TopLevelScope {
     pub fn append_new(
         type_store: &mut TopLevelDeclarations,
         scope_id: scope::Id,
-    ) -> Result<(), TypeNotFound> {
+        call_conv: CallConv,
+    ) -> Result<(), SemanticError> {
         let declarations = type_store.file_cache[scope_id].declarations.clone();
 
         {
@@ -148,7 +208,7 @@ impl TopLevelScope {
             let declaration = &declarations[&ident];
             match declaration {
                 DeclarationKind::Struct(r#struct) => {
-                    Self::append_new(type_store, r#struct.scope)?;
+                    Self::append_new(type_store, r#struct.scope, call_conv)?;
                     let r#type = Type::Struct {
                         fields: r#struct
                             .fields
@@ -162,10 +222,10 @@ impl TopLevelScope {
                                         },
                                         r#struct.scope,
                                     )
-                                    .ok_or(TypeNotFound)?;
+                                    .ok_or(SemanticError::DeclarationNotFound)?;
                                 Ok((name.clone(), type_id))
                             })
-                            .collect::<Result<Vec<_>, TypeNotFound>>()?,
+                            .collect::<Result<Vec<_>, SemanticError>>()?,
                         ident: ident.clone(),
                     };
                     type_store.initialise(*id, Declaration::Type(r#type));
@@ -189,8 +249,12 @@ impl TopLevelScope {
                     type_store.initialise(*id, Declaration::Type(r#type));
                 }
                 DeclarationKind::Function(function) => {
-                    todo!()
-                    // type_store.initialise(*id, );
+                    type_store.initialise(
+                        *id,
+                        Declaration::Function(Function::new(
+                            function, call_conv, type_store, scope_id, ident,
+                        )?),
+                    );
                 }
                 DeclarationKind::Const(_) => todo!(),
             }

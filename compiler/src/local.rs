@@ -97,7 +97,7 @@ impl Value {
 }
 
 pub struct FunctionBuilder<'a> {
-    type_store: &'a top_level_resolution::TopLevelDeclarations,
+    declarations: &'a top_level_resolution::TopLevelDeclarations,
     scope_id: parser::scope::Id,
     return_type: top_level_resolution::Id,
     current_type: Option<top_level_resolution::Id>,
@@ -143,7 +143,7 @@ impl<'a> FunctionBuilder<'a> {
             .collect::<Result<HashMap<_, _>, SemanticError>>()?;
 
         Ok(Self {
-            type_store,
+            declarations: type_store,
             return_type,
             current_type: None,
             scope_id,
@@ -189,7 +189,7 @@ impl<'a> FunctionBuilder<'a> {
                 let value = self.expression(expression)?;
                 let variable = self.create_variable();
                 let m_type = match self.current_type {
-                    Some(r#type) => Some(self.type_store.get_type(r#type)?.clone()),
+                    Some(r#type) => Some(self.declarations.get_type(r#type)?.clone()),
                     None => None,
                 };
 
@@ -266,7 +266,7 @@ impl<'a> FunctionBuilder<'a> {
 
     fn current_type(&self) -> Result<Option<&Type>, SemanticError> {
         let result = match self.current_type {
-            Some(r#type) => Some(self.type_store.get_type(r#type)?),
+            Some(r#type) => Some(self.declarations.get_type(r#type)?),
             None => None,
         };
 
@@ -285,7 +285,7 @@ impl<'a> FunctionBuilder<'a> {
             }
             IntrinsicCall::AssertType(expression, r#type) => {
                 let r#type = self
-                    .type_store
+                    .declarations
                     .lookup(
                         match r#type {
                             parser::Type::Identifier(identifier) => identifier,
@@ -348,12 +348,15 @@ impl<'a> FunctionBuilder<'a> {
                 arguments,
                 ..
             }) => {
-                todo!()
+                
                 // TODO: what about if not ident
-                // let callable = match callable {
-                //     Expression::Identifier(ident) => ident,
-                // };
-                // self.type_store
+                let callable = match callable.as_ref() {
+                    Expression::Identifier(ident) => ident,
+                    _ => todo!()
+                };
+                let function = self.declarations.lookup(callable, self.scope_id).ok_or(SemanticError::DeclarationNotFound)?;
+                let function = self.declarations.get_function(function)?;
+                
             }
             _ => todo!(),
         }
