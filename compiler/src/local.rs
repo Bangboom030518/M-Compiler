@@ -356,7 +356,6 @@ impl<'a> FunctionBuilder<'a> {
                 };
                 let function = self.declarations.lookup(callable, self.scope_id).ok_or(SemanticError::DeclarationNotFound)?;
                 let function = self.declarations.get_function(function)?;
-                
             }
             _ => todo!(),
         }

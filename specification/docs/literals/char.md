@@ -3,7 +3,7 @@
 | Open Quote | Unicode Character / Escape Sequence | Close Quote |
 | ---------- | ----------------------------------- | ----------- |
 | `'`        | `a`                                 | `'`         |
-| `'`        | `\u0001`                            | `'`         |
+| `'`        | `\u{0001}`                          | `'`         |
 
 ## Type
 
