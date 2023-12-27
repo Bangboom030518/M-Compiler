@@ -32,6 +32,11 @@ type Optional<T> = union { T, Null }
             value as T -> mapping(value)
             _ as Null -> Null()
     
+    fn with_error<E>(self Self, error E) Fallible<T, E>
+        match self
+            value as T -> value
+            error as E -> error
+
     fn unwrap_or = (self Self, default T) T
         match self
             value as T -> value
@@ -47,4 +52,12 @@ type Fallible<T, E> = union { T, E }
         match self
             value as T -> value
             value as E -> mapping(value)
+    
+    fn unwrap_or = (self Self, default T) T
+        match self
+            value as T -> value
+            _ as Null -> default
 
+interface operators.Construct
+    fn construct(..fields Fields<Self>) Self
+        Self { ..fields }
