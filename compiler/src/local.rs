@@ -187,9 +187,9 @@ impl<'a> FunctionBuilder<'a> {
                 self.builder.def_var(variable, value);
             }
             parser::Statement::Let(ident, expression) => {
-                let value = self.expression(expression)?;
+                let value = self.expression(expression, None)?;
                 let variable = self.create_variable();
-                let m_type = match self.current_type {
+                let m_type = match value.1 {
                     Some(r#type) => Some(self.declarations.get_type(r#type)?.clone()),
                     None => None,
                 };
@@ -230,8 +230,8 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    fn integer(&self, integer: u128) -> Result<Value, SemanticError> {
-        let value = match self.current_type()? {
+    fn integer(&self, integer: u128, r#type: Option<top_level_resolution::Id>) -> Result<Value, SemanticError> {
+        let value = match self.r#type(r#type)? {
             Some(Type::U8) => Value::U8Const(u8::try_from(integer)?),
             Some(Type::U16) => Value::U16Const(u16::try_from(integer)?),
             Some(Type::U32) => Value::U32Const(u32::try_from(integer)?),
@@ -248,8 +248,8 @@ impl<'a> FunctionBuilder<'a> {
         Ok(value)
     }
 
-    fn float(&self, float: f64) -> Result<Value, SemanticError> {
-        let value = match self.current_type()? {
+    fn float(&self, float: f64, r#type: Option<top_level_resolution::Id>) -> Result<Value, SemanticError> {
+        let value = match self.r#type(r#type)? {
             Some(Type::F32) => Value::F32Const(float as f32),
             Some(Type::F64) => Value::F64Const(float),
             None => Value::UnknownFloatConst(float),
@@ -266,14 +266,14 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    fn current_type(&self) -> Result<Option<&Type>, SemanticError> {
-        let result = match self.current_type {
-            Some(r#type) => Some(self.declarations.get_type(r#type)?),
-            None => None,
-        };
+    // fn current_type(&self) -> Result<Option<&Type>, SemanticError> {
+        // let result = match self.current_type {
+        //     Some(r#type) => Some(self.declarations.get_type(r#type)?),
+        //     None => None,
+        // };
 
-        Ok(result)
-    }
+        // Ok(result)
+    // }
 
     fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match intrinsic {
@@ -299,15 +299,24 @@ impl<'a> FunctionBuilder<'a> {
             }
         }
     }
+    
+    fn r#type(&self, r#type: Option<top_level_resolution::Id>) -> Result<Option<&Type>, SemanticError> {
+        Ok(match r#type {
+            Some(r#type) => Some(self.declarations.get_type(r#type)?),
+            None => None,
+        })
+
+    }
 
     fn unary_prefix(
         &mut self,
+        r#type: Option<top_level_resolution::Id>,
         operator: UnaryOperator,
         expression: &Expression,
     ) -> Result<Value, SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
-                let value = match self.current_type()? {
+                let value = match self.r#type(r#type)? {
                     Some(Type::I8) => Value::I8Const(-i8::try_from(*integer)?),
                     Some(Type::I16) => Value::I16Const(-i16::try_from(*integer)?),
                     Some(Type::I32) => Value::I32Const(-i32::try_from(*integer)?),
