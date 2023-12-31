@@ -1,10 +1,12 @@
 #![warn(clippy::pedantic, clippy::nursery)]
-#![feature(assert_matches)]
+#![feature(assert_matches, iter_collect_into)]
 
 use std::fmt::Display;
+use std::iter;
 
 pub use expression::Expression;
 use internal::prelude::*;
+use prelude::top_level::Declaration;
 
 pub mod expression;
 pub mod parser;
@@ -21,13 +23,10 @@ pub trait Parse {
 #[must_use]
 pub fn parse_file(input: &str) -> Option<scope::File> {
     let mut parser = Parser::from(Tokenizer::from(input));
-    let scope_id = parser.scope;
-    while let Some(declaration) = parser.parse_line::<top_level::Declaration>() {
-        parser
-            .get_scope(scope_id)
-            .declarations
-            .insert(declaration.name, declaration.kind);
-    }
+    parser.get_scope(parser.scope).declarations =
+        iter::from_fn(|| parser.parse_line::<top_level::Declaration>())
+            .map(|Declaration { name, kind }| (name, kind))
+            .collect();
     parser.peek_eof()?;
     Some(parser.into())
 }
@@ -88,9 +87,7 @@ pub struct Assignment(pub Ident, pub Expression);
 
 impl Parse for Assignment {
     fn parse(parser: &mut Parser) -> Option<Self> {
-        let ident = parser.parse()?;
-        let expression = parser.parse()?;
-        Some(Self(ident, expression))
+        Some(Self(parser.parse()?, parser.parse()?))
     }
 }
 
@@ -129,18 +126,18 @@ mod internal {
         pub use itertools::{Itertools, PeekingNext};
         #[cfg(test)]
         pub use std::assert_matches::assert_matches;
-        pub use std::{collections::HashMap, iter::Peekable};
+        pub use std::collections::HashMap;
+        pub use std::iter::Peekable;
         pub use tokenizer::{Token, Tokenizer};
     }
 }
 
 pub mod prelude {
-    pub use crate::{
-        expression::{self, prelude::*},
-        parse_file,
-        parser::{self, Parser},
-        scope::{self, Scope},
-        top_level::{self, prelude::*},
-        Expression, Ident, Parse, Statement, Type,
-    };
+    pub use crate::expression::prelude::*;
+    pub use crate::expression::{self};
+    pub use crate::parser::{self, Parser};
+    pub use crate::scope::{self, Scope};
+    pub use crate::top_level::prelude::*;
+    pub use crate::top_level::{self};
+    pub use crate::{parse_file, Expression, Ident, Parse, Statement, Type};
 }

@@ -100,7 +100,7 @@ pub struct FunctionBuilder<'a> {
     declarations: &'a top_level_resolution::TopLevelDeclarations,
     scope_id: parser::scope::Id,
     return_type: top_level_resolution::Id,
-    current_type: Option<top_level_resolution::Id>,
+    // current_type: Option<top_level_resolution::Id>,
     names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
     new_variable_index: usize,
@@ -145,7 +145,7 @@ impl<'a> FunctionBuilder<'a> {
         Ok(Self {
             declarations: type_store,
             return_type,
-            current_type: None,
+            // current_type: None,
             scope_id,
             new_variable_index: names.len(),
             names,
@@ -324,7 +324,13 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    fn expression(&mut self, expression: &Expression) -> Result<Value, SemanticError> {
+    // fn r#type()
+
+    fn expression(
+        &mut self,
+        expression: &Expression,
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<(Value, top_level_resolution::Id), SemanticError> {
         match expression {
             Expression::Literal(literal) => self.literal(literal),
             Expression::UnaryPrefix(operator, expression) => {
@@ -332,29 +338,29 @@ impl<'a> FunctionBuilder<'a> {
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             Expression::Return(expression) => {
-                self.current_type = Some(self.return_type);
-                self.expression(expression)
+                self.expression(expression, Some(self.return_type))
             }
             Expression::Identifier(ident) => {
                 let variable = *self
                     .names
                     .get(ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
-                self.current_type = variable.1;
-                Ok(Value::Variable(variable.0))
+                Ok((Value::Variable(variable.0), variable.1))
             }
             Expression::Call(Call {
                 callable,
                 arguments,
                 ..
             }) => {
-                
                 // TODO: what about if not ident
                 let callable = match callable.as_ref() {
                     Expression::Identifier(ident) => ident,
-                    _ => todo!()
+                    _ => todo!(),
                 };
-                let function = self.declarations.lookup(callable, self.scope_id).ok_or(SemanticError::DeclarationNotFound)?;
+                let function = self
+                    .declarations
+                    .lookup(callable, self.scope_id)
+                    .ok_or(SemanticError::DeclarationNotFound)?;
                 let function = self.declarations.get_function(function)?;
             }
             _ => todo!(),

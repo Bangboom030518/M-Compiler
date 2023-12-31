@@ -233,6 +233,12 @@ type Char = struct
         fn to_string = (self)
             "'" + self.char + "'"
 
+type Illegal = struct
+    extend Token
+
+    extend std.ToString
+        fn to_string = (self)
+            "<illegal>"
 
 
 type Token = 

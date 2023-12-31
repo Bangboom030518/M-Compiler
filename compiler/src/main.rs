@@ -50,7 +50,7 @@ fn main() {
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
         panic!("host machine is not supported: {}", msg);
     });
-    let isa: Arc<dyn TargetIsa>: Arc<dyn TargetIsa> = isa_builder
+    let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
         .unwrap();
 
@@ -110,7 +110,7 @@ fn main() {
             declarations
                 .lookup(
                     match function.return_type.as_ref().unwrap() {
-                        parser::Type::Identifier(ident) => ident,
+                        parser::Type::Identifier(ident) => &ident,
                     },
                     scope,
                 )
@@ -125,7 +125,6 @@ fn main() {
             .compile(&function.body)
             .unwrap_or_else(|error| todo!("handle me! {error}"));
 
-        std::fs::write("function-ir.clif", context.func.display().to_string()).unwrap();
 
         let id = module
             .declare_function(

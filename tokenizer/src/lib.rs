@@ -202,8 +202,7 @@ impl<'a> Iterator for Tokenizer<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ch = self.0.next()?;
-        let token = match ch {
+        Some(match self.0.next()? {
             '+' => Token::Plus,
             '-' => Token::Minus,
             '%' => Token::Remainder,
@@ -269,8 +268,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
             ch if ch.is_numeric() => self.take_number(ch),
             _ => Token::Illegal,
-        };
-        Some(token)
+        })
     }
 }
 
