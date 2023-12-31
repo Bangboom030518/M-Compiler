@@ -176,10 +176,11 @@ impl<'a> FunctionBuilder<'a> {
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
                 let value = self.expression(expression)?;
-                if r#type == self.current_type {
+                if r#type == value.1 {
                     return Err(SemanticError::InvalidAssignment);
                 };
                 let value = value
+                    .0
                     .cranelift_value(&mut self.builder)
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
@@ -199,10 +200,10 @@ impl<'a> FunctionBuilder<'a> {
 
                 self.builder.declare_var(variable, cranelift_type);
 
-                self.names
-                    .insert(ident.clone(), (variable, self.current_type));
+                self.names.insert(ident.clone(), (variable, value.1));
                 // TODO: lazily promote
                 let value = value
+                    .0
                     .cranelift_value(&mut self.builder)
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
@@ -210,15 +211,16 @@ impl<'a> FunctionBuilder<'a> {
             }
             parser::Statement::Expression(expression) => {
                 if let Expression::Return(expression) = expression {
-                    self.current_type = Some(self.return_type);
                     let value = self
-                        .expression(&expression.clone())?
+                        .expression(&expression.clone(), Some(self.return_type))?
+                        .0
                         .cranelift_value(&mut self.builder)
                         .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
                     self.builder.ins().return_(&[value]);
                 } else {
-                    self.expression(expression)?
+                    self.expression(expression, None)?
+                        .0
                         .cranelift_value(&mut self.builder)
                         .unwrap_or_else(|error| todo!("handle me :) {error}"));
                 }
@@ -273,7 +275,7 @@ impl<'a> FunctionBuilder<'a> {
         Ok(result)
     }
 
-    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<Value, SemanticError> {
+    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match intrinsic {
             IntrinsicCall::IAdd(left, right) => {
                 let mut left = self.expression(left)?;
@@ -293,8 +295,7 @@ impl<'a> FunctionBuilder<'a> {
                         self.scope_id,
                     )
                     .ok_or(SemanticError::DeclarationNotFound)?;
-                self.current_type = Some(r#type);
-                Ok(self.expression(expression)?)
+                Ok(self.expression(expression, Some(r#type))?)
             }
         }
     }
@@ -330,16 +331,14 @@ impl<'a> FunctionBuilder<'a> {
         &mut self,
         expression: &Expression,
         r#type: Option<top_level_resolution::Id>,
-    ) -> Result<(Value, top_level_resolution::Id), SemanticError> {
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match expression {
             Expression::Literal(literal) => self.literal(literal),
             Expression::UnaryPrefix(operator, expression) => {
                 self.unary_prefix(*operator, expression)
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
-            Expression::Return(expression) => {
-                self.expression(expression, Some(self.return_type))
-            }
+            Expression::Return(expression) => self.expression(expression, Some(self.return_type)),
             Expression::Identifier(ident) => {
                 let variable = *self
                     .names
