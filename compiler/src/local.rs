@@ -175,7 +175,7 @@ impl<'a> FunctionBuilder<'a> {
                     .get(name)
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
-                let value = self.expression(expression)?;
+                let value = self.expression(expression, r#type)?;
                 if r#type == value.1 {
                     return Err(SemanticError::InvalidAssignment);
                 };
@@ -230,7 +230,11 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
 
-    fn integer(&self, integer: u128, r#type: Option<top_level_resolution::Id>) -> Result<Value, SemanticError> {
+    fn integer(
+        &self,
+        integer: u128,
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         let value = match self.r#type(r#type)? {
             Some(Type::U8) => Value::U8Const(u8::try_from(integer)?),
             Some(Type::U16) => Value::U16Const(u16::try_from(integer)?),
@@ -245,45 +249,47 @@ impl<'a> FunctionBuilder<'a> {
             None => Value::UnknownIntegerConst(integer),
             Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
-        Ok(value)
+        Ok((value, r#type))
     }
 
-    fn float(&self, float: f64, r#type: Option<top_level_resolution::Id>) -> Result<Value, SemanticError> {
+    fn float(
+        &self,
+        float: f64,
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         let value = match self.r#type(r#type)? {
             Some(Type::F32) => Value::F32Const(float as f32),
             Some(Type::F64) => Value::F64Const(float),
             None => Value::UnknownFloatConst(float),
             Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
-        Ok(value)
+        Ok((value, r#type))
     }
 
-    fn literal(&self, literal: &Literal) -> Result<Value, SemanticError> {
+    fn literal(
+        &self,
+        literal: &Literal,
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match literal {
-            Literal::Integer(integer) => Ok(self.integer(*integer)?),
-            Literal::Float(float) => Ok(self.float(*float)?),
+            Literal::Integer(integer) => Ok(self.integer(*integer, r#type)?),
+            Literal::Float(float) => Ok(self.float(*float, r#type)?),
             _ => todo!(),
         }
     }
 
-    // fn current_type(&self) -> Result<Option<&Type>, SemanticError> {
-        // let result = match self.current_type {
-        //     Some(r#type) => Some(self.declarations.get_type(r#type)?),
-        //     None => None,
-        // };
-
-        // Ok(result)
-    // }
-
-    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
+    fn intrinsic_call(
+        &mut self,
+        intrinsic: &IntrinsicCall,
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match intrinsic {
             IntrinsicCall::IAdd(left, right) => {
-                let mut left = self.expression(left)?;
-                let right = self.expression(right)?;
-                if let Some(current_type) = self.current_type()? {
-                    left = left.promote(current_type)?;
+                let mut left = self.expression(left, None)?;
+                let right = self.expression(right, left.1)?;
+                if let Some(r#type) = right.1 {
+                    left = (left.0.promote(self.r#type(Some(r#type))?.expect("TODO: fixme"))?, Some(r#type));
                 }
-                Ok(Value::IAdd(Box::new(left), Box::new(right)))
+                Ok((Value::IAdd(Box::new(left.0), Box::new(right.0)), left.1))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
                 let r#type = self
@@ -299,21 +305,23 @@ impl<'a> FunctionBuilder<'a> {
             }
         }
     }
-    
-    fn r#type(&self, r#type: Option<top_level_resolution::Id>) -> Result<Option<&Type>, SemanticError> {
+
+    fn r#type(
+        &self,
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<Option<&Type>, SemanticError> {
         Ok(match r#type {
             Some(r#type) => Some(self.declarations.get_type(r#type)?),
             None => None,
         })
-
     }
 
     fn unary_prefix(
         &mut self,
-        r#type: Option<top_level_resolution::Id>,
         operator: UnaryOperator,
         expression: &Expression,
-    ) -> Result<Value, SemanticError> {
+        r#type: Option<top_level_resolution::Id>,
+    ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
                 let value = match self.r#type(r#type)? {
@@ -325,10 +333,10 @@ impl<'a> FunctionBuilder<'a> {
                     None => Value::UnknownSignedIntegerConst(-i128::try_from(*integer)?),
                     Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
                 };
-                Ok(value)
+                Ok((value, r#type))
             }
             (UnaryOperator::Minus, Expression::Literal(Literal::Float(float))) => {
-                self.float(-float)
+                self.float(-float, r#type)
             }
             _ => todo!(),
         }
@@ -342,9 +350,9 @@ impl<'a> FunctionBuilder<'a> {
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match expression {
-            Expression::Literal(literal) => self.literal(literal),
+            Expression::Literal(literal) => self.literal(literal, r#type),
             Expression::UnaryPrefix(operator, expression) => {
-                self.unary_prefix(*operator, expression)
+                self.unary_prefix(*operator, expression, r#type)
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             Expression::Return(expression) => self.expression(expression, Some(self.return_type)),
@@ -370,6 +378,7 @@ impl<'a> FunctionBuilder<'a> {
                     .lookup(callable, self.scope_id)
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 let function = self.declarations.get_function(function)?;
+                todo!()
             }
             _ => todo!(),
         }

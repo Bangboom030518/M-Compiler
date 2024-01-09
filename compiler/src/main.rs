@@ -79,45 +79,14 @@ fn main() {
             continue;
         };
 
-        // TODO: VVV
-        // if let Some(return_statement) = function.body.last_mut() {
-        //     if let parser::Statement::Expression(expression) = return_statement {
-        //         *return_statement =
-        //             parser::Statement::Expression(Expression::Return(Box::new(expression.clone())));
-        //     }
-        // };
-
-        // let parameters: Vec<(parser::prelude::Ident, top_level_resolution::Id)> = function
-        //     .parameters
-        //     .into_iter()
-        //     .map(
-        //         |parser::top_level::Parameter(parser::top_level::TypeBinding { r#type, name })| {
-        //             let r#type = r#type
-        //                 .and_then(|r#type| {
-        //                     let parser::Type::Identifier(ident) = r#type;
-        //                     declarations.lookup(&ident, scope)
-        //                 })
-        //                 .unwrap_or_else(|| todo!("semantic error!"));
-        //             (name, r#type)
-        //         },
-        //     )
-        //     .collect();
-
         let function_builder = local::FunctionBuilder::new(
             &declarations,
             root,
-            parameters,
-            declarations
-                .lookup(
-                    match function.return_type.as_ref().unwrap() {
-                        parser::Type::Identifier(ident) => &ident,
-                    },
-                    scope,
-                )
-                .unwrap(),
+            function.parameters,
+            function.r#return,
             &mut function_builder_context,
             &mut context.func,
-            function,
+            function.signature,
         )
         .unwrap_or_else(|error| todo!("handle me! {error}"));
 
@@ -125,10 +94,9 @@ fn main() {
             .compile(&function.body)
             .unwrap_or_else(|error| todo!("handle me! {error}"));
 
-
         let id = module
             .declare_function(
-                name.as_ref(),
+                function.name.as_ref(),
                 cranelift_module::Linkage::Export,
                 &context.func.signature,
             )
@@ -140,7 +108,7 @@ fn main() {
 
         module.clear_context(&mut context);
 
-        functions.insert(name.0, id);
+        functions.insert(function.name, id);
     }
     module.finalize_definitions().unwrap();
 

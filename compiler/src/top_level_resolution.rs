@@ -51,12 +51,13 @@ impl Type {
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct FunctionId(usize);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub parameters: Vec<(Ident, Id)>,
     pub r#return: Id,
     pub signature: Signature,
     pub name: String,
+    pub body: Vec<Statement>,
 }
 
 impl Function {
@@ -116,12 +117,13 @@ impl Function {
             signature,
             parameters,
             r#return: return_type_id,
+            body: function.body,
             name: name.to_string(),
         })
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Declaration {
     Type(Type),
     Function(Function),
