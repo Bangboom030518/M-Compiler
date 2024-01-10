@@ -1,7 +1,10 @@
 use crate::top_level_resolution::{self, Type};
 use crate::SemanticError;
 use cranelift::codegen::ir::Function;
+use cranelift::codegen::Context;
 use cranelift::prelude::*;
+use cranelift_jit::JITModule;
+use cranelift_module::Module;
 use parser::expression::{Call, IntrinsicCall, UnaryOperator};
 use parser::prelude::Literal;
 use parser::Expression;
@@ -96,10 +99,81 @@ impl Value {
     }
 }
 
+pub fn compile_function(
+    declarations: &top_level_resolution::TopLevelDeclarations,
+    context: &mut Context,
+    function_builder_context: &mut FunctionBuilderContext,
+    module: &mut impl Module,
+    top_level_resolution::Function {
+        signature,
+        parameters,
+        r#return,
+        name,
+        body,
+        scope
+    }: top_level_resolution::Function,
+) -> Result<cranelift_module::FuncId, SemanticError> {
+    let mut builder =
+        cranelift::prelude::FunctionBuilder::new(&mut context.func, function_builder_context);
+    builder.func.signature = signature;
+
+    let entry_block = builder.create_block();
+    builder.append_block_params_for_function_params(entry_block);
+    builder.switch_to_block(entry_block);
+    builder.seal_block(entry_block);
+
+    // TODO: `to_vec()`?
+    let block_params = builder.block_params(entry_block).to_vec();
+
+    let names = parameters
+        .into_iter()
+        .zip(block_params)
+        .enumerate()
+        .map(|(index, ((name, type_id), value))| {
+            let variable = Variable::new(index);
+            // TODO: get type again?
+            let r#type = declarations.get_type(type_id)?.cranelift_type();
+            builder.declare_var(variable, r#type);
+            builder.def_var(variable, value);
+            Ok((name, (variable, Some(type_id))))
+        })
+        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+
+    let mut builder = FunctionBuilder {
+        declarations,
+        r#return,
+        scope,
+        new_variable_index: names.len(),
+        names,
+        builder,
+    };
+
+    for statement in body {
+        builder.handle_statement(statement)?;
+    }
+    builder.builder.finalize();
+
+    let id = module
+        .declare_function(
+            &name,
+            cranelift_module::Linkage::Export,
+            &context.func.signature,
+        )
+        .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+
+    module
+        .define_function(id, context)
+        .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+
+    module.clear_context(context);
+
+    Ok(id)
+}
+
 pub struct FunctionBuilder<'a> {
     declarations: &'a top_level_resolution::TopLevelDeclarations,
-    scope_id: parser::scope::Id,
-    return_type: top_level_resolution::Id,
+    scope: parser::scope::Id,
+    r#return: top_level_resolution::Id,
     // current_type: Option<top_level_resolution::Id>,
     names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
     builder: cranelift::prelude::FunctionBuilder<'a>,
@@ -107,72 +181,18 @@ pub struct FunctionBuilder<'a> {
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub fn new(
-        type_store: &'a top_level_resolution::TopLevelDeclarations,
-        scope_id: parser::scope::Id,
-        parameters: Vec<(parser::Ident, top_level_resolution::Id)>,
-        return_type: top_level_resolution::Id,
-        function_builder_context: &'a mut FunctionBuilderContext,
-        function: &'a mut Function,
-        signature: Signature,
-    ) -> Result<Self, SemanticError> {
-        let mut builder =
-            cranelift::prelude::FunctionBuilder::new(function, function_builder_context);
-        builder.func.signature = signature;
-
-        let entry_block = builder.create_block();
-        builder.append_block_params_for_function_params(entry_block);
-        builder.switch_to_block(entry_block);
-        builder.seal_block(entry_block);
-
-        // TODO: `to_vec()`?
-        let block_params = builder.block_params(entry_block).to_vec();
-
-        let names = parameters
-            .into_iter()
-            .zip(block_params)
-            .enumerate()
-            .map(|(index, ((name, type_id), value))| {
-                let variable = Variable::new(index);
-                // TODO: get type again?
-                let r#type = type_store.get_type(type_id)?.cranelift_type();
-                builder.declare_var(variable, r#type);
-                builder.def_var(variable, value);
-                Ok((name, (variable, Some(type_id))))
-            })
-            .collect::<Result<HashMap<_, _>, SemanticError>>()?;
-
-        Ok(Self {
-            declarations: type_store,
-            return_type,
-            // current_type: None,
-            scope_id,
-            new_variable_index: names.len(),
-            names,
-            builder,
-        })
-    }
-
-    pub fn compile(mut self, statements: &[parser::Statement]) -> Result<(), SemanticError> {
-        for statement in statements {
-            self.handle_statement(statement)?;
-        }
-        self.builder.finalize();
-        Ok(())
-    }
-
     fn create_variable(&mut self) -> Variable {
         let variable = Variable::new(self.new_variable_index);
         self.new_variable_index += 1;
         variable
     }
 
-    pub fn handle_statement(&mut self, statement: &parser::Statement) -> Result<(), SemanticError> {
+    pub fn handle_statement(&mut self, statement: parser::Statement) -> Result<(), SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
                 let (variable, r#type) = *self
                     .names
-                    .get(name)
+                    .get(&name)
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
                 let value = self.expression(expression, r#type)?;
@@ -200,7 +220,7 @@ impl<'a> FunctionBuilder<'a> {
 
                 self.builder.declare_var(variable, cranelift_type);
 
-                self.names.insert(ident.clone(), (variable, value.1));
+                self.names.insert(ident, (variable, value.1));
                 // TODO: lazily promote
                 let value = value
                     .0
@@ -212,7 +232,7 @@ impl<'a> FunctionBuilder<'a> {
             parser::Statement::Expression(expression) => {
                 if let Expression::Return(expression) = expression {
                     let value = self
-                        .expression(&expression.clone(), Some(self.return_type))?
+                        .expression(*expression, Some(self.r#return))?
                         .0
                         .cranelift_value(&mut self.builder)
                         .unwrap_or_else(|error| todo!("handle me :( {error}"));
@@ -268,26 +288,30 @@ impl<'a> FunctionBuilder<'a> {
 
     fn literal(
         &self,
-        literal: &Literal,
+        literal: Literal,
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match literal {
-            Literal::Integer(integer) => Ok(self.integer(*integer, r#type)?),
-            Literal::Float(float) => Ok(self.float(*float, r#type)?),
+            Literal::Integer(integer) => Ok(self.integer(integer, r#type)?),
+            Literal::Float(float) => Ok(self.float(float, r#type)?),
             _ => todo!(),
         }
     }
 
     fn intrinsic_call(
         &mut self,
-        intrinsic: &IntrinsicCall,
+        intrinsic: IntrinsicCall,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match intrinsic {
             IntrinsicCall::IAdd(left, right) => {
-                let mut left = self.expression(left, None)?;
-                let right = self.expression(right, left.1)?;
+                let mut left = self.expression(*left, None)?;
+                let right = self.expression(*right, left.1)?;
                 if let Some(r#type) = right.1 {
-                    left = (left.0.promote(self.r#type(Some(r#type))?.expect("TODO: fixme"))?, Some(r#type));
+                    left = (
+                        left.0
+                            .promote(self.r#type(Some(r#type))?.expect("TODO: fixme"))?,
+                        Some(r#type),
+                    );
                 }
                 Ok((Value::IAdd(Box::new(left.0), Box::new(right.0)), left.1))
             }
@@ -295,13 +319,13 @@ impl<'a> FunctionBuilder<'a> {
                 let r#type = self
                     .declarations
                     .lookup(
-                        match r#type {
+                        &match r#type {
                             parser::Type::Identifier(identifier) => identifier,
                         },
-                        self.scope_id,
+                        self.scope,
                     )
                     .ok_or(SemanticError::DeclarationNotFound)?;
-                Ok(self.expression(expression, Some(r#type))?)
+                Ok(self.expression(*expression, Some(r#type))?)
             }
         }
     }
@@ -319,18 +343,18 @@ impl<'a> FunctionBuilder<'a> {
     fn unary_prefix(
         &mut self,
         operator: UnaryOperator,
-        expression: &Expression,
+        expression: Expression,
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
                 let value = match self.r#type(r#type)? {
-                    Some(Type::I8) => Value::I8Const(-i8::try_from(*integer)?),
-                    Some(Type::I16) => Value::I16Const(-i16::try_from(*integer)?),
-                    Some(Type::I32) => Value::I32Const(-i32::try_from(*integer)?),
-                    Some(Type::I64) => Value::I64Const(-i64::try_from(*integer)?),
-                    Some(Type::I128) => Value::I128Const(-i128::try_from(*integer)?),
-                    None => Value::UnknownSignedIntegerConst(-i128::try_from(*integer)?),
+                    Some(Type::I8) => Value::I8Const(-i8::try_from(integer)?),
+                    Some(Type::I16) => Value::I16Const(-i16::try_from(integer)?),
+                    Some(Type::I32) => Value::I32Const(-i32::try_from(integer)?),
+                    Some(Type::I64) => Value::I64Const(-i64::try_from(integer)?),
+                    Some(Type::I128) => Value::I128Const(-i128::try_from(integer)?),
+                    None => Value::UnknownSignedIntegerConst(-i128::try_from(integer)?),
                     Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
                 };
                 Ok((value, r#type))
@@ -342,24 +366,22 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    // fn r#type()
-
     fn expression(
         &mut self,
-        expression: &Expression,
+        expression: Expression,
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
         match expression {
             Expression::Literal(literal) => self.literal(literal, r#type),
             Expression::UnaryPrefix(operator, expression) => {
-                self.unary_prefix(*operator, expression, r#type)
+                self.unary_prefix(operator, *expression, r#type)
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
-            Expression::Return(expression) => self.expression(expression, Some(self.return_type)),
+            Expression::Return(expression) => self.expression(*expression, Some(self.r#return)),
             Expression::Identifier(ident) => {
                 let variable = *self
                     .names
-                    .get(ident)
+                    .get(&ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 Ok((Value::Variable(variable.0), variable.1))
             }
@@ -375,7 +397,7 @@ impl<'a> FunctionBuilder<'a> {
                 };
                 let function = self
                     .declarations
-                    .lookup(callable, self.scope_id)
+                    .lookup(callable, self.scope)
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 let function = self.declarations.get_function(function)?;
                 todo!()

@@ -1,4 +1,5 @@
 use crate::SemanticError;
+use cranelift_module::Module;
 use ::parser::prelude::*;
 use ::parser::top_level::{DeclarationKind, Parameter, PrimitiveKind, TypeBinding};
 use cranelift::codegen::ir::{AbiParam, Signature};
@@ -58,14 +59,15 @@ pub struct Function {
     pub signature: Signature,
     pub name: String,
     pub body: Vec<Statement>,
+    pub scope: scope::Id,
 }
 
 impl Function {
     fn new(
-        function: &::parser::top_level::Function,
+        function: ::parser::top_level::Function,
         call_conv: CallConv,
         declarations: &TopLevelDeclarations,
-        scope_id: ::parser::scope::Id,
+        scope: ::parser::scope::Id,
         name: &Ident,
     ) -> Result<Self, SemanticError> {
         let mut signature = Signature::new(call_conv);
@@ -82,7 +84,7 @@ impl Function {
                     .ok_or(SemanticError::UntypedParameter)?;
 
                 let r#type = declarations
-                    .lookup(r#type, scope_id)
+                    .lookup(r#type, scope)
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
                 Ok((name, r#type))
@@ -107,7 +109,7 @@ impl Function {
             .ok_or(SemanticError::MissingReturnType)?;
 
         let return_type_id = declarations
-            .lookup(return_type, scope_id)
+            .lookup(return_type, scope)
             .ok_or(SemanticError::DeclarationNotFound)?;
 
         let return_type = declarations.get_type(return_type_id)?.cranelift_type();
@@ -119,6 +121,7 @@ impl Function {
             r#return: return_type_id,
             body: function.body,
             name: name.to_string(),
+            scope,
         })
     }
 }
@@ -146,13 +149,16 @@ impl Declaration {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct TopLevelDeclarations {
+pub struct TopLevelDeclarations<M: cranelift_module::Module> {
     pub declarations: Vec<Option<Declaration>>,
     pub scopes: HashMap<scope::Id, TopLevelScope>,
     pub file_cache: scope::Cache,
+    pub module: M,
+    pub context: cranelift::codegen::Context,
+    pub builder: cranelift::codegen:
 }
 
-impl TopLevelDeclarations {
+impl<M> TopLevelDeclarations<M> where M: cranelift_module::Module {
     pub fn create_empty(&mut self) -> Id {
         self.declarations.push(None);
         Id(self.declarations.len() - 1)
@@ -189,11 +195,11 @@ pub struct TopLevelScope {
 
 impl TopLevelScope {
     pub fn append_new(
-        type_store: &mut TopLevelDeclarations,
+        type_store: &mut TopLevelDeclarations<impl Module>,
         scope_id: scope::Id,
         call_conv: CallConv,
     ) -> Result<(), SemanticError> {
-        let declarations = type_store.file_cache[scope_id].declarations.clone();
+        let mut declarations = type_store.file_cache[scope_id].declarations.clone();
 
         {
             let declarations = declarations
@@ -206,8 +212,8 @@ impl TopLevelScope {
         // TODO: clone?
         let type_scope = type_store.scopes[&scope_id].clone();
 
-        for (ident, id) in &type_scope.declarations {
-            let declaration = &declarations[&ident];
+        for (ident, id) in type_scope.declarations {
+            let declaration = declarations.remove_entry(&ident).expect("TODO").1;
             match declaration {
                 DeclarationKind::Struct(r#struct) => {
                     Self::append_new(type_store, r#struct.scope, call_conv)?;
@@ -230,7 +236,7 @@ impl TopLevelScope {
                             .collect::<Result<Vec<_>, SemanticError>>()?,
                         ident: ident.clone(),
                     };
-                    type_store.initialise(*id, Declaration::Type(r#type));
+                    type_store.initialise(id, Declaration::Type(r#type));
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {
@@ -248,13 +254,13 @@ impl TopLevelScope {
                         PrimitiveKind::F32 => Type::F32,
                         PrimitiveKind::F64 => Type::F64,
                     };
-                    type_store.initialise(*id, Declaration::Type(r#type));
+                    type_store.initialise(id, Declaration::Type(r#type));
                 }
                 DeclarationKind::Function(function) => {
                     type_store.initialise(
-                        *id,
+                        id,
                         Declaration::Function(Function::new(
-                            function, call_conv, type_store, scope_id, ident,
+                            function, call_conv, type_store, scope_id, &ident,
                         )?),
                     );
                 }

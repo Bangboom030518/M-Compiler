@@ -75,40 +75,22 @@ fn main() {
         // TODO: not root
         let scope = root;
 
-        let top_level_resolution::Declaration::Function(mut function) = declaration else {
+        let top_level_resolution::Declaration::Function(function) = declaration else {
             continue;
         };
 
-        let function_builder = local::FunctionBuilder::new(
+        // TODO: `.clone()s`
+        let id = local::compile_function(
             &declarations,
-            root,
-            function.parameters,
-            function.r#return,
+            scope,
+            &mut context,
             &mut function_builder_context,
-            &mut context.func,
-            function.signature,
+            &mut module,
+            function.clone(),
         )
-        .unwrap_or_else(|error| todo!("handle me! {error}"));
+        .expect("TODO");
 
-        function_builder
-            .compile(&function.body)
-            .unwrap_or_else(|error| todo!("handle me! {error}"));
-
-        let id = module
-            .declare_function(
-                function.name.as_ref(),
-                cranelift_module::Linkage::Export,
-                &context.func.signature,
-            )
-            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
-
-        module
-            .define_function(id, &mut context)
-            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
-
-        module.clear_context(&mut context);
-
-        functions.insert(function.name, id);
+        functions.insert(function.name.clone(), id);
     }
     module.finalize_definitions().unwrap();
 
