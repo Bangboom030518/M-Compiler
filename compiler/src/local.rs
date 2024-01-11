@@ -1,10 +1,6 @@
 use crate::top_level_resolution::{self, Type};
 use crate::SemanticError;
-use cranelift::codegen::ir::Function;
-use cranelift::codegen::Context;
 use cranelift::prelude::*;
-use cranelift_jit::JITModule;
-use cranelift_module::Module;
 use parser::expression::{Call, IntrinsicCall, UnaryOperator};
 use parser::prelude::Literal;
 use parser::Expression;
@@ -99,85 +95,13 @@ impl Value {
     }
 }
 
-pub fn compile_function(
-    declarations: &top_level_resolution::TopLevelDeclarations,
-    context: &mut Context,
-    function_builder_context: &mut FunctionBuilderContext,
-    module: &mut impl Module,
-    top_level_resolution::Function {
-        signature,
-        parameters,
-        r#return,
-        name,
-        body,
-        scope
-    }: top_level_resolution::Function,
-) -> Result<cranelift_module::FuncId, SemanticError> {
-    let mut builder =
-        cranelift::prelude::FunctionBuilder::new(&mut context.func, function_builder_context);
-    builder.func.signature = signature;
-
-    let entry_block = builder.create_block();
-    builder.append_block_params_for_function_params(entry_block);
-    builder.switch_to_block(entry_block);
-    builder.seal_block(entry_block);
-
-    // TODO: `to_vec()`?
-    let block_params = builder.block_params(entry_block).to_vec();
-
-    let names = parameters
-        .into_iter()
-        .zip(block_params)
-        .enumerate()
-        .map(|(index, ((name, type_id), value))| {
-            let variable = Variable::new(index);
-            // TODO: get type again?
-            let r#type = declarations.get_type(type_id)?.cranelift_type();
-            builder.declare_var(variable, r#type);
-            builder.def_var(variable, value);
-            Ok((name, (variable, Some(type_id))))
-        })
-        .collect::<Result<HashMap<_, _>, SemanticError>>()?;
-
-    let mut builder = FunctionBuilder {
-        declarations,
-        r#return,
-        scope,
-        new_variable_index: names.len(),
-        names,
-        builder,
-    };
-
-    for statement in body {
-        builder.handle_statement(statement)?;
-    }
-    builder.builder.finalize();
-
-    let id = module
-        .declare_function(
-            &name,
-            cranelift_module::Linkage::Export,
-            &context.func.signature,
-        )
-        .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
-
-    module
-        .define_function(id, context)
-        .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
-
-    module.clear_context(context);
-
-    Ok(id)
-}
-
 pub struct FunctionBuilder<'a> {
-    declarations: &'a top_level_resolution::TopLevelDeclarations,
-    scope: parser::scope::Id,
-    r#return: top_level_resolution::Id,
-    // current_type: Option<top_level_resolution::Id>,
-    names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
-    builder: cranelift::prelude::FunctionBuilder<'a>,
-    new_variable_index: usize,
+    pub declarations: &'a top_level_resolution::TopLevelDeclarations,
+    pub scope: parser::scope::Id,
+    pub r#return: top_level_resolution::Id,
+    pub names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
+    pub builder: cranelift::prelude::FunctionBuilder<'a>,
+    pub new_variable_index: usize,
 }
 
 impl<'a> FunctionBuilder<'a> {

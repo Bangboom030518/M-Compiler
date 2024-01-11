@@ -22,7 +22,7 @@ type Map<I, F, N> = struct where I: Iterator, F: FuncMut<(I.Item), N>
         type Item = I.Item
 
         fn next = (self)
-            self.iterator.next().map(self.closure())
+            self.iterator.next().map(self.closure)
 
 type Null = ()
 

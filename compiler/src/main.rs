@@ -4,11 +4,7 @@
 mod local;
 mod top_level_resolution;
 
-use cranelift::codegen::isa::CallConv;
 use cranelift::prelude::*;
-use cranelift_module::Module;
-use parser::top_level::{DeclarationKind, Parameter, TypeBinding};
-use parser::Expression;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -37,12 +33,6 @@ pub enum SemanticError {
 
 fn main() {
     let file = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
-    let root = file.root;
-    let mut declarations = top_level_resolution::TopLevelDeclarations {
-        declarations: Vec::new(),
-        scopes: HashMap::new(),
-        file_cache: file.cache,
-    };
 
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -59,42 +49,37 @@ fn main() {
         cranelift_module::default_libcall_names(),
     );
 
-    let mut module = cranelift_jit::JITModule::new(builder);
-    let mut context = module.make_context();
-    let mut function_builder_context = FunctionBuilderContext::new();
+    let module = cranelift_jit::JITModule::new(builder);
 
-    top_level_resolution::TopLevelScope::append_new(
-        &mut declarations,
-        file.root,
-        isa.default_call_conv(),
-    )
-    .unwrap();
+    let declarations =
+        top_level_resolution::TopLevelDeclarations::new(file, isa.default_call_conv()).unwrap();
+
+    let mut context = top_level_resolution::CraneliftContext::new(module);
 
     let mut functions = HashMap::new();
-    for declaration in declarations.declarations.iter().flatten() {
-        // TODO: not root
-        let scope = root;
-
+    for declaration in declarations
+        .declarations
+        .iter()
+        .flatten()
+    {
         let top_level_resolution::Declaration::Function(function) = declaration else {
             continue;
         };
+        let function = top_level_resolution::Function::new(function, isa.default_call_conv(), )
+        let name = function.name.clone();
+        let id = function.clone()
+            .compile(&declarations, &mut context)
+            .expect("TODO");
 
-        // TODO: `.clone()s`
-        let id = local::compile_function(
-            &declarations,
-            scope,
-            &mut context,
-            &mut function_builder_context,
-            &mut module,
-            function.clone(),
-        )
-        .expect("TODO");
-
-        functions.insert(function.name.clone(), id);
+        functions.insert(name, id);
     }
-    module.finalize_definitions().unwrap();
 
-    let code = module.get_finalized_function(*functions.get("add").unwrap());
+    context.module.finalize_definitions().unwrap();
+
+    let code = context
+        .module
+        .get_finalized_function(*functions.get("add").unwrap());
+
     let add =
         unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i64>(code) };
     dbg!(unsafe { add(2, 2) });
