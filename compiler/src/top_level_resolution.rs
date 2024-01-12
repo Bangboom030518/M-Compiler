@@ -95,7 +95,6 @@ impl Function {
         signature.params = parameters
             .iter()
             .map(|r#type| {
-                dbg!(r#type);
                 Ok(AbiParam::new(
                     declarations.get_type(r#type.1)?.cranelift_type(),
                 ))
@@ -117,11 +116,21 @@ impl Function {
         let return_type = declarations.get_type(return_type_id)?.cranelift_type();
 
         signature.returns = vec![AbiParam::new(return_type)];
+
+        let mut body = function.body;
+
+        if let Some(Statement::Expression(expr)) = body.last_mut() {
+            if !matches!(expr, Expression::Return(_)) {
+                // TODO: `.clone()`
+                *expr = Expression::Return(Box::new(expr.clone()));
+            }
+        }
+
         Ok(Self {
             signature,
             parameters,
             r#return: return_type_id,
-            body: function.body,
+            body,
             name: name.to_string(),
             scope,
         })
@@ -161,7 +170,6 @@ impl Function {
             .map(|(index, ((name, type_id), value))| {
                 let variable = Variable::new(index);
                 // TODO: get type again?
-                dbg!();
                 let r#type = declarations.get_type(type_id)?.cranelift_type();
                 builder.declare_var(variable, r#type);
                 builder.def_var(variable, value);
@@ -181,6 +189,8 @@ impl Function {
         for statement in body {
             builder.handle_statement(statement)?;
         }
+
+        // error is here!!!!
         builder.builder.finalize();
 
         let id = cranelift_context
@@ -208,7 +218,7 @@ impl Function {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declaration {
     Type(Type),
-    Function(top_level::Function, scope::Id),
+    Function(Function),
 }
 
 impl Declaration {
@@ -219,7 +229,7 @@ impl Declaration {
         }
     }
 
-    pub const fn expect_function(&self) -> Result<&top_level::Function, SemanticError> {
+    pub const fn expect_function(&self) -> Result<&Function, SemanticError> {
         match self {
             Self::Function(function) => Ok(function),
             Self::Type(_) => Err(SemanticError::TypeUsedAsFunction),
@@ -249,18 +259,16 @@ impl<M> CraneliftContext<M> {
 pub struct TopLevelDeclarations {
     pub declarations: Vec<Option<Declaration>>,
     pub scopes: HashMap<scope::Id, TopLevelScope>,
-    pub file_cache: scope::Cache,
 }
 
 impl TopLevelDeclarations {
-    pub fn new(file: scope::File, call_conv: CallConv) -> Result<Self, SemanticError> {
+    pub fn new(mut file: scope::File, call_conv: CallConv) -> Result<Self, SemanticError> {
         let mut declarations = Self {
             declarations: Vec::new(),
             scopes: HashMap::new(),
-            file_cache: file.cache,
         };
 
-        declarations.append_new(file.root, call_conv)?;
+        declarations.append_new(file.root, &mut file.cache, call_conv)?;
 
         Ok(declarations)
     }
@@ -268,26 +276,28 @@ impl TopLevelDeclarations {
     fn append_new(
         &mut self,
         scope_id: scope::Id,
+        scope_cache: &mut scope::Cache,
         call_conv: CallConv,
     ) -> Result<(), SemanticError> {
-        let mut declarations = self.file_cache[scope_id].declarations.clone();
+        // TODO: `.clone()`
+        let mut declarations = scope_cache[scope_id].declarations.clone();
 
         let scope = TopLevelScope {
             declarations: declarations
                 .iter()
                 .map(|(ident, ..)| (ident.clone(), self.create_empty()))
                 .collect(),
+            parent: scope_cache[scope_id].parent,
         };
+
         self.scopes.insert(scope_id, scope);
 
-        // TODO: clone?
-        let type_scope = self.scopes[&scope_id].clone();
+        let mut functions = Vec::new();
 
-        for (ident, id) in type_scope.declarations {
-            let declaration = declarations.remove_entry(&ident).expect("TODO").1;
-            match declaration {
+        for (name, id) in self.scopes[&scope_id].declarations.clone() {
+            match declarations.remove_entry(&name).expect("TODO").1 {
                 DeclarationKind::Struct(r#struct) => {
-                    self.append_new(r#struct.scope, call_conv)?;
+                    self.append_new(r#struct.scope, scope_cache, call_conv)?;
 
                     let r#type = Type::Struct {
                         fields: r#struct
@@ -306,7 +316,7 @@ impl TopLevelDeclarations {
                                 Ok((name.clone(), type_id))
                             })
                             .collect::<Result<Vec<_>, SemanticError>>()?,
-                        ident: ident.clone(),
+                        ident: name.clone(),
                     };
                     self.initialise(id, Declaration::Type(r#type));
                 }
@@ -328,11 +338,16 @@ impl TopLevelDeclarations {
                     };
                     self.initialise(id, Declaration::Type(r#type));
                 }
-                DeclarationKind::Function(function) => {
-                    self.initialise(id, Declaration::Function(function, scope_id));
-                }
+                DeclarationKind::Function(function) => functions.push((function, id, name)),
                 DeclarationKind::Const(_) => todo!(),
             }
+        }
+
+        for (function, id, name) in functions {
+            self.initialise(
+                id,
+                Declaration::Function(Function::new(function, call_conv, self, scope_id, &name)?),
+            );
         }
 
         Ok(())
@@ -363,13 +378,14 @@ impl TopLevelDeclarations {
     pub fn lookup(&self, ident: &Ident, scope_id: scope::Id) -> Option<Id> {
         self.scopes[&scope_id]
             .get(ident)
-            .or_else(|| self.lookup(ident, self.file_cache[scope_id].parent?))
+            .or_else(|| self.lookup(ident, self.scopes[&scope_id].parent?))
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TopLevelScope {
     pub declarations: HashMap<Ident, Id>,
+    pub parent: Option<scope::Id>,
 }
 
 impl TopLevelScope {

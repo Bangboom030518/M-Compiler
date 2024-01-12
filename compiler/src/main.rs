@@ -57,17 +57,14 @@ fn main() {
     let mut context = top_level_resolution::CraneliftContext::new(module);
 
     let mut functions = HashMap::new();
-    for declaration in declarations
-        .declarations
-        .iter()
-        .flatten()
-    {
+    for declaration in declarations.declarations.iter().flatten() {
         let top_level_resolution::Declaration::Function(function) = declaration else {
             continue;
         };
-        let function = top_level_resolution::Function::new(function, isa.default_call_conv(), )
+
         let name = function.name.clone();
-        let id = function.clone()
+        let id = function
+            .clone()
             .compile(&declarations, &mut context)
             .expect("TODO");
 
