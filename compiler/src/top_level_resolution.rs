@@ -57,9 +57,9 @@ pub struct Function {
     pub parameters: Vec<(Ident, Id)>,
     pub r#return: Id,
     pub signature: Signature,
-    pub name: String,
     pub body: Vec<Statement>,
     pub scope: scope::Id,
+    pub id: FuncId,
 }
 
 impl Function {
@@ -70,6 +70,7 @@ impl Function {
         declarations: &TopLevelDeclarations,
         scope: ::parser::scope::Id,
         name: &Ident,
+        module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let mut signature = Signature::new(call_conv);
 
@@ -126,13 +127,17 @@ impl Function {
             }
         }
 
+        let id = module
+            .declare_function(name.as_ref(), cranelift_module::Linkage::Export, &signature)
+            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+
         Ok(Self {
             signature,
             parameters,
             r#return: return_type_id,
             body,
-            name: name.to_string(),
             scope,
+            id,
         })
     }
 
@@ -145,9 +150,9 @@ impl Function {
             parameters,
             r#return,
             signature,
-            name,
             body,
             scope,
+            id,
         } = self;
         let mut builder = cranelift::prelude::FunctionBuilder::new(
             &mut cranelift_context.context.func,
@@ -184,6 +189,7 @@ impl Function {
             new_variable_index: names.len(),
             names,
             builder,
+            module: &mut cranelift_context.module,
         };
 
         for statement in body {
@@ -192,15 +198,6 @@ impl Function {
 
         // error is here!!!!
         builder.builder.finalize();
-
-        let id = cranelift_context
-            .module
-            .declare_function(
-                &name,
-                cranelift_module::Linkage::Export,
-                &cranelift_context.context.func.signature,
-            )
-            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
 
         cranelift_context
             .module
@@ -262,13 +259,17 @@ pub struct TopLevelDeclarations {
 }
 
 impl TopLevelDeclarations {
-    pub fn new(mut file: scope::File, call_conv: CallConv) -> Result<Self, SemanticError> {
+    pub fn new(
+        mut file: scope::File,
+        call_conv: CallConv,
+        module: &mut impl Module,
+    ) -> Result<Self, SemanticError> {
         let mut declarations = Self {
             declarations: Vec::new(),
             scopes: HashMap::new(),
         };
 
-        declarations.append_new(file.root, &mut file.cache, call_conv)?;
+        declarations.append_new(file.root, &mut file.cache, call_conv, module)?;
 
         Ok(declarations)
     }
@@ -278,6 +279,7 @@ impl TopLevelDeclarations {
         scope_id: scope::Id,
         scope_cache: &mut scope::Cache,
         call_conv: CallConv,
+        module: &mut impl Module,
     ) -> Result<(), SemanticError> {
         // TODO: `.clone()`
         let mut declarations = scope_cache[scope_id].declarations.clone();
@@ -297,7 +299,7 @@ impl TopLevelDeclarations {
         for (name, id) in self.scopes[&scope_id].declarations.clone() {
             match declarations.remove_entry(&name).expect("TODO").1 {
                 DeclarationKind::Struct(r#struct) => {
-                    self.append_new(r#struct.scope, scope_cache, call_conv)?;
+                    self.append_new(r#struct.scope, scope_cache, call_conv, module)?;
 
                     let r#type = Type::Struct {
                         fields: r#struct
@@ -346,7 +348,9 @@ impl TopLevelDeclarations {
         for (function, id, name) in functions {
             self.initialise(
                 id,
-                Declaration::Function(Function::new(function, call_conv, self, scope_id, &name)?),
+                Declaration::Function(Function::new(
+                    function, call_conv, self, scope_id, &name, module,
+                )?),
             );
         }
 

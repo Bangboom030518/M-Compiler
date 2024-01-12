@@ -49,33 +49,33 @@ fn main() {
         cranelift_module::default_libcall_names(),
     );
 
-    let module = cranelift_jit::JITModule::new(builder);
+    let mut module = cranelift_jit::JITModule::new(builder);
 
     let declarations =
-        top_level_resolution::TopLevelDeclarations::new(file, isa.default_call_conv()).unwrap();
+        top_level_resolution::TopLevelDeclarations::new(file, isa.default_call_conv(), &mut module)
+            .unwrap();
 
     let mut context = top_level_resolution::CraneliftContext::new(module);
 
-    let mut functions = HashMap::new();
+    let mut functions = Vec::new();
     for declaration in declarations.declarations.iter().flatten() {
         let top_level_resolution::Declaration::Function(function) = declaration else {
             continue;
         };
 
-        let name = function.name.clone();
         let id = function
             .clone()
             .compile(&declarations, &mut context)
             .expect("TODO");
 
-        functions.insert(name, id);
+        functions.push(id);
     }
 
     context.module.finalize_definitions().unwrap();
 
     let code = context
         .module
-        .get_finalized_function(*functions.get("add").unwrap());
+        .get_finalized_function(*functions.get(0).unwrap());
 
     let add =
         unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i64>(code) };
