@@ -5,7 +5,6 @@ mod local;
 mod top_level_resolution;
 
 use cranelift::prelude::*;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 // TODO: annotated results
@@ -29,6 +28,10 @@ pub enum SemanticError {
     UntypedParameter,
     #[error("Couldn't infer type of return")]
     MissingReturnType,
+    #[error("Incorrect function arity was assumed")]
+    InvalidNumberOfArguments,
+    #[error("Mismatched types")]
+    MismatchedTypes,
 }
 
 fn main() {

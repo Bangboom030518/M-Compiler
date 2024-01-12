@@ -1,6 +1,5 @@
 use crate::top_level_resolution::{self, Type};
 use crate::SemanticError;
-use cranelift::codegen::ir::FuncRef;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::{Call, IntrinsicCall, UnaryOperator};
@@ -10,9 +9,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    CraneliftValue(cranelift::prelude::Value),
-    // IAdd(Box<Value>, Box<Value>),
-    // Variable(Variable),
+    Cranelift(cranelift::prelude::Value, top_level_resolution::Id),
     UnknownSignedIntegerConst(i128),
     UnknownIntegerConst(u128),
     UnknownFloatConst(f64),
@@ -22,9 +19,10 @@ impl Value {
     /// remove unknowns
     fn promote(
         self,
-        r#type: &Type,
-        builder: &mut cranelift::prelude::FunctionBuilder,
+        type_id: top_level_resolution::Id,
+        builder: &mut FunctionBuilder<impl Module>,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
+        let r#type = builder.declarations.get_type(type_id)?;
         // TODO: support unsigned integers
         match self {
             Self::UnknownIntegerConst(int) => match r#type {
@@ -33,42 +31,71 @@ impl Value {
                 Type::U32 => todo!(),
                 Type::U64 => todo!(),
                 Type::U128 => todo!(),
-                Type::I8 => Ok(builder.ins().iconst(types::I8, i64::try_from(int)?)),
-                Type::I16 => Ok(builder.ins().iconst(types::I16, i64::try_from(int)?)),
-                Type::I32 => Ok(builder.ins().iconst(types::I32, i64::try_from(int)?)),
-                Type::I64 => Ok(builder.ins().iconst(types::I64, i64::try_from(int)?)),
+                Type::I8 => Ok(builder.builder.ins().iconst(types::I8, i64::try_from(int)?)),
+                Type::I16 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I16, i64::try_from(int)?)),
+                Type::I32 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I32, i64::try_from(int)?)),
+                Type::I64 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I64, i64::try_from(int)?)),
                 Type::I128 => todo!(),
                 _ => Err(SemanticError::UnexpectedIntegerLiteral),
             },
             Self::UnknownSignedIntegerConst(int) => match r#type {
-                Type::I8 => Ok(builder.ins().iconst(types::I8, i64::try_from(int)?)),
-                Type::I16 => Ok(builder.ins().iconst(types::I16, i64::try_from(int)?)),
-                Type::I32 => Ok(builder.ins().iconst(types::I32, i64::try_from(int)?)),
-                Type::I64 => Ok(builder.ins().iconst(types::I64, i64::try_from(int)?)),
+                Type::I8 => Ok(builder.builder.ins().iconst(types::I8, i64::try_from(int)?)),
+                Type::I16 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I16, i64::try_from(int)?)),
+                Type::I32 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I32, i64::try_from(int)?)),
+                Type::I64 => Ok(builder
+                    .builder
+                    .ins()
+                    .iconst(types::I64, i64::try_from(int)?)),
                 Type::I128 => todo!(),
                 _ => Err(SemanticError::UnexpectedIntegerLiteral),
             },
             Self::UnknownFloatConst(float) => match r#type {
                 // TODO: as
-                Type::F32 => Ok(builder.ins().f32const(Ieee32::from(float as f32))),
-                Type::F64 => Ok(builder.ins().f64const(Ieee64::from(float))),
+                Type::F32 => Ok(builder.builder.ins().f32const(Ieee32::from(float as f32))),
+                Type::F64 => Ok(builder.builder.ins().f64const(Ieee64::from(float))),
                 _ => Err(SemanticError::UnexpectedIntegerLiteral),
             },
-            Self::CraneliftValue(value) => Ok(value),
+            Self::Cranelift(value, value_type) => {
+                if value_type != type_id {
+                    Err(SemanticError::MismatchedTypes)
+                } else {
+                    Ok(value)
+                }
+            }
         }
     }
 
     pub fn cranelift_value(
         self,
-        builder: &mut cranelift::prelude::FunctionBuilder,
+        type_id: top_level_resolution::Id,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
-        let value = match self {
+        match self {
             Self::UnknownSignedIntegerConst(_)
             | Self::UnknownIntegerConst(_)
-            | Self::UnknownFloatConst(_) => return Err(SemanticError::UnknownType),
-            Self::CraneliftValue(value) => value,
-        };
-        Ok(value)
+            | Self::UnknownFloatConst(_) => Err(SemanticError::UnknownType),
+            Self::Cranelift(value, value_type) => {
+                if value_type != type_id {
+                    Err(SemanticError::MismatchedTypes)
+                } else {
+                    Ok(value)
+                }
+            }
+        }
     }
 }
 
@@ -104,9 +131,10 @@ where
                 if r#type == value.1 {
                     return Err(SemanticError::InvalidAssignment);
                 };
+                // TODO: inference
                 let value = value
                     .0
-                    .cranelift_value(&mut self.builder)
+                    .cranelift_value(r#type.unwrap())
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
                 self.builder.def_var(variable, value);
@@ -127,9 +155,10 @@ where
 
                 self.names.insert(ident, (variable, value.1));
                 // TODO: lazily promote
+                // TODO: type inference
                 let value = value
                     .0
-                    .cranelift_value(&mut self.builder)
+                    .cranelift_value(value.1.unwrap())
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
                 self.builder.def_var(variable, value);
@@ -166,22 +195,22 @@ where
             Some(Type::U32) => todo!(),
             Some(Type::U64) => todo!(),
             Some(Type::U128) => todo!(),
-            Some(Type::I8) => Value::CraneliftValue(
+            Some(Type::I8) => Value::Cranelift(
                 self.builder
                     .ins()
                     .iconst(types::I8, i64::try_from(integer)?),
             ),
-            Some(Type::I16) => Value::CraneliftValue(
+            Some(Type::I16) => Value::Cranelift(
                 self.builder
                     .ins()
                     .iconst(types::I16, i64::try_from(integer)?),
             ),
-            Some(Type::I32) => Value::CraneliftValue(
+            Some(Type::I32) => Value::Cranelift(
                 self.builder
                     .ins()
                     .iconst(types::I32, i64::try_from(integer)?),
             ),
-            Some(Type::I64) => Value::CraneliftValue(
+            Some(Type::I64) => Value::Cranelift(
                 self.builder
                     .ins()
                     .iconst(types::I64, i64::try_from(integer)?),
@@ -202,11 +231,9 @@ where
         let value = match self.r#type(r#type)? {
             // TODO: `as`
             Some(Type::F32) => {
-                Value::CraneliftValue(self.builder.ins().f32const(Ieee32::from(float as f32)))
+                Value::Cranelift(self.builder.ins().f32const(Ieee32::from(float as f32)))
             }
-            Some(Type::F64) => {
-                Value::CraneliftValue(self.builder.ins().f64const(Ieee64::from(float)))
-            }
+            Some(Type::F64) => Value::Cranelift(self.builder.ins().f64const(Ieee64::from(float))),
             None => Value::UnknownFloatConst(float),
             Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
@@ -236,7 +263,7 @@ where
                 if let Some(r#type) = right.1 {
                     // TODO: `.clone()`
                     left = (
-                        Value::CraneliftValue(left.0.promote(
+                        Value::Cranelift(left.0.promote(
                             &self.r#type(Some(r#type))?.expect("TODO: fixme").clone(),
                             &mut self.builder,
                         )?),
@@ -246,7 +273,7 @@ where
                 let left_value = left.0.cranelift_value(&mut self.builder)?;
                 let right_value = right.0.cranelift_value(&mut self.builder)?;
                 Ok((
-                    Value::CraneliftValue(self.builder.ins().iadd(left_value, right_value)),
+                    Value::Cranelift(self.builder.ins().iadd(left_value, right_value)),
                     left.1,
                 ))
             }
@@ -265,16 +292,6 @@ where
         }
     }
 
-    fn r#type(
-        &self,
-        r#type: Option<top_level_resolution::Id>,
-    ) -> Result<Option<&Type>, SemanticError> {
-        Ok(match r#type {
-            Some(r#type) => Some(self.declarations.get_type(r#type)?),
-            None => None,
-        })
-    }
-
     fn unary_prefix(
         &mut self,
         operator: UnaryOperator,
@@ -284,22 +301,22 @@ where
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
                 let value = match self.r#type(r#type)? {
-                    Some(Type::I8) => Value::CraneliftValue(
+                    Some(Type::I8) => Value::Cranelift(
                         self.builder
                             .ins()
                             .iconst(types::I8, -i64::try_from(integer)?),
                     ),
-                    Some(Type::I16) => Value::CraneliftValue(
+                    Some(Type::I16) => Value::Cranelift(
                         self.builder
                             .ins()
                             .iconst(types::I16, -i64::try_from(integer)?),
                     ),
-                    Some(Type::I32) => Value::CraneliftValue(
+                    Some(Type::I32) => Value::Cranelift(
                         self.builder
                             .ins()
                             .iconst(types::I32, -i64::try_from(integer)?),
                     ),
-                    Some(Type::I64) => Value::CraneliftValue(
+                    Some(Type::I64) => Value::Cranelift(
                         self.builder
                             .ins()
                             .iconst(types::I64, -i64::try_from(integer)?),
@@ -314,6 +331,48 @@ where
             }
             _ => todo!(),
         }
+    }
+
+    fn call(
+        &mut self,
+        Call {
+            callable,
+            arguments,
+            ..
+        }: Call,
+    ) -> Result<(Value, top_level_resolution::Id), SemanticError> {
+        // TODO: what about if not ident
+        let callable = match callable.as_ref() {
+            Expression::Identifier(ident) => ident,
+            _ => todo!(),
+        };
+        let function = self
+            .declarations
+            .lookup(callable, self.scope)
+            .ok_or(SemanticError::DeclarationNotFound)?;
+        let function = self.declarations.get_function(function)?;
+
+        if arguments.len() != function.parameters.len() {
+            return Err(SemanticError::InvalidNumberOfArguments);
+        }
+
+        // TODO: type passdown
+        let arguments = arguments
+            .into_iter()
+            .zip(&function.parameters)
+            .map(|(expression, (_, r#type))| {
+                self.expression(expression, Some(*r#type))
+                    .and_then(|(value, _)| value.cranelift_value(&mut self.builder))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let func_ref = self
+            .module
+            .declare_func_in_func(function.id, self.builder.func);
+        let call = self.builder.ins().call(func_ref, arguments.as_slice());
+        let value = self.builder.inst_results(call)[0];
+
+        Ok((Value::Cranelift(value), function.r#return))
     }
 
     fn expression(
@@ -333,42 +392,24 @@ where
                     .names
                     .get(&ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
+                if let (Some(r#type), Some(variable)) = (r#type, variable.1) {
+                    if r#type != variable {
+                        return Err(SemanticError::MismatchedTypes);
+                    }
+                };
                 Ok((
-                    Value::CraneliftValue(self.builder.use_var(variable.0)),
+                    Value::Cranelift(self.builder.use_var(variable.0)),
                     variable.1,
                 ))
             }
-            Expression::Call(Call {
-                callable,
-                arguments,
-                ..
-            }) => {
-                // TODO: what about if not ident
-                let callable = match callable.as_ref() {
-                    Expression::Identifier(ident) => ident,
-                    _ => todo!(),
+            Expression::Call(call) => {
+                let result = self.call(call)?;
+                if let Some(r#type) = r#type {
+                    if r#type != result.1 {
+                        return Err(SemanticError::MismatchedTypes);
+                    }
                 };
-                let function = self
-                    .declarations
-                    .lookup(callable, self.scope)
-                    .ok_or(SemanticError::DeclarationNotFound)?;
-                let function = self.declarations.get_function(function)?;
-                // TODO: type passdown
-                let arguments = arguments
-                    .into_iter()
-                    .map(|expression| {
-                        self.expression(expression, None)
-                            .and_then(|(value, _)| value.cranelift_value(&mut self.builder))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(function.id, &mut self.builder.func);
-                let call = self.builder.ins().call(func_ref, arguments.as_slice());
-                let value = self.builder.inst_results(call)[0];
-
-                Ok((Value::CraneliftValue(value), Some(function.r#return)))
+                Ok((result.0, Some(result.1)))
             }
             _ => todo!(),
         }
