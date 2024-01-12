@@ -80,7 +80,7 @@ impl Value {
         }
     }
 
-    pub fn cranelift_value(
+    pub fn unwrap(
         self,
         type_id: top_level_resolution::Id,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
@@ -134,7 +134,7 @@ where
                 // TODO: inference
                 let value = value
                     .0
-                    .cranelift_value(r#type.unwrap())
+                    .unwrap(r#type.unwrap())
                     .unwrap_or_else(|error| todo!("handle me :( {error}"));
 
                 self.builder.def_var(variable, value);
@@ -158,8 +158,7 @@ where
                 // TODO: type inference
                 let value = value
                     .0
-                    .cranelift_value(value.1.unwrap())
-                    .unwrap_or_else(|error| todo!("handle me :( {error}"));
+                    .unwrap(value.1.unwrap())?;
 
                 self.builder.def_var(variable, value);
             }
@@ -168,15 +167,13 @@ where
                     let value = self
                         .expression(*expression, Some(self.r#return))?
                         .0
-                        .cranelift_value(&mut self.builder)
-                        .unwrap_or_else(|error| todo!("handle me :( {error}"));
+                        .unwrap(&mut self.builder)?;
 
                     self.builder.ins().return_(&[value]);
                 } else {
                     self.expression(expression, None)?
                         .0
-                        .cranelift_value(&mut self.builder)
-                        .unwrap_or_else(|error| todo!("handle me :) {error}"));
+                        .unwrap(&mut self.builder)?;
                 }
             }
         };
@@ -186,9 +183,10 @@ where
 
     fn integer(
         &mut self,
-        integer: u128,
+        int: u128,
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
+        // TODO: `.unwrap()`
         let value = match self.r#type(r#type)? {
             Some(Type::U8) => todo!(),
             Some(Type::U16) => todo!(),
@@ -198,25 +196,25 @@ where
             Some(Type::I8) => Value::Cranelift(
                 self.builder
                     .ins()
-                    .iconst(types::I8, i64::try_from(integer)?),
+                    .iconst(types::I8, i64::try_from(int)?), r#type.unwrap()
             ),
             Some(Type::I16) => Value::Cranelift(
                 self.builder
                     .ins()
-                    .iconst(types::I16, i64::try_from(integer)?),
+                    .iconst(types::I16, i64::try_from(int)?), r#type.unwrap()
             ),
             Some(Type::I32) => Value::Cranelift(
                 self.builder
                     .ins()
-                    .iconst(types::I32, i64::try_from(integer)?),
+                    .iconst(types::I32, i64::try_from(int)?), r#type.unwrap()
             ),
             Some(Type::I64) => Value::Cranelift(
                 self.builder
                     .ins()
-                    .iconst(types::I64, i64::try_from(integer)?),
+                    .iconst(types::I64, i64::try_from(int)?), r#type.unwrap()
             ),
             Some(Type::I128) => todo!(),
-            None => Value::UnknownIntegerConst(integer),
+            None => Value::UnknownIntegerConst(int),
             _ => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
 
@@ -228,12 +226,13 @@ where
         float: f64,
         r#type: Option<top_level_resolution::Id>,
     ) -> Result<(Value, Option<top_level_resolution::Id>), SemanticError> {
+        // TODO: `.unwrap()`
         let value = match self.r#type(r#type)? {
             // TODO: `as`
             Some(Type::F32) => {
-                Value::Cranelift(self.builder.ins().f32const(Ieee32::from(float as f32)))
+                Value::Cranelift(self.builder.ins().f32const(Ieee32::from(float as f32)), r#type.unwrap())
             }
-            Some(Type::F64) => Value::Cranelift(self.builder.ins().f64const(Ieee64::from(float))),
+            Some(Type::F64) => Value::Cranelift(self.builder.ins().f64const(Ieee64::from(float)), r#type.unwrap()),
             None => Value::UnknownFloatConst(float),
             Some(_) => return Err(SemanticError::UnexpectedIntegerLiteral),
         };
@@ -270,8 +269,8 @@ where
                         Some(r#type),
                     );
                 }
-                let left_value = left.0.cranelift_value(&mut self.builder)?;
-                let right_value = right.0.cranelift_value(&mut self.builder)?;
+                let left_value = left.0.unwrap(&mut self.builder)?;
+                let right_value = right.0.unwrap(&mut self.builder)?;
                 Ok((
                     Value::Cranelift(self.builder.ins().iadd(left_value, right_value)),
                     left.1,
@@ -362,7 +361,7 @@ where
             .zip(&function.parameters)
             .map(|(expression, (_, r#type))| {
                 self.expression(expression, Some(*r#type))
-                    .and_then(|(value, _)| value.cranelift_value(&mut self.builder))
+                    .and_then(|(value, _)| value.unwrap(&mut self.builder))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
