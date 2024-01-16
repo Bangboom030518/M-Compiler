@@ -1,14 +1,15 @@
 type Int64 = @i64
 
-type Int64_2 = @i64
+type Int8 = @i8
 
-function add = (Int64 a, Int64_2 b) Int64
-    let c = add2(a, b)
-    @iadd(c, 1)
-    @iadd(a, c)
+function add = (Int64 a, Int64 b) Int8
+    if @assert_type(@eq(a, b), Int8)
+        return 0
+    else
+        return 1
 
-function add2 = (Int64 a, Int64 b) Int64
-    @iadd(a, b)
+// function add2 = (Int64 a, Int64 b) Int64
+//     @iadd(a, b)
 
 type Int32 = @i32
 

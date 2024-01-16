@@ -47,6 +47,24 @@ impl Type {
             _ => todo!("handle complex data structures"),
         }
     }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
+    }
+
+    pub fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8 | Self::U128 | Self::U64 | Self::U32 | Self::U16 | Self::U8
+        )
+    }
+
+    pub fn is_signed_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
+        )
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]

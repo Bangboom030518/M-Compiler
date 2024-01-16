@@ -1,5 +1,5 @@
 #![warn(clippy::pedantic, clippy::nursery)]
-#![feature(assert_matches, iter_collect_into)]
+#![feature(assert_matches, iter_collect_into, if_let_guard)]
 
 use std::fmt::Display;
 use std::iter;

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::internal::prelude::*;
 
 pub mod binary;
@@ -71,10 +73,37 @@ impl Parse for Call {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum IntrinsicOperator {
+    IAdd,
+    Lt,
+    Gt,
+    Lte,
+    Gte,
+    Eq,
+    Ne,
+}
+
+impl IntrinsicOperator {
+    fn from_str(string: &str) -> Option<Self> {
+        let operator = match string {
+            "iadd" => Self::IAdd,
+            "lt" => Self::Lt,
+            "gt" => Self::Gt,
+            "lte" => Self::Lte,
+            "gte" => Self::Gte,
+            "eq" => Self::Eq,
+            "ne" => Self::Ne,
+            _ => return None,
+        };
+        Some(operator)
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum IntrinsicCall {
-    IAdd(Box<Expression>, Box<Expression>),
-    AssertType(Box<Expression>, Type)
+    AssertType(Box<Expression>, Type),
+    Binary(Box<Expression>, Box<Expression>, IntrinsicOperator),
 }
 
 impl Parse for IntrinsicCall {
@@ -86,18 +115,17 @@ impl Parse for IntrinsicCall {
 
         parser.take_token_if(&Token::OpenParen)?;
         let value = match ident.as_str() {
-            "iadd" => {
-                let left = Box::new(parser.parse()?);
-                parser.take_token_if(&Token::Comma)?;
-                let right = Box::new(parser.parse()?);
-
-                Self::IAdd(left, right)
-            },
             "assert_type" => {
                 let expression = Box::new(parser.parse()?);
                 parser.take_token_if(&Token::Comma)?;
                 Self::AssertType(expression, parser.parse()?)
+            },
+            token if let Some(op) = IntrinsicOperator::from_str(token) => {
+                let left = Box::new(parser.parse()?);
+                parser.take_token_if(&Token::Comma)?;
+                let right = Box::new(parser.parse()?);
 
+                Self::Binary(left, right, op)
             },
             _ => return None,
         };
@@ -174,7 +202,6 @@ impl Parse for Expression {
 }
 
 pub mod prelude {
-    pub use super::binary;
     pub use super::control_flow::If;
-    pub use super::Literal;
+    pub use super::{binary, Literal};
 }

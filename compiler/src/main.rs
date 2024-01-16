@@ -10,8 +10,8 @@ use std::sync::Arc;
 // TODO: annotated results
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SemanticError {
-    #[error("Integer literal used as non-integer")]
-    UnexpectedIntegerLiteral,
+    #[error("Number literal used as non-number")]
+    UnexpectedNumberLiteral,
     #[error("Integer literal too thicc and chonky")]
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
     #[error("Type resolution failed to infer the type")]
@@ -81,6 +81,6 @@ fn main() {
         .get_finalized_function(*functions.get(0).unwrap());
 
     let add =
-        unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i64>(code) };
+        unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i8>(code) };
     dbg!(unsafe { add(2, 2) });
 }
