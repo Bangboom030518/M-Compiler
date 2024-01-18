@@ -148,29 +148,36 @@ impl Value {
                 }
 
                 if let Some(parser::Statement::Expression(then_return)) = then_return {
-                    let value = builder.expression(then_return, r#type)?;
-                    builder.builder.ins().jump(merge_block, &[]);
+                    let value = builder
+                        .expression(then_return, Some(type_id))?
+                        .unwrap(type_id, builder)?;
+                    builder.builder.ins().jump(merge_block, &[value]);
                 } else {
                     then_return.map(|then_return| builder.handle_statement(then_return));
                     builder.builder.ins().jump(merge_block, &[]);
                 }
 
-                builder.builder.switch_to_block(then_block);
-                builder.builder.seal_block(then_block);
-                if let Some(false_branch) = else_branch {
-                    for statement in false_branch {
-                        builder.handle_statement(statement)?;
-                    }
+                builder.builder.switch_to_block(else_block);
+                builder.builder.seal_block(else_block);
+                let else_return = else_branch.pop();
+                for statement in else_branch {
+                    builder.handle_statement(statement)?;
                 }
-                builder.builder.ins().jump(merge_block, &[]);
+
+                if let Some(parser::Statement::Expression(else_return)) = else_return {
+                    let value = builder
+                        .expression(else_return, Some(type_id))?
+                        .unwrap(type_id, builder)?;
+                    builder.builder.ins().jump(merge_block, &[value]);
+                } else {
+                    else_return.map(|else_return| builder.handle_statement(else_return));
+                    builder.builder.ins().jump(merge_block, &[]);
+                }
 
                 builder.builder.switch_to_block(merge_block);
                 builder.builder.seal_block(merge_block);
 
-                Ok(Value::Cranelift(
-                    builder.builder.block_params(merge_block)[0],
-                    r#type.unwrap_or_else(|| todo!()),
-                ))
+                Ok(builder.builder.block_params(merge_block)[0])
             }
         }
     }
@@ -181,26 +188,6 @@ impl Value {
         };
         Some(*r#type)
     }
-
-    // pub fn unwrap(
-    //     self,
-    //     type_id: top_level_resolution::Id,
-    //     builder: &mut FunctionBuilder<impl Module>,
-    // ) -> Result<cranelift::prelude::Value, SemanticError> {
-    //     match self {
-    //         Self::UnknownSignedIntegerConst(_)
-    //         | Self::UnknownIntegerConst(_)
-    //         | Self::UnknownFloatConst(_) => Err(SemanticError::UnknownType),
-    //         Self::Cranelift(value, value_type) => {
-    //             if value_type != type_id {
-    //                 Err(SemanticError::MismatchedTypes)
-    //             } else {
-    //                 Ok(value)
-    //             }
-    //         }
-    //         Self::IAdd(left, right) => todo!(),
-    //     }
-    // }
 }
 
 pub struct FunctionBuilder<'a, M> {

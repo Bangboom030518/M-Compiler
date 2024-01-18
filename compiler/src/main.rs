@@ -70,17 +70,17 @@ fn main() {
             .clone()
             .compile(&declarations, &mut context)
             .expect("TODO");
-
+        
         functions.push(id);
     }
 
     context.module.finalize_definitions().unwrap();
-
+    
     let code = context
         .module
         .get_finalized_function(*functions.get(0).unwrap());
 
-    let add =
-        unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(i64, i64) -> i8>(code) };
-    dbg!(unsafe { add(2, 2) });
+    let fib =
+        unsafe { std::mem::transmute::<*const u8, unsafe fn(i64) -> i64>(code) };
+    dbg!(unsafe { fib(11) });
 }
