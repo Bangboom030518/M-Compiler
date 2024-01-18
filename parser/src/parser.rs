@@ -5,7 +5,6 @@ pub struct Parser<'a> {
     tokenizer: Tokenizer<'a>,
     tokens: Vec<Token>,
     position: usize,
-    indent: u8,
     scope_cache: scope::Cache,
     pub(crate) scope: scope::Id,
 }
@@ -16,7 +15,6 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
             tokenizer,
             tokens: Vec::new(),
             position: 0,
-            indent: 0,
             scope_cache: scope::Cache::new(),
             scope: scope::Cache::ROOT_SCOPE,
         }
@@ -66,7 +64,7 @@ impl<'a> Parser<'a> {
 
     pub fn peek_token(&mut self) -> Option<Token> {
         let token = self.peek_any()?;
-        if matches!(token, Token::Indent | Token::Newline) {
+        if matches!(token, Token::Newline) {
             self.position += 1;
             self.peek_token()
         } else {
@@ -107,6 +105,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
+
         values
     }
 
@@ -123,14 +122,6 @@ impl<'a> Parser<'a> {
                // a
         */
         let start = self.position;
-        for _ in 0..self.indent {
-            if self.peek_any() == Some(Token::Indent) {
-                self.position += 1;
-            } else {
-                self.position = start;
-                return None;
-            }
-        }
 
         let Some(value) = self.parse() else {
             self.position = start;
@@ -169,6 +160,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    #[must_use]
     pub fn take_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
         let token = self.peek_token_if(token);
         if token.is_some() {
@@ -187,13 +179,5 @@ impl<'a> Parser<'a> {
 
     pub fn peek_newline(&mut self) -> Option<()> {
         matches!(self.peek_any(), Some(Token::Newline)).then_some(())
-    }
-
-    pub fn indent(&mut self) {
-        self.indent += 1;
-    }
-
-    pub fn unindent(&mut self) {
-        self.indent -= 1;
     }
 }

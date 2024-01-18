@@ -24,7 +24,16 @@ type JsonValue = union
         match self ->
             Self.list -> list
             _ -> nil
+sub = (UInt64 a, UInt64 b) UInt64
+    @sub(a, b)
 
+function add = (UInt64 a, UInt64 b) UInt64
+    @add(a, b)
+
+function less_than = (UInt64 a, UInt64 b) Int8
+    @lt(a, b)
+
+type Int32 = @i32
 tests
     function json_value () Nil do
         let string = JsonValue.string "Makka Pakka"
@@ -110,3 +119,37 @@ stack_store x i32const(1)
         type Int = { A, Int32, Int64 };
         let a = @assert_type(0, Int64);
         let b = @assert_type(Int::Int64(b), Int);
+
+type Point = struct
+    UInt64 x
+    UInt64 y
+
+    fn new = (x, y) Self
+        { x = 0, y = 0 }
+end
+
+fn main = () ()
+    let point = { x = 0, y = 0 }
+    let point = Point(0, 0)
+    let point = Point
+        x = 0
+        y = 0
+    end
+end
+
+fn get_base64_from_user() Result<Base64, union { stdin.Error | base64.ParseError }>
+    let input = stdin.get_line()?;
+    return input.parse()
+
+type Json = union
+    | String
+    | Number
+end
+
+type Json = String | Number    UInt64 x
+    UInt64 y
+end
+
+type Toml = String | Number
+type Data = Json || TomlS
+

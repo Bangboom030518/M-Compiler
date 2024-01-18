@@ -87,7 +87,9 @@ pub struct Assignment(pub Ident, pub Expression);
 
 impl Parse for Assignment {
     fn parse(parser: &mut Parser) -> Option<Self> {
-        Some(Self(parser.parse()?, parser.parse()?))
+        let left = parser.parse()?;
+        parser.take_token_if(&Token::Assignment)?;
+        Some(Self(left, parser.parse()?))
     }
 }
 

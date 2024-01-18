@@ -1,6 +1,6 @@
 #![feature(iter_collect_into)]
 
-use itertools::{Itertools, PeekingNext};
+use itertools::Itertools;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -40,6 +40,7 @@ define_token_enums!(
     If,
     Else,
     Let,
+    End,
     Return,
     Newline,
     Exponent,
@@ -50,7 +51,6 @@ define_token_enums!(
     Minus,
     Multiply,
     Divide,
-    Indent,
     Dot,
     Remainder,
     Equal,
@@ -88,12 +88,13 @@ impl<'a> Tokenizer<'a> {
             "const" => Token::Const,
             "struct" => Token::Struct,
             "union" => Token::Union,
-            "function" => Token::Function,
+            "fn" => Token::Function,
             "type" => Token::Type,
             "if" => Token::If,
             "else" => Token::Else,
             "let" => Token::Let,
             "return" => Token::Return,
+            "end" => Token::End,
             _ => Token::Ident(ident),
         }
     }
@@ -209,7 +210,6 @@ impl<'a> Iterator for Tokenizer<'a> {
             '.' => Token::Dot,
             ',' => Token::Comma,
             '@' => Token::At,
-            '\t' => Token::Indent,
             '!' => {
                 if self.0.peek() == Some(&'=') {
                     self.0.next();
@@ -256,14 +256,6 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '/' => self.take_comment_or_divide(),
-            ' ' => {
-                for _ in 0..3 {
-                    let Some(_) = self.0.peeking_next(|&ch| ch == ' ') else {
-                        return self.next();
-                    };
-                }
-                Token::Indent
-            }
             ch if ch.is_whitespace() => self.next()?,
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
             ch if ch.is_numeric() => self.take_number(ch),

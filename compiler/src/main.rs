@@ -5,6 +5,7 @@ mod local;
 mod top_level_resolution;
 
 use cranelift::prelude::*;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // TODO: annotated results
@@ -32,6 +33,10 @@ pub enum SemanticError {
     InvalidNumberOfArguments,
     #[error("Mismatched types")]
     MismatchedTypes,
+    #[error("Tried to construct something other than a struct")]
+    InvalidConstructor,
+    #[error("Missing a struct field that must be specified")]
+    MissingStructField
 }
 
 fn main() {
@@ -60,7 +65,7 @@ fn main() {
 
     let mut context = top_level_resolution::CraneliftContext::new(module);
 
-    let mut functions = Vec::new();
+    let mut functions = HashMap::new();
     for declaration in declarations.declarations.iter().flatten() {
         let top_level_resolution::Declaration::Function(function) = declaration else {
             continue;
@@ -70,17 +75,16 @@ fn main() {
             .clone()
             .compile(&declarations, &mut context)
             .expect("TODO");
-        
-        functions.push(id);
+
+        functions.insert(function.name.to_string(), id);
     }
 
     context.module.finalize_definitions().unwrap();
-    
+
     let code = context
         .module
-        .get_finalized_function(*functions.get(0).unwrap());
+        .get_finalized_function(*functions.get("fib").unwrap());
 
-    let fib =
-        unsafe { std::mem::transmute::<*const u8, unsafe fn(i64) -> i64>(code) };
+    let fib = unsafe { std::mem::transmute::<*const u8, unsafe fn(i64) -> i64>(code) };
     dbg!(unsafe { fib(11) });
 }

@@ -8,6 +8,6 @@ edition = "2021"
 
 [dependencies]
 regex = "1"
-lazy_static = "1.4.0"
-pulldown-cmark = "0.9.1"
+lazy_static = "1.4"
+pulldown-cmark = "0.9"
 grass = "0.11.0"

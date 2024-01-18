@@ -75,7 +75,6 @@ impl Parse for Struct {
     fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::Struct)?;
         parser.take_newline()?;
-        parser.indent();
         let scope_id = parser.create_scope();
 
         let fields = iter::from_fn(|| parser.parse_line()).collect();
@@ -86,7 +85,7 @@ impl Parse for Struct {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.unindent();
+        parser.take_token_if(&Token::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -106,7 +105,6 @@ impl Parse for Union {
     fn parse(parser: &mut Parser) -> Option<Self> {
         parser.take_token_if(&Token::Union)?;
         parser.take_newline()?;
-        parser.indent();
         let scope_id = parser.create_scope();
         let variants = iter::from_fn(|| parser.parse_line()).collect_vec();
 
@@ -116,7 +114,7 @@ impl Parse for Union {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.unindent();
+        parser.take_token_if(&Token::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -135,21 +133,20 @@ pub struct Function {
 
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::OpenParen);
+        parser.take_token_if(&Token::OpenParen)?;
 
         let parameters = parser.parse_csv();
 
-        parser.take_token_if(&Token::CloseParen);
+        parser.take_token_if(&Token::CloseParen)?;
 
         let return_type = parser.parse();
         let mut body = Vec::new();
         parser.take_newline()?;
 
-        parser.indent();
         while let Some(input) = parser.parse_line() {
             body.push(input);
         }
-        parser.unindent();
+        parser.take_token_if(&Token::End)?;
 
         Some(Self {
             parameters,
@@ -210,7 +207,6 @@ impl Parse for Primitive {
         parser.take_token_if(&Token::At)?;
         let kind = parser.parse()?;
         parser.take_newline()?;
-        parser.indent();
         let scope_id = parser.create_scope();
         while let Some(declaration) = parser.parse_line::<Declaration>() {
             parser
@@ -218,7 +214,7 @@ impl Parse for Primitive {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.unindent();
+        parser.take_token_if(&Token::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -266,8 +262,10 @@ impl Parse for Declaration {
 #[test]
 fn test_primitive() {
     let source = r#"@i32
-        function hi = () ->
-            "hello""#;
+        fn hi = () String
+            "hello"
+        end
+    end"#;
     let primitive = Parser::from(Tokenizer::from(source))
         .parse::<Primitive>()
         .unwrap();
@@ -299,7 +297,8 @@ fn top_level_decl_parses() {
     let uint_8 = Type::Identifier(Ident(String::from("UInt8")));
     let source = r"type Point = struct
     UInt8 x
-    UInt8 y";
+    UInt8 y
+end";
     let declaration = Parser::from(Tokenizer::from(source))
         .parse::<Declaration>()
         .unwrap();
@@ -334,7 +333,8 @@ fn top_level_decl_parses() {
 fn union_parses() {
     let source = r"union
     String a
-    b";
+    b
+end";
     let union = Parser::from(Tokenizer::from(source))
         .parse::<Union>()
         .unwrap();
@@ -359,9 +359,11 @@ fn union_parses() {
 
 #[test]
 fn function_parses() {
-    let source = r"(String a, b,) UInt32
+    // TODO: fails!
+    let source = r"(String a, b) UInt32
     a
-    a";
+    a
+end";
     assert_eq!(
         Parser::from(Tokenizer::from(source))
             .parse::<Function>()

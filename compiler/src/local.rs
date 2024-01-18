@@ -3,7 +3,9 @@ use crate::SemanticError;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::control_flow::If;
-use parser::expression::{Call, IntrinsicCall, IntrinsicOperator, UnaryOperator};
+use parser::expression::{
+    Call, CmpOperator, Constructor, IntrinsicCall, IntrinsicOperator, UnaryOperator,
+};
 use parser::prelude::Literal;
 use parser::Expression;
 use std::collections::HashMap;
@@ -77,42 +79,37 @@ impl Value {
                 let r#type = builder.declarations.get_type(type_id)?;
 
                 match operator {
-                    IntrinsicOperator::IAdd => Ok(builder.builder.ins().iadd(left, right)),
-                    operator => {
+                    IntrinsicOperator::Add => Ok(builder.builder.ins().iadd(left, right)),
+                    IntrinsicOperator::Sub => Ok(builder.builder.ins().isub(left, right)),
+                    IntrinsicOperator::Cmp(operator) => {
                         if r#type.is_signed_integer() {
                             let cc = match operator {
-                                IntrinsicOperator::Eq => IntCC::Equal,
-                                IntrinsicOperator::Ne => IntCC::NotEqual,
-                                IntrinsicOperator::Gt => IntCC::SignedGreaterThan,
-                                IntrinsicOperator::Gte => IntCC::SignedGreaterThanOrEqual,
-                                IntrinsicOperator::Lt => IntCC::SignedLessThan,
-                                IntrinsicOperator::Lte => IntCC::SignedLessThanOrEqual,
-                                // TODO: `unreachable!()`
-                                IntrinsicOperator::IAdd => unreachable!(),
+                                CmpOperator::Eq => IntCC::Equal,
+                                CmpOperator::Ne => IntCC::NotEqual,
+                                CmpOperator::Gt => IntCC::SignedGreaterThan,
+                                CmpOperator::Gte => IntCC::SignedGreaterThanOrEqual,
+                                CmpOperator::Lt => IntCC::SignedLessThan,
+                                CmpOperator::Lte => IntCC::SignedLessThanOrEqual,
                             };
                             Ok(builder.builder.ins().icmp(cc, left, right))
                         } else if r#type.is_integer() {
                             let cc = match operator {
-                                IntrinsicOperator::Eq => IntCC::Equal,
-                                IntrinsicOperator::Ne => IntCC::NotEqual,
-                                IntrinsicOperator::Gt => IntCC::UnsignedGreaterThan,
-                                IntrinsicOperator::Gte => IntCC::UnsignedGreaterThanOrEqual,
-                                IntrinsicOperator::Lt => IntCC::UnsignedLessThan,
-                                IntrinsicOperator::Lte => IntCC::UnsignedLessThanOrEqual,
-                                // TODO: `unreachable!()`
-                                IntrinsicOperator::IAdd => unreachable!(),
+                                CmpOperator::Eq => IntCC::Equal,
+                                CmpOperator::Ne => IntCC::NotEqual,
+                                CmpOperator::Gt => IntCC::UnsignedGreaterThan,
+                                CmpOperator::Gte => IntCC::UnsignedGreaterThanOrEqual,
+                                CmpOperator::Lt => IntCC::UnsignedLessThan,
+                                CmpOperator::Lte => IntCC::UnsignedLessThanOrEqual,
                             };
                             Ok(builder.builder.ins().icmp(cc, left, right))
                         } else {
                             let cc = match operator {
-                                IntrinsicOperator::Eq => FloatCC::Equal,
-                                IntrinsicOperator::Ne => FloatCC::NotEqual,
-                                IntrinsicOperator::Gt => todo!(),
-                                IntrinsicOperator::Gte => todo!(),
-                                IntrinsicOperator::Lt => todo!(),
-                                IntrinsicOperator::Lte => todo!(),
-                                // TODO: `unreachable!()`
-                                IntrinsicOperator::IAdd => unreachable!(),
+                                CmpOperator::Eq => FloatCC::Equal,
+                                CmpOperator::Ne => FloatCC::NotEqual,
+                                CmpOperator::Gt => todo!(),
+                                CmpOperator::Gte => todo!(),
+                                CmpOperator::Lt => todo!(),
+                                CmpOperator::Lte => todo!(),
                             };
                             Ok(builder.builder.ins().fcmp(cc, left, right))
                         }
@@ -472,13 +469,58 @@ where
             }
             Expression::If(If {
                 condition,
-                true_branch,
-                false_branch,
+                then_branch: true_branch,
+                else_branch: false_branch,
             }) => Ok(Value::If {
                 condition: Box::new(self.expression(*condition, None)?),
                 then_branch: true_branch,
                 else_branch: false_branch.into_iter().flatten().collect(),
             }),
+            Expression::Constructor(Constructor { r#type, fields }) => {
+                let r#struct = self
+                    .declarations
+                    .lookup(
+                        &match r#type {
+                            parser::Type::Identifier(ident) => ident,
+                        },
+                        self.scope,
+                    )
+                    .ok_or(SemanticError::DeclarationNotFound)?;
+                // AbiParam::special(vt, codegen::ir::ArgumentPurpose::StructArgument(()));
+                let Type::Struct(r#struct) = self.declarations.get_type(r#struct)? else {
+                    return Err(SemanticError::InvalidConstructor);
+                };
+
+                let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
+                    kind: StackSlotKind::ExplicitSlot,
+                    size: r#struct.size(self.declarations)?,
+                });
+                let mut offset = 0;
+
+                // TODO: ordering
+                for (name, r#type) in r#struct.fields {
+                    // TODO: `.clone()`
+                    let (_, value) = fields
+                        .iter()
+                        .find(|(ident, _)| &name == ident)
+                        .ok_or(SemanticError::MissingStructField)?
+                        .clone();
+
+                    self.builder.ins().stack_store(
+                        self.expression(*value, Some(r#type))?
+                            .unwrap(r#type, self)?,
+                        stack_slot,
+                        offset,
+                    );
+
+                    let size = self.declarations.get_type(r#type)?.size(self.declarations)?;
+                    offset += size;
+                }
+                let addr = self.builder.ins().stack_addr(iAddr, stack_slot, Offset);
+                self.builder.ins().store(todo!(), todo!(), addr, todo!());
+
+                todo!()
+            }
             _ => todo!(),
         }
     }

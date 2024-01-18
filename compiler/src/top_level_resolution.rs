@@ -11,11 +11,27 @@ use std::collections::HashMap;
 pub struct Id(usize);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct Struct {
+    pub fields: Vec<(Ident, Id)>,
+    pub ident: Ident,
+}
+
+impl Struct {
+    pub fn size(&self, declarations: &TopLevelDeclarations) -> Result<u32, SemanticError> {
+        self.fields
+            .iter()
+            .map(|(_, type_id)| {
+                declarations
+                    .get_type(*type_id)
+                    .and_then(|r#type| r#type.size(declarations))
+            })
+            .sum::<Result<u32, _>>()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
-    Struct {
-        fields: Vec<(Ident, Id)>,
-        ident: Ident,
-    },
+    Struct(Struct),
     Union {
         variants: Vec<(Ident, Id)>,
         ident: Ident,
@@ -48,22 +64,40 @@ impl Type {
         }
     }
 
-    pub fn is_float(&self) -> bool {
-        matches!(self, Self::F32 | Self::F64)
-    }
-
-    pub fn is_integer(&self) -> bool {
+    pub const fn is_integer(&self) -> bool {
         matches!(
             self,
-            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8 | Self::U128 | Self::U64 | Self::U32 | Self::U16 | Self::U8
+            Self::I128
+                | Self::I64
+                | Self::I32
+                | Self::I16
+                | Self::I8
+                | Self::U128
+                | Self::U64
+                | Self::U32
+                | Self::U16
+                | Self::U8
         )
     }
 
-    pub fn is_signed_integer(&self) -> bool {
+    pub const fn is_signed_integer(&self) -> bool {
         matches!(
             self,
             Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
         )
+    }
+
+    pub fn size(&self, declarations: &TopLevelDeclarations) -> Result<u32, SemanticError> {
+        let size = match self {
+            Self::U8 | Self::I8 => 1,
+            Self::U16 | Self::I16 => 2,
+            Self::U32 | Self::I32 | Self::F32 => 4,
+            Self::U64 | Self::I64 | Self::F64 => 8,
+            Self::U128 | Self::I128 => 16,
+            Self::Struct(r#struct) => r#struct.size(declarations)?,
+            _ => todo!(),
+        };
+        Ok(size)
     }
 }
 
@@ -78,6 +112,7 @@ pub struct Function {
     pub body: Vec<Statement>,
     pub scope: scope::Id,
     pub id: FuncId,
+    pub name: Ident,
 }
 
 impl Function {
@@ -156,6 +191,7 @@ impl Function {
             body,
             scope,
             id,
+            name: name.clone(),
         })
     }
 
@@ -171,6 +207,7 @@ impl Function {
             body,
             scope,
             id,
+            ..
         } = self;
         let mut builder = cranelift::prelude::FunctionBuilder::new(
             &mut cranelift_context.context.func,
@@ -319,7 +356,7 @@ impl TopLevelDeclarations {
                 DeclarationKind::Struct(r#struct) => {
                     self.append_new(r#struct.scope, scope_cache, call_conv, module)?;
 
-                    let r#type = Type::Struct {
+                    let r#type = Struct {
                         fields: r#struct
                             .fields
                             .iter()
@@ -338,7 +375,7 @@ impl TopLevelDeclarations {
                             .collect::<Result<Vec<_>, SemanticError>>()?,
                         ident: name.clone(),
                     };
-                    self.initialise(id, Declaration::Type(r#type));
+                    self.initialise(id, Declaration::Type(Type::Struct(r#type)));
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {

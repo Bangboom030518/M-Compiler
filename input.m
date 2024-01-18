@@ -1,20 +1,46 @@
-type Int64 = @i64
+type UInt64 = @u64
+end
 
-type Int8 = @i8
+type Point = struct
+    UInt64 x
+    UInt64 y
+end
 
-// function is_ten = (Int64 a, Int64 b) Int8
-//     if @assert_type(@eq(a, b), Int8)
-//         1
+// type Int8 = @i8
+// end
+
+// fn sub = (UInt64 a, UInt64 b) UInt64
+//     @sub(a, b)
+// end
+
+// fn add = (UInt64 a, UInt64 b) UInt64
+//     @add(a, b)
+// end
+
+// fn less_than = (UInt64 a, UInt64 b) Int8
+//     @lt(a, b)
+// end
+
+// type Int32 = @i32
+// end
+
+// fn fib = (UInt64 n) UInt64
+//     let two = @assert_type(2, UInt64)
+//     if less_than(n, two)
+//         n
 //     else
-//         0
+//         add(fib(sub(n, 1)), fib(sub(n, 2)))
+//     end
+// end
 
-// function add2 = (Int64 a, Int64 b) Int64
-//     @iadd(a, b)
+fn x = (Point p)
+fn x = (UInt64 x, UInt64 y)
 
-type Int32 = @i32
-
-function fib = (Int64 n) Int64
-    if @assert_type(@lt(n, 2), Int8)
-        n
-    else
-        @iadd(fib(@iadd(n, -1)), fib(@iadd(n, -2)))
+fn new_point = (UInt64 x, UInt64 y) UInt64
+    let x = x
+    let y = y
+    let point = Point
+        x = x,
+        y = 1,
+    end
+end

@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::iter;
 
 use crate::internal::prelude::*;
 
@@ -74,8 +74,7 @@ impl Parse for Call {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum IntrinsicOperator {
-    IAdd,
+pub enum CmpOperator {
     Lt,
     Gt,
     Lte,
@@ -84,16 +83,24 @@ pub enum IntrinsicOperator {
     Ne,
 }
 
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum IntrinsicOperator {
+    Cmp(CmpOperator),
+    Add,
+    Sub,
+}
+
 impl IntrinsicOperator {
     fn from_str(string: &str) -> Option<Self> {
         let operator = match string {
-            "iadd" => Self::IAdd,
-            "lt" => Self::Lt,
-            "gt" => Self::Gt,
-            "lte" => Self::Lte,
-            "gte" => Self::Gte,
-            "eq" => Self::Eq,
-            "ne" => Self::Ne,
+            "add" => Self::Add,
+            "sub" => Self::Sub,
+            "lt" => Self::Cmp(CmpOperator::Lt),
+            "gt" => Self::Cmp(CmpOperator::Gt),
+            "lte" => Self::Cmp(CmpOperator::Lte),
+            "gte" => Self::Cmp(CmpOperator::Gte),
+            "eq" => Self::Cmp(CmpOperator::Eq),
+            "ne" => Self::Cmp(CmpOperator::Ne),
             _ => return None,
         };
         Some(operator)
@@ -136,6 +143,33 @@ impl Parse for IntrinsicCall {
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub struct Constructor {
+    pub r#type: Type,
+    pub fields: Vec<(Ident, Box<Expression>)>,
+}
+
+impl Parse for Constructor {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        let r#type = parser.parse()?;
+        let mut fields = Vec::new();
+
+        loop {
+            let field = parser.parse::<Ident>()?;
+            parser.take_token_if(&Token::Assignment)?;
+            fields.push((field, Box::new(parser.parse()?)));
+            if parser.take_token_if(&Token::Comma).is_none() {
+                parser.take_token_if(&Token::End)?;
+                break;
+            } else if parser.take_token_if(&Token::End).is_some() {
+                break;
+            }
+        }
+
+        Some(Self { r#type, fields })
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
     Identifier(Ident),
     IntrinsicCall(IntrinsicCall),
@@ -145,6 +179,7 @@ pub enum Expression {
     Call(Call),
     If(If),
     Return(Box<Expression>),
+    Constructor(Constructor),
 }
 
 // TODO:
@@ -166,11 +201,12 @@ impl Expression {
         parser
             .parse::<Call>()
             .map(Self::Call)
+            .or_else(|| parser.parse().map(Self::Constructor))
             .or_else(|| {
                 parser.take_token_if(&Token::Return)?;
                 Some(Self::Return(Box::new(parser.parse()?)))
             })
-            .or_else(|| parser.parse::<IntrinsicCall>().map(Self::IntrinsicCall))
+            .or_else(|| parser.parse().map(Self::IntrinsicCall))
             .or_else(|| Self::parse_nonpostfix_term(parser))
     }
 
@@ -182,10 +218,10 @@ impl Expression {
         }
 
         parser
-            .parse::<Literal>()
+            .parse()
             .map(Self::Literal)
-            .or_else(|| parser.parse::<If>().map(Self::If))
-            .or_else(|| parser.parse::<Ident>().map(Self::Identifier))
+            .or_else(|| parser.parse().map(Self::If))
+            .or_else(|| parser.parse().map(Self::Identifier))
             .or_else(|| {
                 Some(Self::UnaryPrefix(
                     parser.parse()?,
