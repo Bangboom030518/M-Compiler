@@ -1,5 +1,7 @@
 use crate::top_level_resolution::{self, Type};
 use crate::SemanticError;
+use cranelift::codegen::ir::immediates::Offset32;
+use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::control_flow::If;
@@ -7,8 +9,10 @@ use parser::expression::{
     Call, CmpOperator, Constructor, IntrinsicCall, IntrinsicOperator, UnaryOperator,
 };
 use parser::prelude::Literal;
+use parser::top_level::PrimitiveKind;
 use parser::Expression;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -35,31 +39,43 @@ impl Value {
         // TODO: support unsigned integers
         match self {
             Self::UnknownIntegerConst(int) => {
+                let Type::Primitive(r#type) = r#type else {
+                    return Err(SemanticError::UnexpectedNumberLiteral);
+                };
+
                 let r#type = match r#type {
-                    Type::I8 | Type::U8 => types::I8,
-                    Type::I16 | Type::U16 => types::I16,
-                    Type::I32 | Type::U32 => types::I32,
-                    Type::I64 | Type::U64 => types::I64,
-                    Type::I128 | Type::U128 => todo!("chonky intz"),
+                    PrimitiveKind::I8 | PrimitiveKind::U8 => types::I8,
+                    PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
+                    PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
+                    PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
+                    PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
             }
             Self::UnknownSignedIntegerConst(int) => {
+                let Type::Primitive(r#type) = r#type else {
+                    return Err(SemanticError::UnexpectedNumberLiteral);
+                };
+
                 let r#type = match r#type {
-                    Type::I8 => types::I8,
-                    Type::I16 => types::I16,
-                    Type::I32 => types::I32,
-                    Type::I64 => types::I64,
-                    Type::I128 => todo!("chonky intz"),
+                    PrimitiveKind::I8 => types::I8,
+                    PrimitiveKind::I16 => types::I16,
+                    PrimitiveKind::I32 => types::I32,
+                    PrimitiveKind::I64 => types::I64,
+                    PrimitiveKind::I128 => todo!("chonky intz"),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
             }
             Self::UnknownFloatConst(float) => match r#type {
                 // TODO: as
-                Type::F32 => Ok(builder.builder.ins().f32const(Ieee32::from(float as f32))),
-                Type::F64 => Ok(builder.builder.ins().f64const(Ieee64::from(float))),
+                Type::Primitive(PrimitiveKind::F32) => {
+                    Ok(builder.builder.ins().f32const(Ieee32::from(float as f32)))
+                }
+                Type::Primitive(PrimitiveKind::F64) => {
+                    Ok(builder.builder.ins().f64const(Ieee64::from(float)))
+                }
                 _ => Err(SemanticError::UnexpectedNumberLiteral),
             },
             Self::Cranelift(value, value_type) => {
@@ -82,6 +98,9 @@ impl Value {
                     IntrinsicOperator::Add => Ok(builder.builder.ins().iadd(left, right)),
                     IntrinsicOperator::Sub => Ok(builder.builder.ins().isub(left, right)),
                     IntrinsicOperator::Cmp(operator) => {
+                        let Type::Primitive(r#type) = r#type else {
+                            todo!()
+                        };
                         if r#type.is_signed_integer() {
                             let cc = match operator {
                                 CmpOperator::Eq => IntCC::Equal,
@@ -128,9 +147,13 @@ impl Value {
                 let else_block = builder.builder.create_block();
                 let merge_block = builder.builder.create_block();
 
-                builder
-                    .builder
-                    .append_block_param(merge_block, r#type.cranelift_type());
+                builder.builder.append_block_param(
+                    merge_block,
+                    match r#type {
+                        Type::Primitive(r#type) => r#type.cranelift_type(),
+                        _ => todo!(),
+                    },
+                );
 
                 builder
                     .builder
@@ -195,6 +218,7 @@ pub struct FunctionBuilder<'a, M> {
     pub names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
     pub builder: cranelift::prelude::FunctionBuilder<'a>,
     pub new_variable_index: usize,
+    pub isa: Arc<dyn TargetIsa>,
 }
 
 impl<'a, M> FunctionBuilder<'a, M>
@@ -231,6 +255,7 @@ where
                     Some(r#type) => Some(self.declarations.get_type(r#type)?.clone()),
                     None => None,
                 };
+                // self.builder.func.stencil.create_memory_type(codegen::ir::MemoryTypeData::Memory { size: () });
 
                 let cranelift_type =
                     m_type.map_or_else(|| todo!(), |r#type| r#type.cranelift_type());
@@ -274,12 +299,17 @@ where
             return Ok(Value::UnknownIntegerConst(int));
         };
 
+        let Type::Primitive(r#type) = r#type else {
+            return Err(SemanticError::UnexpectedNumberLiteral);
+        };
+
         if !r#type.is_integer() {
             return Err(SemanticError::UnexpectedNumberLiteral);
         };
 
         // TODO: `.unwrap()`
         // TODO: chonky intz
+        // TODO: subset of `Type` for `Primitive`?
         Ok(Value::Cranelift(
             self.builder
                 .ins()
@@ -304,11 +334,11 @@ where
 
         let value = match r#type {
             // TODO: `as`
-            Type::F32 => Value::Cranelift(
+            Type::Primitive(PrimitiveKind::F32) => Value::Cranelift(
                 self.builder.ins().f32const(Ieee32::from(float as f32)),
                 type_id.unwrap(),
             ),
-            Type::F64 => Value::Cranelift(
+            Type::Primitive(PrimitiveKind::F64) => Value::Cranelift(
                 self.builder.ins().f64const(Ieee64::from(float)),
                 type_id.unwrap(),
             ),
@@ -371,6 +401,10 @@ where
                     return Ok(Value::UnknownSignedIntegerConst(-i128::try_from(integer)?));
                 };
 
+                let Type::Primitive(r#type) = r#type else {
+                    return Err(SemanticError::UnexpectedNumberLiteral);
+                };
+
                 if !r#type.is_signed_integer() {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
@@ -412,7 +446,6 @@ where
             return Err(SemanticError::InvalidNumberOfArguments);
         }
 
-        // TODO: type passdown
         let arguments = arguments
             .into_iter()
             .zip(&function.parameters)
@@ -477,7 +510,7 @@ where
                 else_branch: false_branch.into_iter().flatten().collect(),
             }),
             Expression::Constructor(Constructor { r#type, fields }) => {
-                let r#struct = self
+                let struct_id = self
                     .declarations
                     .lookup(
                         &match r#type {
@@ -487,7 +520,7 @@ where
                     )
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 // AbiParam::special(vt, codegen::ir::ArgumentPurpose::StructArgument(()));
-                let Type::Struct(r#struct) = self.declarations.get_type(r#struct)? else {
+                let Type::Struct(r#struct) = self.declarations.get_type(struct_id)? else {
                     return Err(SemanticError::InvalidConstructor);
                 };
 
@@ -497,31 +530,44 @@ where
                 });
                 let mut offset = 0;
 
+                let addr = self.builder.ins().stack_addr(
+                    self.isa.pointer_type(),
+                    stack_slot,
+                    Offset32::new(0),
+                );
+
                 // TODO: ordering
-                for (name, r#type) in r#struct.fields {
+                for (name, r#type) in &r#struct.fields {
                     // TODO: `.clone()`
                     let (_, value) = fields
                         .iter()
-                        .find(|(ident, _)| &name == ident)
+                        .find(|(ident, _)| name == ident)
                         .ok_or(SemanticError::MissingStructField)?
                         .clone();
 
-                    self.builder.ins().stack_store(
-                        self.expression(*value, Some(r#type))?
-                            .unwrap(r#type, self)?,
-                        stack_slot,
-                        offset,
-                    );
+                    let value = self
+                        .expression(*value, Some(*r#type))?
+                        .unwrap(*r#type, self)?;
 
-                    let size = self.declarations.get_type(r#type)?.size(self.declarations)?;
-                    offset += size;
+                    self.builder
+                        .ins()
+                        .stack_store(value, stack_slot, Offset32::new(offset));
+
+                    let size = self
+                        .declarations
+                        .get_type(*r#type)?
+                        .size(self.declarations)?;
+
+                    // self.builder
+                    //     .ins()
+                    //     .store(MemFlags::new(), stack_slot, addr, todo!());
+
+                    offset += size as i32;
                 }
-                let addr = self.builder.ins().stack_addr(iAddr, stack_slot, Offset);
-                self.builder.ins().store(todo!(), todo!(), addr, todo!());
 
-                todo!()
+                Ok(Value::Cranelift(addr, struct_id))
             }
-            _ => todo!(),
+            Expression::Binary(_) => todo!(),
         }
     }
 }

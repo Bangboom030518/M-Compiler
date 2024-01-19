@@ -36,7 +36,7 @@ pub enum SemanticError {
     #[error("Tried to construct something other than a struct")]
     InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
-    MissingStructField
+    MissingStructField,
 }
 
 fn main() {
@@ -60,7 +60,7 @@ fn main() {
     let mut module = cranelift_jit::JITModule::new(builder);
 
     let declarations =
-        top_level_resolution::TopLevelDeclarations::new(file, isa.default_call_conv(), &mut module)
+        top_level_resolution::TopLevelDeclarations::new(file, isa, &mut module)
             .unwrap();
 
     let mut context = top_level_resolution::CraneliftContext::new(module);

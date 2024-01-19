@@ -33,9 +33,6 @@ end
 //     end
 // end
 
-fn x = (Point p)
-fn x = (UInt64 x, UInt64 y)
-
 fn new_point = (UInt64 x, UInt64 y) UInt64
     let x = x
     let y = y

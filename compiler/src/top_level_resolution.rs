@@ -1,17 +1,19 @@
 use crate::SemanticError;
 use ::parser::prelude::*;
 use ::parser::top_level::{DeclarationKind, Parameter, PrimitiveKind, TypeBinding};
+use ::parser::Ident;
 use cranelift::codegen::ir::{AbiParam, Signature};
-use cranelift::codegen::isa::CallConv;
+use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Struct {
+pub struct Struct {
     pub fields: Vec<(Ident, Id)>,
     pub ident: Ident,
 }
@@ -36,66 +38,15 @@ pub enum Type {
         variants: Vec<(Ident, Id)>,
         ident: Ident,
     },
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    F32,
-    F64,
+    Primitive(PrimitiveKind),
 }
 
 impl Type {
-    pub fn cranelift_type(&self) -> cranelift::prelude::Type {
-        match self {
-            Self::U8 | Self::I8 => types::I8,
-            Self::U16 | Self::I16 => types::I16,
-            Self::F32 => types::F32,
-            Self::U32 | Self::I32 => types::I32,
-            Self::F64 => types::F64,
-            Self::U64 | Self::I64 => types::I64,
-            Self::U128 | Self::I128 => types::I128,
-            _ => todo!("handle complex data structures"),
-        }
-    }
-
-    pub const fn is_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128
-                | Self::I64
-                | Self::I32
-                | Self::I16
-                | Self::I8
-                | Self::U128
-                | Self::U64
-                | Self::U32
-                | Self::U16
-                | Self::U8
-        )
-    }
-
-    pub const fn is_signed_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
-        )
-    }
-
     pub fn size(&self, declarations: &TopLevelDeclarations) -> Result<u32, SemanticError> {
         let size = match self {
-            Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
-            Self::U32 | Self::I32 | Self::F32 => 4,
-            Self::U64 | Self::I64 | Self::F64 => 8,
-            Self::U128 | Self::I128 => 16,
+            Self::Primitive(primitive) => primitive.size(),
             Self::Struct(r#struct) => r#struct.size(declarations)?,
-            _ => todo!(),
+            Self::Union { .. } => todo!(),
         };
         Ok(size)
     }
@@ -119,13 +70,12 @@ impl Function {
     // FIXME: signature generation must happen on a second walk of tree
     pub fn new(
         function: ::parser::top_level::Function,
-        call_conv: CallConv,
         declarations: &TopLevelDeclarations,
         scope: ::parser::scope::Id,
         name: &Ident,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
-        let mut signature = Signature::new(call_conv);
+        let mut signature = Signature::new(declarations.isa.default_call_conv());
 
         let parameters = function
             .parameters
@@ -149,9 +99,15 @@ impl Function {
         signature.params = parameters
             .iter()
             .map(|r#type| {
-                Ok(AbiParam::new(
-                    declarations.get_type(r#type.1)?.cranelift_type(),
-                ))
+                let r#type = declarations.get_type(r#type.1)?;
+                match r#type {
+                    Type::Primitive(primitive) => Ok(AbiParam::new(primitive.cranelift_type())),
+                    Type::Struct(r#struct) => Ok(AbiParam::special(
+                        todo!(),
+                        codegen::ir::ArgumentPurpose::StructArgument(r#struct.size(declarations)?),
+                    )),
+                    Type::Union { .. } => todo!(),
+                }
             })
             .collect::<Result<Vec<_>, SemanticError>>()?;
 
@@ -167,9 +123,17 @@ impl Function {
             .lookup(return_type, scope)
             .ok_or(SemanticError::DeclarationNotFound)?;
 
-        let return_type = declarations.get_type(return_type_id)?.cranelift_type();
+        let return_type = declarations.get_type(return_type_id)?;
 
-        signature.returns = vec![AbiParam::new(return_type)];
+        let r#return = match return_type {
+            Type::Primitive(primitive) => AbiParam::new(primitive.cranelift_type()),
+            Type::Struct(r#struct) => AbiParam::special(
+                declarations.isa.pointer_type(),
+                codegen::ir::ArgumentPurpose::StructReturn,
+            ),
+            Type::Union { .. } => todo!(),
+        };
+        signature.returns = vec![r#return];
 
         let mut body = function.body;
 
@@ -245,6 +209,7 @@ impl Function {
             names,
             builder,
             module: &mut cranelift_context.module,
+            isa: Arc::clone(&declarations.isa),
         };
 
         for statement in body {
@@ -311,20 +276,22 @@ impl<M> CraneliftContext<M> {
 pub struct TopLevelDeclarations {
     pub declarations: Vec<Option<Declaration>>,
     pub scopes: HashMap<scope::Id, TopLevelScope>,
+    pub isa: Arc<dyn TargetIsa>,
 }
 
 impl TopLevelDeclarations {
     pub fn new(
         mut file: scope::File,
-        call_conv: CallConv,
+        isa: Arc<dyn TargetIsa>,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let mut declarations = Self {
             declarations: Vec::new(),
             scopes: HashMap::new(),
+            isa: Arc::clone(&isa),
         };
 
-        declarations.append_new(file.root, &mut file.cache, call_conv, module)?;
+        declarations.append_new(file.root, &mut file.cache, module)?;
 
         Ok(declarations)
     }
@@ -333,7 +300,6 @@ impl TopLevelDeclarations {
         &mut self,
         scope_id: scope::Id,
         scope_cache: &mut scope::Cache,
-        call_conv: CallConv,
         module: &mut impl Module,
     ) -> Result<(), SemanticError> {
         // TODO: `.clone()`
@@ -354,7 +320,7 @@ impl TopLevelDeclarations {
         for (name, id) in self.scopes[&scope_id].declarations.clone() {
             match declarations.remove_entry(&name).expect("TODO").1 {
                 DeclarationKind::Struct(r#struct) => {
-                    self.append_new(r#struct.scope, scope_cache, call_conv, module)?;
+                    self.append_new(r#struct.scope, scope_cache, module)?;
 
                     let r#type = Struct {
                         fields: r#struct
@@ -379,21 +345,7 @@ impl TopLevelDeclarations {
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {
-                    let r#type = match primitive.kind {
-                        PrimitiveKind::I8 => Type::I8,
-                        PrimitiveKind::I16 => Type::I16,
-                        PrimitiveKind::I32 => Type::I32,
-                        PrimitiveKind::I64 => Type::I64,
-                        PrimitiveKind::I128 => Type::I128,
-                        PrimitiveKind::U8 => Type::U8,
-                        PrimitiveKind::U16 => Type::U16,
-                        PrimitiveKind::U32 => Type::U32,
-                        PrimitiveKind::U64 => Type::U64,
-                        PrimitiveKind::U128 => Type::U128,
-                        PrimitiveKind::F32 => Type::F32,
-                        PrimitiveKind::F64 => Type::F64,
-                    };
-                    self.initialise(id, Declaration::Type(r#type));
+                    self.initialise(id, Declaration::Type(Type::Primitive(primitive.kind)));
                 }
                 DeclarationKind::Function(function) => functions.push((function, id, name)),
                 DeclarationKind::Const(_) => todo!(),
@@ -403,9 +355,7 @@ impl TopLevelDeclarations {
         for (function, id, name) in functions {
             self.initialise(
                 id,
-                Declaration::Function(Function::new(
-                    function, call_conv, self, scope_id, &name, module,
-                )?),
+                Declaration::Function(Function::new(function, self, scope_id, &name, module)?),
             );
         }
 
