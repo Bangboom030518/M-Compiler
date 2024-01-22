@@ -26,6 +26,11 @@ pub enum Value {
         then_branch: Vec<parser::Statement>,
         else_branch: Vec<parser::Statement>,
     },
+    FieldAccess(Box<Value>, parser::Ident),
+    Constructor {
+        fields: Vec<(parser::Ident, Value)>,
+        type_id: top_level_resolution::Id,
+    },
 }
 
 impl Value {
@@ -82,6 +87,7 @@ impl Value {
                 if value_type == type_id {
                     Ok(value)
                 } else {
+                    dbg!();
                     Err(SemanticError::MismatchedTypes)
                 }
             }
@@ -199,9 +205,73 @@ impl Value {
 
                 Ok(builder.builder.block_params(merge_block)[0])
             }
+            Self::FieldAccess(value, field) => {
+                let r#type = value.r#type().ok_or(SemanticError::UnknownType)?;
+                let value = value.unwrap(r#type, builder)?;
+                let Type::Struct(r#struct) = builder.declarations.get_type(type_id)? else {
+                    return Err(SemanticError::NonStructFieldAccess);
+                };
+                let offset = r#struct.offset(&field, builder.declarations)?;
+                Ok(builder.builder.ins().load(
+                    builder
+                        .declarations
+                        .get_type(type_id)?
+                        .cranelift_type(&builder.isa),
+                    MemFlags::new(),
+                    value,
+                    offset,
+                ))
+            }
+            Self::Constructor { fields, type_id } => {
+                // AbiParam::special(vt, codegen::ir::ArgumentPurpose::StructArgument(()));
+                let Type::Struct(r#struct) = builder.declarations.get_type(type_id)? else {
+                    return Err(SemanticError::InvalidConstructor);
+                };
+
+                let stack_slot = builder.builder.create_sized_stack_slot(StackSlotData {
+                    kind: StackSlotKind::ExplicitSlot,
+                    size: r#struct.size(builder.declarations)?,
+                });
+                let mut offset = 0;
+
+                let addr = builder.builder.ins().stack_addr(
+                    builder.isa.pointer_type(),
+                    stack_slot,
+                    Offset32::new(0),
+                );
+
+                // TODO: ordering
+                for (name, r#type) in &r#struct.fields {
+                    // TODO: `.clone()`
+                    let (_, value) = fields
+                        .iter()
+                        .find(|(ident, _)| name == ident)
+                        .ok_or(SemanticError::MissingStructField)?
+                        .clone();
+
+                    let value = builder.builder
+                        .expression(value, Some(*r#type))?
+                        .unwrap(*r#type, builder)?;
+
+                    builder
+                        .builder
+                        .ins()
+                        .stack_store(value, stack_slot, Offset32::new(offset));
+
+                    let size = builder
+                        .declarations
+                        .get_type(*r#type)?
+                        .size(builder.declarations)?;
+
+                    offset += size as i32;
+                }
+
+                Ok(addr)
+            }
         }
     }
 
+    // TODO: This does not infer deeply nested values types
     pub const fn r#type(&self) -> Option<top_level_resolution::Id> {
         let Self::Cranelift(_, r#type) = self else {
             return None;
@@ -258,10 +328,9 @@ where
                 // self.builder.func.stencil.create_memory_type(codegen::ir::MemoryTypeData::Memory { size: () });
 
                 let cranelift_type =
-                    m_type.map_or_else(|| todo!(), |r#type| r#type.cranelift_type());
+                    m_type.map_or_else(|| todo!(), |r#type| r#type.cranelift_type(&self.isa));
 
                 self.builder.declare_var(variable, cranelift_type);
-
                 self.names.insert(ident, (variable, value.r#type()));
                 // TODO: lazily promote
                 // TODO: type inference
@@ -433,9 +502,10 @@ where
     ) -> Result<Value, SemanticError> {
         // TODO: what about if not ident
         let callable = match callable.as_ref() {
-            Expression::Identifier(ident) => ident,
+            Expression::Ident(ident) => ident,
             _ => todo!(),
         };
+
         let function = self
             .declarations
             .lookup(callable, self.scope)
@@ -458,6 +528,12 @@ where
         let func_ref = self
             .module
             .declare_func_in_func(function.id, self.builder.func);
+
+        // let stack_slot = self
+        //     .builder
+        //     .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 12));
+        // let value = cranelift::prelude::Value::from_u32(stack_slot.as_u32());
+
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
         let value = self.builder.inst_results(call)[0];
 
@@ -476,13 +552,14 @@ where
             }
             Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             Expression::Return(expression) => self.expression(*expression, Some(self.r#return)),
-            Expression::Identifier(ident) => {
+            Expression::Ident(ident) => {
                 let variable = *self
                     .names
                     .get(&ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
                 if let (Some(r#type), Some(variable)) = (r#type, variable.1) {
                     if r#type != variable {
+                        // dbg!(&ident);
                         return Err(SemanticError::MismatchedTypes);
                     }
                 };
@@ -495,6 +572,7 @@ where
                 let value = self.call(call)?;
                 if let r#type @ Some(_) = r#type {
                     if r#type != value.r#type() {
+                        dbg!();
                         return Err(SemanticError::MismatchedTypes);
                     }
                 };
@@ -510,63 +588,24 @@ where
                 else_branch: false_branch.into_iter().flatten().collect(),
             }),
             Expression::Constructor(Constructor { r#type, fields }) => {
-                let struct_id = self
-                    .declarations
-                    .lookup(
-                        &match r#type {
-                            parser::Type::Identifier(ident) => ident,
-                        },
-                        self.scope,
-                    )
-                    .ok_or(SemanticError::DeclarationNotFound)?;
-                // AbiParam::special(vt, codegen::ir::ArgumentPurpose::StructArgument(()));
-                let Type::Struct(r#struct) = self.declarations.get_type(struct_id)? else {
-                    return Err(SemanticError::InvalidConstructor);
-                };
-
-                let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
-                    kind: StackSlotKind::ExplicitSlot,
-                    size: r#struct.size(self.declarations)?,
-                });
-                let mut offset = 0;
-
-                let addr = self.builder.ins().stack_addr(
-                    self.isa.pointer_type(),
-                    stack_slot,
-                    Offset32::new(0),
-                );
-
-                // TODO: ordering
-                for (name, r#type) in &r#struct.fields {
-                    // TODO: `.clone()`
-                    let (_, value) = fields
-                        .iter()
-                        .find(|(ident, _)| name == ident)
-                        .ok_or(SemanticError::MissingStructField)?
-                        .clone();
-
-                    let value = self
-                        .expression(*value, Some(*r#type))?
-                        .unwrap(*r#type, self)?;
-
-                    self.builder
-                        .ins()
-                        .stack_store(value, stack_slot, Offset32::new(offset));
-
-                    let size = self
-                        .declarations
-                        .get_type(*r#type)?
-                        .size(self.declarations)?;
-
-                    // self.builder
-                    //     .ins()
-                    //     .store(MemFlags::new(), stack_slot, addr, todo!());
-
-                    offset += size as i32;
-                }
-
-                Ok(Value::Cranelift(addr, struct_id))
+                let type_id = self
+                .declarations
+                .lookup(
+                    &match r#type {
+                        parser::Type::Identifier(ident) => ident,
+                    },
+                    self.scope,
+                )
+                .ok_or(SemanticError::DeclarationNotFound)?;
+                Ok(Value::Constructor {
+                    type_id,
+                    fields: fields.iter().map(|(ident, expression)| self.expression(expression, r#type))
+                })
             }
+            Expression::FieldAccess(expression, field) => Ok(Value::FieldAccess(
+                Box::new(self.expression(*expression, r#type)?),
+                field,
+            )),
             Expression::Binary(_) => todo!(),
         }
     }

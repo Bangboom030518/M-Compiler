@@ -2,10 +2,12 @@ use crate::SemanticError;
 use ::parser::prelude::*;
 use ::parser::top_level::{DeclarationKind, Parameter, PrimitiveKind, TypeBinding};
 use ::parser::Ident;
+use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::ir::{AbiParam, Signature};
 use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
+use itertools::{FoldWhile, Itertools};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -29,6 +31,34 @@ impl Struct {
             })
             .sum::<Result<u32, _>>()
     }
+
+    pub fn offset(
+        &self,
+        field: &Ident,
+        declarations: &TopLevelDeclarations,
+    ) -> Result<Offset32, SemanticError> {
+        let offset =
+            self.fields
+                .iter()
+                .fold_while(Ok::<_, SemanticError>(0), |offset, (name, type_id)| {
+                    if name == field {
+                        FoldWhile::Done(offset)
+                    } else {
+                        FoldWhile::Continue(offset.and_then(|offset| {
+                            Ok(
+                                offset
+                                    + declarations.get_type(*type_id)?.size(declarations)? as i32,
+                            )
+                        }))
+                    }
+                });
+
+        let FoldWhile::Done(offset) = offset else {
+            return Err(SemanticError::NonExistentField);
+        };
+
+        Ok(Offset32::new(offset?))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +79,14 @@ impl Type {
             Self::Union { .. } => todo!(),
         };
         Ok(size)
+    }
+
+    pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
+        match self {
+            Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(),
+            Self::Struct(_) => isa.pointer_type(),
+            Self::Union { .. } => todo!(),
+        }
     }
 }
 
@@ -194,7 +232,9 @@ impl Function {
             .map(|(index, ((name, type_id), value))| {
                 let variable = Variable::new(index);
                 // TODO: get type again?
-                let r#type = declarations.get_type(type_id)?.cranelift_type();
+                let r#type = declarations
+                    .get_type(type_id)?
+                    .cranelift_type(&declarations.isa);
                 builder.declare_var(variable, r#type);
                 builder.def_var(variable, value);
                 Ok((name, (variable, Some(type_id))))
@@ -223,6 +263,18 @@ impl Function {
             .module
             .define_function(id, &mut cranelift_context.context)
             .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+
+        #[cfg(debug_assertions)]
+        {
+            use std::io::Write;
+            let text = cranelift_context.context.func.display().to_string();
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open("function-ir.clif")
+                .unwrap();
+
+            write!(file, "{text}").unwrap();
+        }
 
         cranelift_context
             .module

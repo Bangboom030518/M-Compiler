@@ -338,9 +338,7 @@ fn top_level_decl_parses() {
             .unwrap(),
         Declaration {
             name: Ident(String::from("MONEY")),
-            kind: DeclarationKind::Const(Expression::Identifier(Ident(String::from(
-                "INHERITANCE"
-            ))))
+            kind: DeclarationKind::Const(Expression::Ident(Ident(String::from("INHERITANCE"))))
         }
     );
 
@@ -431,8 +429,8 @@ end";
             ],
             return_type: Some(Type::Identifier(Ident(String::from("UInt32")))),
             body: vec![
-                Statement::Expression(Expression::Identifier(Ident(String::from("a")))),
-                Statement::Expression(Expression::Identifier(Ident(String::from("a"))))
+                Statement::Expression(Expression::Ident(Ident(String::from("a")))),
+                Statement::Expression(Expression::Ident(Ident(String::from("a"))))
             ],
         }
     );

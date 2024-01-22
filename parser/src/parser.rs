@@ -84,8 +84,13 @@ impl<'a> Parser<'a> {
     where
         T: Parse,
     {
+        self.scope(T::parse)
+    }
+
+    // TODO: rename
+    pub fn scope<T>(&mut self, f: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
         let start = self.position;
-        match T::parse(self) {
+        match f(self) {
             None => {
                 self.position = start;
                 None

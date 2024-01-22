@@ -171,7 +171,7 @@ impl Parse for Constructor {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Expression {
-    Identifier(Ident),
+    Ident(Ident),
     IntrinsicCall(IntrinsicCall),
     Literal(Literal),
     Binary(binary::Expression),
@@ -180,6 +180,7 @@ pub enum Expression {
     If(If),
     Return(Box<Expression>),
     Constructor(Constructor),
+    FieldAccess(Box<Expression>, Ident),
 }
 
 // TODO:
@@ -197,14 +198,24 @@ impl Expression {
             parser.take_token_if(&Token::CloseParen)?;
             return Some(expression);
         }
-
+        // TODO: parser.scope(|parser| {})
         parser
             .parse::<Call>()
             .map(Self::Call)
+            .or_else(|| {
+                parser.scope(|parser| {
+                    // TODO: may not be ident
+                    let expr = Box::new(parser.parse().map(Self::Ident)?);
+                    parser.take_token_if(&Token::Dot)?;
+                    Some(Self::FieldAccess(expr, parser.parse()?))
+                })
+            })
             .or_else(|| parser.parse().map(Self::Constructor))
             .or_else(|| {
-                parser.take_token_if(&Token::Return)?;
-                Some(Self::Return(Box::new(parser.parse()?)))
+                parser.scope(|parser| {
+                    parser.take_token_if(&Token::Return)?;
+                    Some(Self::Return(Box::new(parser.parse()?)))
+                })
             })
             .or_else(|| parser.parse().map(Self::IntrinsicCall))
             .or_else(|| Self::parse_nonpostfix_term(parser))
@@ -221,7 +232,7 @@ impl Expression {
             .parse()
             .map(Self::Literal)
             .or_else(|| parser.parse().map(Self::If))
-            .or_else(|| parser.parse().map(Self::Identifier))
+            .or_else(|| parser.parse().map(Self::Ident))
             .or_else(|| {
                 Some(Self::UnaryPrefix(
                     parser.parse()?,

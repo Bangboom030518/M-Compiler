@@ -37,9 +37,17 @@ pub enum SemanticError {
     InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
     MissingStructField,
+    #[error("Was stoopid and tried to access the field of a non-struct type")]
+    NonStructFieldAccess,
+    #[error("Tried to access a non-existent struct field")]
+    NonExistentField,
 }
 
 fn main() {
+    #[cfg(debug_assertions)]
+    {
+        std::fs::write("function-ir.clif", "").unwrap();
+    }
     let file = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
 
     let mut flag_builder = settings::builder();
@@ -60,8 +68,7 @@ fn main() {
     let mut module = cranelift_jit::JITModule::new(builder);
 
     let declarations =
-        top_level_resolution::TopLevelDeclarations::new(file, isa, &mut module)
-            .unwrap();
+        top_level_resolution::TopLevelDeclarations::new(file, isa, &mut module).unwrap();
 
     let mut context = top_level_resolution::CraneliftContext::new(module);
 
@@ -80,11 +87,10 @@ fn main() {
     }
 
     context.module.finalize_definitions().unwrap();
+    let function = *functions.get("new_point").unwrap();
 
-    let code = context
-        .module
-        .get_finalized_function(*functions.get("fib").unwrap());
+    let code = context.module.get_finalized_function(function);
 
-    let fib = unsafe { std::mem::transmute::<*const u8, unsafe fn(i64) -> i64>(code) };
-    dbg!(unsafe { fib(11) });
+    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn(u64, u64) -> u64>(code) };
+    dbg!(unsafe { new_point(1, 1) });
 }
