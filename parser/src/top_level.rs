@@ -13,7 +13,7 @@ impl TypeBinding {
         if peek(parser) {
             Some(Self {
                 name: match r#type {
-                    Type::Identifier(ident) => ident,
+                    Type::Ident(ident) => ident,
                     // _ => return None,
                 },
                 r#type: None,
@@ -342,7 +342,7 @@ fn top_level_decl_parses() {
         }
     );
 
-    let uint_8 = Type::Identifier(Ident(String::from("UInt8")));
+    let uint_8 = Type::Ident(Ident(String::from("UInt8")));
     let source = r"type Point = struct
     UInt8 x
     UInt8 y
@@ -392,7 +392,7 @@ end";
         Union {
             variants: vec![
                 Variant(TypeBinding {
-                    r#type: Some(Type::Identifier(Ident(String::from("String")))),
+                    r#type: Some(Type::Ident(Ident(String::from("String")))),
                     name: Ident(String::from("a")),
                 }),
                 Variant(TypeBinding {
@@ -419,7 +419,7 @@ end";
         Function {
             parameters: vec![
                 Parameter(TypeBinding {
-                    r#type: Some(Type::Identifier(Ident(String::from("String")))),
+                    r#type: Some(Type::Ident(Ident(String::from("String")))),
                     name: Ident(String::from("a")),
                 }),
                 Parameter(TypeBinding {
@@ -427,7 +427,7 @@ end";
                     name: Ident(String::from("b")),
                 }),
             ],
-            return_type: Some(Type::Identifier(Ident(String::from("UInt32")))),
+            return_type: Some(Type::Ident(Ident(String::from("UInt32")))),
             body: vec![
                 Statement::Expression(Expression::Ident(Ident(String::from("a")))),
                 Statement::Expression(Expression::Ident(Ident(String::from("a"))))

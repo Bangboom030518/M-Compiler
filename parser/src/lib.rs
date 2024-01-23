@@ -57,19 +57,27 @@ impl Parse for Ident {
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub enum Type {
-    Identifier(Ident),
+    Ident(Ident),
+}
+
+impl Type {
+    pub fn ident(self) -> Ident {
+        match self {
+            Self::Ident(ident) => ident
+        }
+    }
 }
 
 impl Parse for Type {
     fn parse(parser: &mut Parser) -> Option<Self> {
-        Some(Self::Identifier(parser.parse()?))
+        Some(Self::Ident(parser.parse()?))
     }
 }
 
 impl From<Type> for Ident {
     fn from(value: Type) -> Self {
         match value {
-            Type::Identifier(ident) => ident,
+            Type::Ident(ident) => ident,
         }
     }
 }

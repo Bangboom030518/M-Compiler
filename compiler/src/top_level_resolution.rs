@@ -7,58 +7,40 @@ use cranelift::codegen::ir::{AbiParam, Signature};
 use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
-use itertools::{FoldWhile, Itertools};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Field {
+    pub r#type: Id,
+    pub offset: Offset32,
+}
+
+// TODO: Layout
+pub enum Layout {
+    Struct {
+        fields: HashMap<Ident, Field>,
+        size: u32,
+    },
+    Primitive(PrimitiveKind),
+}
+
+impl Layout {
+    pub fn size(&self) -> u32 {
+        match self {
+            Self::Primitive(primitive) => primitive.size(),
+            Self::Struct { size, .. } => *size,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Struct {
     pub fields: Vec<(Ident, Id)>,
     pub ident: Ident,
-}
-
-impl Struct {
-    pub fn size(&self, declarations: &TopLevelDeclarations) -> Result<u32, SemanticError> {
-        self.fields
-            .iter()
-            .map(|(_, type_id)| {
-                declarations
-                    .get_type(*type_id)
-                    .and_then(|r#type| r#type.size(declarations))
-            })
-            .sum::<Result<u32, _>>()
-    }
-
-    pub fn offset(
-        &self,
-        field: &Ident,
-        declarations: &TopLevelDeclarations,
-    ) -> Result<Offset32, SemanticError> {
-        let offset =
-            self.fields
-                .iter()
-                .fold_while(Ok::<_, SemanticError>(0), |offset, (name, type_id)| {
-                    if name == field {
-                        FoldWhile::Done(offset)
-                    } else {
-                        FoldWhile::Continue(offset.and_then(|offset| {
-                            Ok(
-                                offset
-                                    + declarations.get_type(*type_id)?.size(declarations)? as i32,
-                            )
-                        }))
-                    }
-                });
-
-        let FoldWhile::Done(offset) = offset else {
-            return Err(SemanticError::NonExistentField);
-        };
-
-        Ok(Offset32::new(offset?))
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,15 +54,6 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn size(&self, declarations: &TopLevelDeclarations) -> Result<u32, SemanticError> {
-        let size = match self {
-            Self::Primitive(primitive) => primitive.size(),
-            Self::Struct(r#struct) => r#struct.size(declarations)?,
-            Self::Union { .. } => todo!(),
-        };
-        Ok(size)
-    }
-
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(),
@@ -122,7 +95,7 @@ impl Function {
                 let r#type = r#type
                     .as_ref()
                     .map(|r#type| match r#type {
-                        ::parser::Type::Identifier(ident) => ident,
+                        ::parser::Type::Ident(ident) => ident,
                     })
                     .ok_or(SemanticError::UntypedParameter)?;
 
@@ -137,14 +110,13 @@ impl Function {
         signature.params = parameters
             .iter()
             .map(|r#type| {
-                let r#type = declarations.get_type(r#type.1)?;
+                let r#type = declarations.get_layout(r#type.1);
                 match r#type {
-                    Type::Primitive(primitive) => Ok(AbiParam::new(primitive.cranelift_type())),
-                    Type::Struct(r#struct) => Ok(AbiParam::special(
+                    Layout::Primitive(primitive) => Ok(AbiParam::new(primitive.cranelift_type())),
+                    Layout::Struct { size, .. } => Ok(AbiParam::special(
                         todo!(),
-                        codegen::ir::ArgumentPurpose::StructArgument(r#struct.size(declarations)?),
+                        codegen::ir::ArgumentPurpose::StructArgument(*size),
                     )),
-                    Type::Union { .. } => todo!(),
                 }
             })
             .collect::<Result<Vec<_>, SemanticError>>()?;
@@ -153,7 +125,7 @@ impl Function {
             .return_type
             .as_ref()
             .map(|r#type| match r#type {
-                ::parser::Type::Identifier(ident) => ident,
+                ::parser::Type::Ident(ident) => ident,
             })
             .ok_or(SemanticError::MissingReturnType)?;
 
@@ -329,6 +301,7 @@ pub struct TopLevelDeclarations {
     pub declarations: Vec<Option<Declaration>>,
     pub scopes: HashMap<scope::Id, TopLevelScope>,
     pub isa: Arc<dyn TargetIsa>,
+    pub layouts: HashMap<Id, Layout>,
 }
 
 impl TopLevelDeclarations {
@@ -341,11 +314,69 @@ impl TopLevelDeclarations {
             declarations: Vec::new(),
             scopes: HashMap::new(),
             isa: Arc::clone(&isa),
+            layouts: HashMap::new(),
         };
 
         declarations.append_new(file.root, &mut file.cache, module)?;
 
+        let types =
+            declarations
+                .declarations
+                .iter()
+                .enumerate()
+                .filter_map(|(index, declaration)| {
+                    declaration.and_then(|declaration| match declaration {
+                        Declaration::Type(r#type) => Some((Id(index), r#type)),
+                        _ => None,
+                    })
+                });
+
+        for (id, r#type) in types {
+            declarations.insert_layout(id)?;
+        }
+
         Ok(declarations)
+    }
+
+    fn insert_layout(&mut self, id: Id) -> Result<&Layout, SemanticError> {
+        if let Some(layout) = self.layouts.get(&id) {
+            return Ok(layout);
+        }
+
+        let layout = match self.get_type(id)? {
+            Type::Struct(r#struct) => {
+                let mut offset = 0;
+                let mut fields = HashMap::new();
+                for (name, r#type) in &r#struct.fields {
+                    fields.insert(
+                        name.clone(),
+                        Field {
+                            r#type: *r#type,
+                            offset: Offset32::new(offset as i32),
+                        },
+                    );
+                    offset += self.insert_layout(*r#type)?.size(self)?;
+                }
+                Layout::Struct {
+                    fields,
+                    size: offset,
+                }
+            }
+            Type::Union { .. } => todo!(),
+            Type::Primitive(primitive) => Layout::Primitive(*primitive),
+        };
+
+        self.layouts.insert(id, layout);
+        // TODO: `.unwrap()`
+        Ok(self.layouts.get(&id).unwrap())
+    }
+
+    /// # Panics
+    /// If a layout of `id` doesn't exist
+    pub fn get_layout(&mut self, id: Id) -> &Layout {
+        self.layouts
+            .get(&id)
+            .expect("Attempted to get non-existant layout")
     }
 
     fn append_new(
@@ -383,7 +414,7 @@ impl TopLevelDeclarations {
                                 let type_id = self
                                     .lookup(
                                         match r#type {
-                                            ::parser::Type::Identifier(identifier) => identifier,
+                                            ::parser::Type::Ident(identifier) => identifier,
                                         },
                                         r#struct.scope,
                                     )

@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub enum SemanticError {
     #[error("Number literal used as non-number")]
     UnexpectedNumberLiteral,
-    #[error("Integer literal too thicc and chonky")]
+    #[error("Integer literal too thicc, phatt and chonky")]
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
     #[error("Type resolution failed to infer the type")]
     UnknownType,

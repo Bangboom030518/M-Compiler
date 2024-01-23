@@ -1,4 +1,4 @@
-use crate::top_level_resolution::{self, Type};
+use crate::top_level_resolution::{self, Layout, Type};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
@@ -208,10 +208,11 @@ impl Value {
             Self::FieldAccess(value, field) => {
                 let r#type = value.r#type().ok_or(SemanticError::UnknownType)?;
                 let value = value.unwrap(r#type, builder)?;
-                let Type::Struct(r#struct) = builder.declarations.get_type(type_id)? else {
-                    return Err(SemanticError::NonStructFieldAccess);
-                };
-                let offset = r#struct.offset(&field, builder.declarations)?;
+                let Layout::Struct { fields, .. } = builder.declarations.get_layout(type_id);
+                let offset = fields
+                    .get(&field)
+                    .ok_or(SemanticError::NonExistentField)?
+                    .offset;
                 Ok(builder.builder.ins().load(
                     builder
                         .declarations
@@ -224,15 +225,18 @@ impl Value {
             }
             Self::Constructor { fields, type_id } => {
                 // AbiParam::special(vt, codegen::ir::ArgumentPurpose::StructArgument(()));
-                let Type::Struct(r#struct) = builder.declarations.get_type(type_id)? else {
+                let Layout::Struct {
+                    fields: type_fields,
+                    size,
+                } = builder.declarations.get_layout(type_id)
+                else {
                     return Err(SemanticError::InvalidConstructor);
                 };
 
                 let stack_slot = builder.builder.create_sized_stack_slot(StackSlotData {
                     kind: StackSlotKind::ExplicitSlot,
-                    size: r#struct.size(builder.declarations)?,
+                    size: *size,
                 });
-                let mut offset = 0;
 
                 let addr = builder.builder.ins().stack_addr(
                     builder.isa.pointer_type(),
@@ -240,30 +244,18 @@ impl Value {
                     Offset32::new(0),
                 );
 
-                // TODO: ordering
-                for (name, r#type) in &r#struct.fields {
-                    // TODO: `.clone()`
-                    let (_, value) = fields
+                for (name, field) in type_fields {
+                    let value = fields
                         .iter()
-                        .find(|(ident, _)| name == ident)
-                        .ok_or(SemanticError::MissingStructField)?
-                        .clone();
-
-                    let value = builder.builder
-                        .expression(value, Some(*r#type))?
-                        .unwrap(*r#type, builder)?;
+                        .find(|field| &field.0 == name)
+                        .ok_or(SemanticError::NonExistentField)?
+                        .1
+                        .unwrap(field.r#type, builder)?;
 
                     builder
                         .builder
                         .ins()
-                        .stack_store(value, stack_slot, Offset32::new(offset));
-
-                    let size = builder
-                        .declarations
-                        .get_type(*r#type)?
-                        .size(builder.declarations)?;
-
-                    offset += size as i32;
+                        .stack_store(value, stack_slot, field.offset);
                 }
 
                 Ok(addr)
@@ -444,7 +436,7 @@ where
                     .declarations
                     .lookup(
                         &match r#type {
-                            parser::Type::Identifier(identifier) => identifier,
+                            parser::Type::Ident(identifier) => identifier,
                         },
                         self.scope,
                     )
@@ -589,17 +581,38 @@ where
             }),
             Expression::Constructor(Constructor { r#type, fields }) => {
                 let type_id = self
-                .declarations
-                .lookup(
-                    &match r#type {
-                        parser::Type::Identifier(ident) => ident,
-                    },
-                    self.scope,
-                )
-                .ok_or(SemanticError::DeclarationNotFound)?;
+                    .declarations
+                    .lookup(
+                        &match r#type {
+                            parser::Type::Ident(ident) => ident,
+                        },
+                        self.scope,
+                    )
+                    .ok_or(SemanticError::DeclarationNotFound)?;
+
+                let Type::Struct(r#struct) = self.declarations.get_type(type_id)? else {
+                    return Err(SemanticError::InvalidConstructor);
+                };
+
                 Ok(Value::Constructor {
                     type_id,
-                    fields: fields.iter().map(|(ident, expression)| self.expression(expression, r#type))
+                    fields: fields
+                        .into_iter()
+                        .map(|(ident, expression)| {
+                            let value = self.expression(
+                                *expression,
+                                Some(
+                                    r#struct
+                                        .fields
+                                        .iter()
+                                        .find(|(name, _)| name == &ident)
+                                        .ok_or(SemanticError::NonExistentField)?
+                                        .1,
+                                ),
+                            )?;
+                            Ok((ident, value))
+                        })
+                        .collect::<Result<_, SemanticError>>()?,
                 })
             }
             Expression::FieldAccess(expression, field) => Ok(Value::FieldAccess(
