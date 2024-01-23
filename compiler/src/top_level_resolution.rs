@@ -7,6 +7,7 @@ use cranelift::codegen::ir::{AbiParam, Signature};
 use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ pub struct Field {
     pub offset: Offset32,
 }
 
-// TODO: Layout
+#[derive(Clone, Debug, PartialEq)]
 pub enum Layout {
     Struct {
         fields: HashMap<Ident, Field>,
@@ -34,7 +35,7 @@ impl Layout {
             Self::Primitive(primitive) => primitive.size(),
             Self::Struct { size, .. } => *size,
         }
-    }
+    }    
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,7 +79,7 @@ pub struct Function {
 }
 
 impl Function {
-    // FIXME: signature generation must happen on a second walk of tree
+    // TODO: memcpy for structs
     pub fn new(
         function: ::parser::top_level::Function,
         declarations: &TopLevelDeclarations,
@@ -307,43 +308,28 @@ pub struct TopLevelDeclarations {
 impl TopLevelDeclarations {
     pub fn new(
         mut file: scope::File,
-        isa: Arc<dyn TargetIsa>,
+        isa: &Arc<dyn TargetIsa>,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let mut declarations = Self {
             declarations: Vec::new(),
             scopes: HashMap::new(),
-            isa: Arc::clone(&isa),
+            isa: Arc::clone(isa),
             layouts: HashMap::new(),
         };
 
         declarations.append_new(file.root, &mut file.cache, module)?;
 
-        let types =
-            declarations
-                .declarations
-                .iter()
-                .enumerate()
-                .filter_map(|(index, declaration)| {
-                    declaration.and_then(|declaration| match declaration {
-                        Declaration::Type(r#type) => Some((Id(index), r#type)),
-                        _ => None,
-                    })
-                });
-
-        for (id, r#type) in types {
-            declarations.insert_layout(id)?;
-        }
-
         Ok(declarations)
     }
 
-    fn insert_layout(&mut self, id: Id) -> Result<&Layout, SemanticError> {
+    fn insert_layout(&mut self, id: Id) -> Result<Layout, SemanticError> {
+        // TODO: clones
         if let Some(layout) = self.layouts.get(&id) {
-            return Ok(layout);
+            return Ok(layout.clone());
         }
 
-        let layout = match self.get_type(id)? {
+        let layout = match self.get_type(id)?.clone() {
             Type::Struct(r#struct) => {
                 let mut offset = 0;
                 let mut fields = HashMap::new();
@@ -355,7 +341,8 @@ impl TopLevelDeclarations {
                             offset: Offset32::new(offset as i32),
                         },
                     );
-                    offset += self.insert_layout(*r#type)?.size(self)?;
+                    let layout = self.insert_layout(*r#type)?;
+                    offset += layout.size();
                 }
                 Layout::Struct {
                     fields,
@@ -363,17 +350,17 @@ impl TopLevelDeclarations {
                 }
             }
             Type::Union { .. } => todo!(),
-            Type::Primitive(primitive) => Layout::Primitive(*primitive),
+            Type::Primitive(primitive) => Layout::Primitive(primitive),
         };
 
         self.layouts.insert(id, layout);
         // TODO: `.unwrap()`
-        Ok(self.layouts.get(&id).unwrap())
+        Ok(self.layouts.get(&id).unwrap().clone())
     }
 
     /// # Panics
     /// If a layout of `id` doesn't exist
-    pub fn get_layout(&mut self, id: Id) -> &Layout {
+    pub fn get_layout(&self, id: Id) -> &Layout {
         self.layouts
             .get(&id)
             .expect("Attempted to get non-existant layout")
@@ -433,6 +420,24 @@ impl TopLevelDeclarations {
                 DeclarationKind::Function(function) => functions.push((function, id, name)),
                 DeclarationKind::Const(_) => todo!(),
             }
+        }
+
+        let types = self
+            .declarations
+            .iter()
+            .enumerate()
+            .filter_map(|(index, declaration)| {
+                declaration
+                    .as_ref()
+                    .and_then(|declaration| match declaration {
+                        Declaration::Type(_) => Some(Id(index)),
+                        Declaration::Function(_) => None,
+                    })
+            })
+            .collect_vec();
+
+        for id in types {
+            self.insert_layout(id)?;
         }
 
         for (function, id, name) in functions {

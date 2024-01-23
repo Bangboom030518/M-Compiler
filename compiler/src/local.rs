@@ -1,4 +1,4 @@
-use crate::top_level_resolution::{self, Layout, Type};
+use crate::top_level_resolution::{self, Layout, TopLevelDeclarations, Type};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
@@ -93,8 +93,8 @@ impl Value {
             }
             Self::Binary(left, right, operator) => {
                 let type_id = left
-                    .r#type()
-                    .or_else(|| right.r#type())
+                    .r#type(builder.declarations)
+                    .or_else(|| right.r#type(builder.declarations))
                     .ok_or(SemanticError::UnknownType)?;
                 let left = left.unwrap(type_id, builder)?;
                 let right = right.unwrap(type_id, builder)?;
@@ -146,7 +146,9 @@ impl Value {
                 mut then_branch,
                 mut else_branch,
             } => {
-                let condition_type = condition.r#type().ok_or(SemanticError::UnknownType)?;
+                let condition_type = condition
+                    .r#type(builder.declarations)
+                    .ok_or(SemanticError::UnknownType)?;
                 let condition = condition.unwrap(condition_type, builder)?;
 
                 let then_block = builder.builder.create_block();
@@ -206,13 +208,20 @@ impl Value {
                 Ok(builder.builder.block_params(merge_block)[0])
             }
             Self::FieldAccess(value, field) => {
-                let r#type = value.r#type().ok_or(SemanticError::UnknownType)?;
-                let value = value.unwrap(r#type, builder)?;
-                let Layout::Struct { fields, .. } = builder.declarations.get_layout(type_id);
+                let struct_id = value
+                    .r#type(builder.declarations)
+                    .ok_or(SemanticError::UnknownType)?;
+                let value = value.unwrap(struct_id, builder)?;
+                let Layout::Struct { fields, .. } = builder.declarations.get_layout(struct_id)
+                else {
+                    return Err(SemanticError::NonStructFieldAccess);
+                };
+
                 let offset = fields
                     .get(&field)
                     .ok_or(SemanticError::NonExistentField)?
                     .offset;
+
                 Ok(builder.builder.ins().load(
                     builder
                         .declarations
@@ -249,6 +258,7 @@ impl Value {
                         .iter()
                         .find(|field| &field.0 == name)
                         .ok_or(SemanticError::NonExistentField)?
+                        .clone()
                         .1
                         .unwrap(field.r#type, builder)?;
 
@@ -264,11 +274,17 @@ impl Value {
     }
 
     // TODO: This does not infer deeply nested values types
-    pub const fn r#type(&self) -> Option<top_level_resolution::Id> {
-        let Self::Cranelift(_, r#type) = self else {
-            return None;
-        };
-        Some(*r#type)
+    pub fn r#type(&self, declarations: &TopLevelDeclarations) -> Option<top_level_resolution::Id> {
+        match self {
+            Self::Cranelift(_, type_id) | Self::Constructor { type_id, .. } => Some(*type_id),
+            Self::FieldAccess(r#struct, field) => {
+                match declarations.get_layout(r#struct.r#type(declarations)?) {
+                    Layout::Primitive(_) => None,
+                    Layout::Struct { fields, .. } => fields.get(field).map(|field| field.r#type),
+                }
+            }
+            _ => None,
+        }
     }
 }
 
@@ -302,7 +318,7 @@ where
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
                 let value = self.expression(expression, r#type)?;
-                if r#type == value.r#type() {
+                if r#type == value.r#type(self.declarations) {
                     return Err(SemanticError::InvalidAssignment);
                 };
                 // TODO: inference
@@ -313,21 +329,23 @@ where
             parser::Statement::Let(ident, expression) => {
                 let value = self.expression(expression, None)?;
                 let variable = self.create_variable();
-                let m_type = match value.r#type() {
+
+                let m_type = match value.r#type(self.declarations) {
                     Some(r#type) => Some(self.declarations.get_type(r#type)?.clone()),
                     None => None,
                 };
-                // self.builder.func.stencil.create_memory_type(codegen::ir::MemoryTypeData::Memory { size: () });
 
-                let cranelift_type =
-                    m_type.map_or_else(|| todo!(), |r#type| r#type.cranelift_type(&self.isa));
+                let cranelift_type = m_type.map_or_else(
+                    || todo!("type inference"),
+                    |r#type| r#type.cranelift_type(&self.isa),
+                );
 
                 self.builder.declare_var(variable, cranelift_type);
-                self.names.insert(ident, (variable, value.r#type()));
-                // TODO: lazily promote
-                // TODO: type inference
+                self.names
+                    .insert(ident, (variable, value.r#type(self.declarations)));
+
                 // TODO: `.unwrap()`
-                let r#type = value.r#type().unwrap();
+                let r#type = value.r#type(self.declarations).unwrap();
                 let value = value.unwrap(r#type, self)?;
 
                 self.builder.def_var(variable, value);
@@ -424,8 +442,8 @@ where
         match intrinsic {
             IntrinsicCall::Binary(left, right, operator) => {
                 let mut left = self.expression(*left, None)?;
-                let right = self.expression(*right, left.r#type())?;
-                if let Some(r#type) = right.r#type() {
+                let right = self.expression(*right, left.r#type(self.declarations))?;
+                if let Some(r#type) = right.r#type(self.declarations) {
                     // TODO: `.clone()`
                     left = Value::Cranelift(left.unwrap(r#type, self)?, r#type);
                 }
@@ -549,12 +567,15 @@ where
                     .names
                     .get(&ident)
                     .ok_or(SemanticError::DeclarationNotFound)?;
+
                 if let (Some(r#type), Some(variable)) = (r#type, variable.1) {
                     if r#type != variable {
-                        // dbg!(&ident);
+                        dbg!(&self.declarations.get_layout(r#type));
+                        dbg!(&self.declarations.get_layout(variable));
                         return Err(SemanticError::MismatchedTypes);
                     }
                 };
+
                 Ok(Value::Cranelift(
                     self.builder.use_var(variable.0),
                     variable.1.unwrap_or_else(|| todo!()),
@@ -563,7 +584,7 @@ where
             Expression::Call(call) => {
                 let value = self.call(call)?;
                 if let r#type @ Some(_) = r#type {
-                    if r#type != value.r#type() {
+                    if r#type != value.r#type(self.declarations) {
                         dbg!();
                         return Err(SemanticError::MismatchedTypes);
                     }
@@ -616,7 +637,7 @@ where
                 })
             }
             Expression::FieldAccess(expression, field) => Ok(Value::FieldAccess(
-                Box::new(self.expression(*expression, r#type)?),
+                Box::new(self.expression(*expression, None)?),
                 field,
             )),
             Expression::Binary(_) => todo!(),

@@ -68,7 +68,7 @@ fn main() {
     let mut module = cranelift_jit::JITModule::new(builder);
 
     let declarations =
-        top_level_resolution::TopLevelDeclarations::new(file, isa, &mut module).unwrap();
+        top_level_resolution::TopLevelDeclarations::new(file, &isa, &mut module).unwrap();
 
     let mut context = top_level_resolution::CraneliftContext::new(module);
 
