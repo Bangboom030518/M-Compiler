@@ -40,33 +40,26 @@ impl Layout {
     pub const fn is_aggregate(&self) -> bool {
         matches!(self, Self::Struct { .. })
     }
+
+    pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
+        match self {
+            Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(),
+            Self::Struct { .. } => isa.pointer_type(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Struct {
-    pub fields: Vec<(Ident, Id)>,
-    pub ident: Ident,
-}
-
-// TODO: make private
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Type {
-    Struct(Struct),
+enum Type {
+    Struct {
+        fields: Vec<(Ident, Id)>,
+        ident: Ident,
+    },
     Union {
         variants: Vec<(Ident, Id)>,
         ident: Ident,
     },
     Primitive(PrimitiveKind),
-}
-
-impl Type {
-    pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
-        match self {
-            Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(),
-            Self::Struct(_) => isa.pointer_type(),
-            Self::Union { .. } => todo!(),
-        }
-    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -224,7 +217,7 @@ impl Function {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
                 let r#type = declarations
-                    .get_type(type_id)?
+                    .get_layout(type_id)
                     .cranelift_type(&declarations.isa);
                 builder.declare_var(variable, r#type);
                 builder.def_var(variable, value);
@@ -281,13 +274,6 @@ pub enum Declaration {
 }
 
 impl Declaration {
-    pub const fn expect_type(&self) -> Result<&Type, SemanticError> {
-        match self {
-            Self::Type(r#type) => Ok(r#type),
-            Self::Function(_) => Err(SemanticError::FunctionUsedAsType),
-        }
-    }
-
     pub const fn expect_function(&self) -> Result<&Function, SemanticError> {
         match self {
             Self::Function(function) => Ok(function),
@@ -346,12 +332,16 @@ impl TopLevelDeclarations {
             return Ok(layout.clone());
         }
 
-        let layout = match self.get_type(id)?.clone() {
-            Type::Struct(r#struct) => {
+        let Declaration::Type(r#type) = self.get(id) else {
+            return Err(SemanticError::FunctionUsedAsType);
+        };
+
+        let layout = match r#type.clone() {
+            Type::Struct { fields, .. } => {
                 let mut offset = 0;
-                let mut fields = HashMap::new();
-                for (name, r#type) in &r#struct.fields {
-                    fields.insert(
+                let mut layout_fields = HashMap::new();
+                for (name, r#type) in &fields {
+                    layout_fields.insert(
                         name.clone(),
                         Field {
                             r#type: *r#type,
@@ -362,7 +352,7 @@ impl TopLevelDeclarations {
                     offset += layout.size();
                 }
                 Layout::Struct {
-                    fields,
+                    fields: layout_fields,
                     size: offset,
                 }
             }
@@ -409,26 +399,25 @@ impl TopLevelDeclarations {
                 DeclarationKind::Struct(r#struct) => {
                     self.append_new(r#struct.scope, scope_cache, module)?;
 
-                    let r#type = Struct {
-                        fields: r#struct
-                            .fields
-                            .iter()
-                            .map(|top_level::Field { r#type, name }| {
-                                // TODO: will need to handle generics
-                                let type_id = self
-                                    .lookup(
-                                        match r#type {
-                                            ::parser::Type::Ident(identifier) => identifier,
-                                        },
-                                        r#struct.scope,
-                                    )
-                                    .ok_or(SemanticError::DeclarationNotFound)?;
-                                Ok((name.clone(), type_id))
-                            })
-                            .collect::<Result<Vec<_>, SemanticError>>()?,
-                        ident: name.clone(),
-                    };
-                    self.initialise(id, Declaration::Type(Type::Struct(r#type)));
+                    let fields = r#struct
+                        .fields
+                        .iter()
+                        .map(|top_level::Field { r#type, name }| {
+                            // TODO: will need to handle generics
+                            let type_id = self
+                                .lookup(
+                                    match r#type {
+                                        ::parser::Type::Ident(identifier) => identifier,
+                                    },
+                                    r#struct.scope,
+                                )
+                                .ok_or(SemanticError::DeclarationNotFound)?;
+                            Ok((name.clone(), type_id))
+                        })
+                        .collect::<Result<Vec<_>, SemanticError>>()?;
+
+                    let ident = name.clone();
+                    self.initialise(id, Declaration::Type(Type::Struct { ident, fields }));
                 }
                 DeclarationKind::Union(_) => todo!("unions!"),
                 DeclarationKind::Primitive(primitive) => {
@@ -479,10 +468,6 @@ impl TopLevelDeclarations {
     #[must_use]
     pub fn get(&self, Id(id): Id) -> &Declaration {
         self.declarations.get(id).unwrap().as_ref().unwrap()
-    }
-
-    pub fn get_type(&self, id: Id) -> Result<&Type, SemanticError> {
-        self.get(id).expect_type()
     }
 
     pub fn get_function(&self, id: Id) -> Result<&Function, SemanticError> {

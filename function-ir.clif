@@ -6,14 +6,14 @@ function u0:0(i64, i64) -> i64 windows_fastcall {
 
 block0(v0: i64, v1: i64):
     v2 = stack_addr.i64 ss0
-    v8 = stack_addr.i64 ss0
-    store notrap v0, v8
-    v9 = stack_addr.i64 ss0+8
-    store notrap v1, v9
+    v8 = stack_addr.i64 ss0+8
+    store notrap v1, v8
+    v9 = stack_addr.i64 ss0
+    store notrap v0, v9
     v3 = stack_addr.i64 ss1
     v4 = call fn0(v2, v3)
-    v5 = load.i64 v4
-    v6 = load.i64 v4+8
+    v5 = load.i64 v2
+    v6 = load.i64 v2+8
     v7 = iadd v5, v6
     return v7
 }
@@ -21,7 +21,7 @@ function u0:0(i64 sarg(16), i64) -> i64 windows_fastcall {
     ss0 = explicit_slot 16
     sig0 = (i64, i64) -> i64 windows_fastcall
     sig1 = (i64, i64, i64) -> i64 windows_fastcall
-    fn0 = colocated u0:0 sig0
+    fn0 = colocated u0:2 sig0
     fn1 = %Memcpy sig1
 
 block0(v0: i64, v1: i64):
@@ -30,11 +30,11 @@ block0(v0: i64, v1: i64):
     v4 = call fn0(v2, v3)  ; v3 = 100
     store v4, v0
     v5 = stack_addr.i64 ss0
-    v6 = load.i64 v0
-    v10 = stack_addr.i64 ss0
+    v6 = load.i64 v0+8
+    v10 = stack_addr.i64 ss0+8
     store notrap v6, v10
-    v7 = load.i64 v0+8
-    v11 = stack_addr.i64 ss0+8
+    v7 = load.i64 v0
+    v11 = stack_addr.i64 ss0
     store notrap v7, v11
     v8 = iconst.i64 16
     v9 = call fn1(v1, v5, v8)  ; v8 = 16

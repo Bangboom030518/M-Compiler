@@ -1,7 +1,6 @@
-use crate::top_level_resolution::{self, Layout, TopLevelDeclarations, Type};
+use crate::top_level_resolution::{self, Layout, TopLevelDeclarations};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
-use cranelift::codegen::isa::TargetIsa;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::control_flow::If;
@@ -12,8 +11,8 @@ use parser::prelude::Literal;
 use parser::top_level::PrimitiveKind;
 use parser::Expression;
 use std::collections::HashMap;
-use std::sync::Arc;
 
+// TODO: primitive as variant, remove `Cranelift` variant
 #[derive(Debug, Clone)]
 pub enum Value {
     Cranelift(cranelift::prelude::Value, top_level_resolution::Id),
@@ -40,11 +39,11 @@ impl Value {
         type_id: top_level_resolution::Id,
         builder: &mut FunctionBuilder<impl Module>,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
-        let r#type = builder.declarations.get_type(type_id)?;
+        let layout = builder.declarations.get_layout(type_id);
         // TODO: support unsigned integers
         match self {
             Self::UnknownIntegerConst(int) => {
-                let Type::Primitive(r#type) = r#type else {
+                let Layout::Primitive(r#type) = layout else {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
@@ -59,7 +58,7 @@ impl Value {
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
             }
             Self::UnknownSignedIntegerConst(int) => {
-                let Type::Primitive(r#type) = r#type else {
+                let Layout::Primitive(r#type) = layout else {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
@@ -73,12 +72,12 @@ impl Value {
                 };
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
             }
-            Self::UnknownFloatConst(float) => match r#type {
+            Self::UnknownFloatConst(float) => match layout {
                 // TODO: as
-                Type::Primitive(PrimitiveKind::F32) => {
+                Layout::Primitive(PrimitiveKind::F32) => {
                     Ok(builder.builder.ins().f32const(Ieee32::from(float as f32)))
                 }
-                Type::Primitive(PrimitiveKind::F64) => {
+                Layout::Primitive(PrimitiveKind::F64) => {
                     Ok(builder.builder.ins().f64const(Ieee64::from(float)))
                 }
                 _ => Err(SemanticError::UnexpectedNumberLiteral),
@@ -98,13 +97,13 @@ impl Value {
                     .ok_or(SemanticError::UnknownType)?;
                 let left = left.unwrap(type_id, builder)?;
                 let right = right.unwrap(type_id, builder)?;
-                let r#type = builder.declarations.get_type(type_id)?;
+                let layout = builder.declarations.get_layout(type_id);
 
                 match operator {
                     IntrinsicOperator::Add => Ok(builder.builder.ins().iadd(left, right)),
                     IntrinsicOperator::Sub => Ok(builder.builder.ins().isub(left, right)),
                     IntrinsicOperator::Cmp(operator) => {
-                        let Type::Primitive(r#type) = r#type else {
+                        let Layout::Primitive(r#type) = layout else {
                             todo!()
                         };
                         if r#type.is_signed_integer() {
@@ -157,8 +156,8 @@ impl Value {
 
                 builder.builder.append_block_param(
                     merge_block,
-                    match r#type {
-                        Type::Primitive(r#type) => r#type.cranelift_type(),
+                    match layout {
+                        Layout::Primitive(r#type) => r#type.cranelift_type(),
                         _ => todo!(),
                     },
                 );
@@ -225,7 +224,7 @@ impl Value {
                 Ok(builder.builder.ins().load(
                     builder
                         .declarations
-                        .get_type(type_id)?
+                        .get_layout(type_id)
                         .cranelift_type(&builder.declarations.isa),
                     MemFlags::new(),
                     value,
@@ -355,14 +354,14 @@ where
                 let value = self.expression(expression, None)?;
                 let variable = self.create_variable();
 
-                let m_type = match value.r#type(self.declarations) {
-                    Some(r#type) => Some(self.declarations.get_type(r#type)?.clone()),
+                let layout = match value.r#type(self.declarations) {
+                    Some(r#type) => Some(self.declarations.get_layout(r#type).clone()),
                     None => None,
                 };
 
-                let cranelift_type = m_type.map_or_else(
+                let cranelift_type = layout.map_or_else(
                     || todo!("type inference"),
-                    |r#type| r#type.cranelift_type(&self.declarations.isa),
+                    |layout| layout.cranelift_type(&self.declarations.isa),
                 );
 
                 self.builder.declare_var(variable, cranelift_type);
@@ -421,14 +420,11 @@ where
         int: u128,
         type_id: Option<top_level_resolution::Id>,
     ) -> Result<Value, SemanticError> {
-        let Some(r#type) = type_id
-            .map(|r#type| self.declarations.get_type(r#type))
-            .transpose()?
-        else {
+        let Some(r#type) = type_id.map(|id| self.declarations.get_layout(id)) else {
             return Ok(Value::UnknownIntegerConst(int));
         };
 
-        let Type::Primitive(r#type) = r#type else {
+        let Layout::Primitive(r#type) = r#type else {
             return Err(SemanticError::UnexpectedNumberLiteral);
         };
 
@@ -454,20 +450,17 @@ where
     ) -> Result<Value, SemanticError> {
         // TODO: `.unwrap()`
         // TODO: refactor
-        let Some(r#type) = type_id
-            .map(|r#type| self.declarations.get_type(r#type))
-            .transpose()?
-        else {
+        let Some(layout) = type_id.map(|type_id| self.declarations.get_layout(type_id)) else {
             return Ok(Value::UnknownFloatConst(float));
         };
 
-        let value = match r#type {
+        let value = match layout {
             // TODO: `as`
-            Type::Primitive(PrimitiveKind::F32) => Value::Cranelift(
+            Layout::Primitive(PrimitiveKind::F32) => Value::Cranelift(
                 self.builder.ins().f32const(Ieee32::from(float as f32)),
                 type_id.unwrap(),
             ),
-            Type::Primitive(PrimitiveKind::F64) => Value::Cranelift(
+            Layout::Primitive(PrimitiveKind::F64) => Value::Cranelift(
                 self.builder.ins().f64const(Ieee64::from(float)),
                 type_id.unwrap(),
             ),
@@ -523,14 +516,12 @@ where
     ) -> Result<Value, SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
-                let Some(r#type) = type_id
-                    .map(|r#type| self.declarations.get_type(r#type))
-                    .transpose()?
+                let Some(r#type) = type_id.map(|type_id| self.declarations.get_layout(type_id))
                 else {
                     return Ok(Value::UnknownSignedIntegerConst(-i128::try_from(integer)?));
                 };
 
-                let Type::Primitive(r#type) = r#type else {
+                let Layout::Primitive(r#type) = r#type else {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
@@ -673,7 +664,11 @@ where
                     )
                     .ok_or(SemanticError::DeclarationNotFound)?;
 
-                let Type::Struct(r#struct) = self.declarations.get_type(type_id)? else {
+                let Layout::Struct {
+                    fields: layout_fields,
+                    ..
+                } = self.declarations.get_layout(type_id)
+                else {
                     return Err(SemanticError::InvalidConstructor);
                 };
 
@@ -685,12 +680,12 @@ where
                             let value = self.expression(
                                 *expression,
                                 Some(
-                                    r#struct
-                                        .fields
+                                    layout_fields
                                         .iter()
-                                        .find(|(name, _)| name == &ident)
+                                        .find(|(name, _)| *name == &ident)
                                         .ok_or(SemanticError::NonExistentField)?
-                                        .1,
+                                        .1
+                                        .r#type,
                                 ),
                             )?;
                             Ok((ident, value))
