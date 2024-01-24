@@ -35,5 +35,14 @@ fn new_point = (UInt64 x, UInt64 y) UInt64
         x = x,
         y = y,
     end
+    point = add_1_to_x(point)
     @add(point.x, point.y)
+end
+
+fn add_1_to_x = (Point point) Point
+    point.x = add(point.x, 100)
+    Point
+        x = point.x,
+        y = point.y,
+    end
 end

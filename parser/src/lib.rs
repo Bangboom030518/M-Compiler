@@ -91,7 +91,7 @@ pub enum Statement {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Assignment(pub Ident, pub Expression);
+pub struct Assignment(pub Expression, pub Expression);
 
 impl Parse for Assignment {
     fn parse(parser: &mut Parser) -> Option<Self> {

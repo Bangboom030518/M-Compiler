@@ -226,7 +226,7 @@ impl Value {
                     builder
                         .declarations
                         .get_type(type_id)?
-                        .cranelift_type(&builder.isa),
+                        .cranelift_type(&builder.declarations.isa),
                     MemFlags::new(),
                     value,
                     offset,
@@ -248,7 +248,7 @@ impl Value {
                 });
 
                 let addr = builder.builder.ins().stack_addr(
-                    builder.isa.pointer_type(),
+                    builder.declarations.isa.pointer_type(),
                     stack_slot,
                     Offset32::new(0),
                 );
@@ -296,7 +296,6 @@ pub struct FunctionBuilder<'a, M> {
     pub names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
     pub builder: cranelift::prelude::FunctionBuilder<'a>,
     pub new_variable_index: usize,
-    pub isa: Arc<dyn TargetIsa>,
 }
 
 impl<'a, M> FunctionBuilder<'a, M>
@@ -312,19 +311,45 @@ where
     pub fn handle_statement(&mut self, statement: parser::Statement) -> Result<(), SemanticError> {
         match statement {
             parser::Statement::Assignment(parser::Assignment(name, expression)) => {
-                let (variable, r#type) = *self
-                    .names
-                    .get(&name)
-                    .ok_or(SemanticError::DeclarationNotFound)?;
+                match name {
+                    Expression::Ident(name) => {
+                        let (variable, r#type) = *self
+                            .names
+                            .get(&name)
+                            .ok_or(SemanticError::DeclarationNotFound)?;
 
-                let value = self.expression(expression, r#type)?;
-                if r#type == value.r#type(self.declarations) {
-                    return Err(SemanticError::InvalidAssignment);
-                };
-                // TODO: inference
-                let value = value.unwrap(r#type.unwrap(), self)?;
+                        let value = self.expression(expression, r#type)?;
+                        if r#type != value.r#type(self.declarations) {
+                            return Err(SemanticError::InvalidAssignment);
+                        };
+                        // TODO: inference
+                        let value = value.unwrap(r#type.unwrap(), self)?;
 
-                self.builder.def_var(variable, value);
+                        self.builder.def_var(variable, value);
+                    }
+                    Expression::FieldAccess(left, field) => {
+                        let left = self.expression(*left, None)?;
+                        let struct_id = left
+                            .r#type(self.declarations)
+                            .ok_or(SemanticError::UnknownType)?;
+                        let pointer = left.unwrap(struct_id, self)?;
+                        let Layout::Struct { fields, .. } = self.declarations.get_layout(struct_id)
+                        else {
+                            return Err(SemanticError::NonStructFieldAccess);
+                        };
+
+                        let field = fields.get(&field).ok_or(SemanticError::NonExistentField)?;
+
+                        let value = self
+                            .expression(expression, Some(field.r#type))?
+                            .unwrap(field.r#type, self)?;
+
+                        self.builder
+                            .ins()
+                            .store(MemFlags::new(), value, pointer, field.offset);
+                    }
+                    _ => todo!("assign to arbitirary expression"),
+                }
             }
             parser::Statement::Let(ident, expression) => {
                 let value = self.expression(expression, None)?;
@@ -337,7 +362,7 @@ where
 
                 let cranelift_type = m_type.map_or_else(
                     || todo!("type inference"),
-                    |r#type| r#type.cranelift_type(&self.isa),
+                    |r#type| r#type.cranelift_type(&self.declarations.isa),
                 );
 
                 self.builder.declare_var(variable, cranelift_type);
@@ -351,12 +376,37 @@ where
                 self.builder.def_var(variable, value);
             }
             parser::Statement::Expression(expression) => {
+                // TODO: add(return 1, 2)
                 if let Expression::Return(expression) = expression {
                     let value = self
                         .expression(*expression, Some(self.r#return))?
                         .unwrap(self.r#return, self)?;
+                    let layout = self.declarations.get_layout(self.r#return);
+                    if layout.is_aggregate() {
+                        let dest = self.builder.use_var(Variable::new(
+                            top_level_resolution::AGGREGATE_PARAM_VARIABLE,
+                        ));
 
-                    self.builder.ins().return_(&[value]);
+                        let addr = self.builder.ins().iconst(
+                            self.declarations.isa.pointer_type(),
+                            i64::from(layout.size()),
+                        );
+
+                        self.builder.call_memcpy(
+                            self.declarations.isa.frontend_config(),
+                            dest,
+                            value,
+                            addr,
+                        );
+
+                        let dest = self.builder.use_var(Variable::new(
+                            top_level_resolution::AGGREGATE_PARAM_VARIABLE,
+                        ));
+
+                        self.builder.ins().return_(&[dest]);
+                    } else {
+                        self.builder.ins().return_(&[value]);
+                    }
                 } else {
                     self.expression(expression, None)?;
                 }
@@ -526,7 +576,7 @@ where
             return Err(SemanticError::InvalidNumberOfArguments);
         }
 
-        let arguments = arguments
+        let mut arguments = arguments
             .into_iter()
             .zip(&function.parameters)
             .map(|(expression, (_, r#type))| {
@@ -539,10 +589,22 @@ where
             .module
             .declare_func_in_func(function.id, self.builder.func);
 
-        // let stack_slot = self
-        //     .builder
-        //     .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 12));
-        // let value = cranelift::prelude::Value::from_u32(stack_slot.as_u32());
+        if matches!(
+            self.declarations.get_layout(function.r#return),
+            Layout::Struct { .. }
+        ) {
+            let stack_slot = self
+                .builder
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 12));
+
+            let addr = self.builder.ins().stack_addr(
+                self.declarations.isa.pointer_type(),
+                stack_slot,
+                Offset32::new(0),
+            );
+
+            arguments.push(addr);
+        }
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
         let value = self.builder.inst_results(call)[0];

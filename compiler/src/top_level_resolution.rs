@@ -20,7 +20,7 @@ pub struct Field {
     pub offset: Offset32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Layout {
     Struct {
         fields: HashMap<Ident, Field>,
@@ -35,7 +35,11 @@ impl Layout {
             Self::Primitive(primitive) => primitive.size(),
             Self::Struct { size, .. } => *size,
         }
-    }    
+    }
+
+    pub const fn is_aggregate(&self) -> bool {
+        matches!(self, Self::Struct { .. })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,6 +48,7 @@ pub struct Struct {
     pub ident: Ident,
 }
 
+// TODO: make private
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Struct(Struct),
@@ -77,6 +82,9 @@ pub struct Function {
     pub id: FuncId,
     pub name: Ident,
 }
+
+pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
+pub const SPECIAL_VARIABLES: &[usize] = &[AGGREGATE_PARAM_VARIABLE];
 
 impl Function {
     // TODO: memcpy for structs
@@ -115,7 +123,7 @@ impl Function {
                 match r#type {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(primitive.cranelift_type())),
                     Layout::Struct { size, .. } => Ok(AbiParam::special(
-                        todo!(),
+                        declarations.isa.pointer_type(),
                         codegen::ir::ArgumentPurpose::StructArgument(*size),
                     )),
                 }
@@ -134,15 +142,16 @@ impl Function {
             .lookup(return_type, scope)
             .ok_or(SemanticError::DeclarationNotFound)?;
 
-        let return_type = declarations.get_type(return_type_id)?;
-
+        let return_type = declarations.get_layout(return_type_id);
         let r#return = match return_type {
-            Type::Primitive(primitive) => AbiParam::new(primitive.cranelift_type()),
-            Type::Struct(r#struct) => AbiParam::special(
-                declarations.isa.pointer_type(),
-                codegen::ir::ArgumentPurpose::StructReturn,
-            ),
-            Type::Union { .. } => todo!(),
+            Layout::Primitive(primitive) => AbiParam::new(primitive.cranelift_type()),
+            Layout::Struct { .. } => {
+                signature
+                    .params
+                    .push(AbiParam::new(declarations.isa.pointer_type()));
+
+                AbiParam::new(declarations.isa.pointer_type())
+            }
         };
         signature.returns = vec![r#return];
 
@@ -196,14 +205,23 @@ impl Function {
         builder.seal_block(entry_block);
 
         // TODO: `to_vec()`?
-        let block_params = builder.block_params(entry_block).to_vec();
+        let mut block_params = builder.block_params(entry_block).to_vec();
+
+        if declarations.get_layout(self.r#return).is_aggregate() {
+            let param = block_params
+                .pop()
+                .expect("aggregate return param not found");
+            let variable = Variable::new(0);
+            builder.declare_var(variable, declarations.isa.pointer_type());
+            builder.def_var(variable, param);
+        };
 
         let names = parameters
             .into_iter()
             .zip(block_params)
             .enumerate()
             .map(|(index, ((name, type_id), value))| {
-                let variable = Variable::new(index);
+                let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
                 let r#type = declarations
                     .get_type(type_id)?
@@ -218,11 +236,10 @@ impl Function {
             declarations,
             r#return,
             scope,
-            new_variable_index: names.len(),
+            new_variable_index: names.len() + SPECIAL_VARIABLES.len(),
             names,
             builder,
             module: &mut cranelift_context.module,
-            isa: Arc::clone(&declarations.isa),
         };
 
         for statement in body {
