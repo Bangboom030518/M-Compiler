@@ -10,10 +10,10 @@ function u0:0(i64, i64) -> i64 windows_fastcall {
 
 block0(v0: i64, v1: i64):
     v2 = stack_addr.i64 ss0
-    v7 = stack_addr.i64 ss0+8
-    store notrap v1, v7
-    v8 = stack_addr.i64 ss0
-    store notrap v0, v8
+    v7 = stack_addr.i64 ss0
+    store notrap v0, v7
+    v8 = stack_addr.i64 ss0+8
+    store notrap v1, v8
     v3 = call fn0(v2)
     v4 = load.i64 v2
     v5 = load.i64 v2+8

@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
-
+mod hir;
 mod declarations;
 mod function;
 mod layout;

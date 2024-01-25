@@ -1,7 +1,6 @@
 use crate::declarations;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::top_level::PrimitiveKind;
 use parser::Ident;
 use std::collections::HashMap;
 use std::sync::Arc;
