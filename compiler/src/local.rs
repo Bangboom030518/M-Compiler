@@ -1,4 +1,5 @@
-use crate::top_level_resolution::{self, Layout, TopLevelDeclarations};
+use crate::declarations::{self, Declarations};
+use crate::layout::{Layout, Primitive};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
@@ -8,14 +9,13 @@ use parser::expression::{
     Call, CmpOperator, Constructor, IntrinsicCall, IntrinsicOperator, UnaryOperator,
 };
 use parser::prelude::Literal;
-use parser::top_level::PrimitiveKind;
 use parser::Expression;
 use std::collections::HashMap;
 
 // TODO: primitive as variant, remove `Cranelift` variant
 #[derive(Debug, Clone)]
 pub enum Value {
-    Cranelift(cranelift::prelude::Value, top_level_resolution::Id),
+    Cranelift(cranelift::prelude::Value, declarations::Id),
     UnknownSignedIntegerConst(i128),
     UnknownIntegerConst(u128),
     UnknownFloatConst(f64),
@@ -28,15 +28,16 @@ pub enum Value {
     FieldAccess(Box<Value>, parser::Ident),
     Constructor {
         fields: Vec<(parser::Ident, Value)>,
-        type_id: top_level_resolution::Id,
+        type_id: declarations::Id,
     },
+    MutablePointer(Box<Value>),
 }
 
 impl Value {
     /// remove unknowns
     fn unwrap(
         self,
-        type_id: top_level_resolution::Id,
+        type_id: declarations::Id,
         builder: &mut FunctionBuilder<impl Module>,
     ) -> Result<cranelift::prelude::Value, SemanticError> {
         let layout = builder.declarations.get_layout(type_id);
@@ -48,11 +49,11 @@ impl Value {
                 };
 
                 let r#type = match r#type {
-                    PrimitiveKind::I8 | PrimitiveKind::U8 => types::I8,
-                    PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
-                    PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
-                    PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
-                    PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
+                    Primitive::I8 | Primitive::U8 => types::I8,
+                    Primitive::I16 | Primitive::U16 => types::I16,
+                    Primitive::I32 | Primitive::U32 => types::I32,
+                    Primitive::I64 | Primitive::U64 => types::I64,
+                    Primitive::I128 | Primitive::U128 => todo!("chonky intz"),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
@@ -63,21 +64,21 @@ impl Value {
                 };
 
                 let r#type = match r#type {
-                    PrimitiveKind::I8 => types::I8,
-                    PrimitiveKind::I16 => types::I16,
-                    PrimitiveKind::I32 => types::I32,
-                    PrimitiveKind::I64 => types::I64,
-                    PrimitiveKind::I128 => todo!("chonky intz"),
+                    Primitive::I8 => types::I8,
+                    Primitive::I16 => types::I16,
+                    Primitive::I32 => types::I32,
+                    Primitive::I64 => types::I64,
+                    Primitive::I128 => todo!("chonky intz"),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
                 Ok(builder.builder.ins().iconst(r#type, i64::try_from(int)?))
             }
             Self::UnknownFloatConst(float) => match layout {
                 // TODO: as
-                Layout::Primitive(PrimitiveKind::F32) => {
+                Layout::Primitive(Primitive::F32) => {
                     Ok(builder.builder.ins().f32const(Ieee32::from(float as f32)))
                 }
-                Layout::Primitive(PrimitiveKind::F64) => {
+                Layout::Primitive(Primitive::F64) => {
                     Ok(builder.builder.ins().f64const(Ieee64::from(float)))
                 }
                 _ => Err(SemanticError::UnexpectedNumberLiteral),
@@ -86,8 +87,22 @@ impl Value {
                 if value_type == type_id {
                     Ok(value)
                 } else {
-                    dbg!();
                     Err(SemanticError::MismatchedTypes)
+                }
+            }
+            Self::MutablePointer(value) => {
+                let pointer_id = type_id;
+                let Layout::Primitive(Primitive::MutablePointer(inner_id)) =
+                    builder.declarations.get_layout(pointer_id)
+                else {
+                    return Err(SemanticError::InvalidMutRef);
+                };
+                let layout = builder.declarations.get_layout(*inner_id);
+                let value = value.unwrap(*inner_id, builder)?;
+                if layout.is_aggregate() {
+                    Ok(value)
+                } else {
+                    todo!("primitive mut refs")
                 }
             }
             Self::Binary(left, right, operator) => {
@@ -157,7 +172,9 @@ impl Value {
                 builder.builder.append_block_param(
                     merge_block,
                     match layout {
-                        Layout::Primitive(r#type) => r#type.cranelift_type(),
+                        Layout::Primitive(r#type) => {
+                            r#type.cranelift_type(builder.declarations.isa.pointer_type())
+                        }
                         _ => todo!(),
                     },
                 );
@@ -273,7 +290,7 @@ impl Value {
     }
 
     // TODO: This does not infer deeply nested values types
-    pub fn r#type(&self, declarations: &TopLevelDeclarations) -> Option<top_level_resolution::Id> {
+    pub fn r#type(&self, declarations: &Declarations) -> Option<declarations::Id> {
         match self {
             Self::Cranelift(_, type_id) | Self::Constructor { type_id, .. } => Some(*type_id),
             Self::FieldAccess(r#struct, field) => {
@@ -288,11 +305,11 @@ impl Value {
 }
 
 pub struct FunctionBuilder<'a, M> {
-    pub declarations: &'a top_level_resolution::TopLevelDeclarations,
+    pub declarations: &'a declarations::Declarations,
     pub module: &'a mut M,
     pub scope: parser::scope::Id,
-    pub r#return: top_level_resolution::Id,
-    pub names: HashMap<parser::Ident, (Variable, Option<top_level_resolution::Id>)>,
+    pub r#return: declarations::Id,
+    pub names: HashMap<parser::Ident, (Variable, Option<declarations::Id>)>,
     pub builder: cranelift::prelude::FunctionBuilder<'a>,
     pub new_variable_index: usize,
 }
@@ -346,7 +363,7 @@ where
                         self.builder
                             .ins()
                             .store(MemFlags::new(), value, pointer, field.offset);
-                    }
+                    },
                     _ => todo!("assign to arbitirary expression"),
                 }
             }
@@ -382,13 +399,13 @@ where
                         .unwrap(self.r#return, self)?;
                     let layout = self.declarations.get_layout(self.r#return);
                     if layout.is_aggregate() {
-                        let dest = self.builder.use_var(Variable::new(
-                            top_level_resolution::AGGREGATE_PARAM_VARIABLE,
-                        ));
+                        let dest = self
+                            .builder
+                            .use_var(Variable::new(crate::function::AGGREGATE_PARAM_VARIABLE));
 
                         let addr = self.builder.ins().iconst(
                             self.declarations.isa.pointer_type(),
-                            i64::from(layout.size()),
+                            i64::from(layout.size(&self.declarations.isa)),
                         );
 
                         self.builder.call_memcpy(
@@ -398,9 +415,9 @@ where
                             addr,
                         );
 
-                        let dest = self.builder.use_var(Variable::new(
-                            top_level_resolution::AGGREGATE_PARAM_VARIABLE,
-                        ));
+                        let dest = self
+                            .builder
+                            .use_var(Variable::new(crate::function::AGGREGATE_PARAM_VARIABLE));
 
                         self.builder.ins().return_(&[dest]);
                     } else {
@@ -418,7 +435,7 @@ where
     fn integer(
         &mut self,
         int: u128,
-        type_id: Option<top_level_resolution::Id>,
+        type_id: Option<declarations::Id>,
     ) -> Result<Value, SemanticError> {
         let Some(r#type) = type_id.map(|id| self.declarations.get_layout(id)) else {
             return Ok(Value::UnknownIntegerConst(int));
@@ -433,12 +450,13 @@ where
         };
 
         // TODO: `.unwrap()`
-        // TODO: chonky intz
+        // TODO: phatt intz
         // TODO: subset of `Type` for `Primitive`?
         Ok(Value::Cranelift(
-            self.builder
-                .ins()
-                .iconst(r#type.cranelift_type(), i64::try_from(int)?),
+            self.builder.ins().iconst(
+                r#type.cranelift_type(self.declarations.isa.pointer_type()),
+                i64::try_from(int)?,
+            ),
             type_id.unwrap(),
         ))
     }
@@ -446,7 +464,7 @@ where
     fn float(
         &mut self,
         float: f64,
-        type_id: Option<top_level_resolution::Id>,
+        type_id: Option<declarations::Id>,
     ) -> Result<Value, SemanticError> {
         // TODO: `.unwrap()`
         // TODO: refactor
@@ -456,11 +474,11 @@ where
 
         let value = match layout {
             // TODO: `as`
-            Layout::Primitive(PrimitiveKind::F32) => Value::Cranelift(
+            Layout::Primitive(Primitive::F32) => Value::Cranelift(
                 self.builder.ins().f32const(Ieee32::from(float as f32)),
                 type_id.unwrap(),
             ),
-            Layout::Primitive(PrimitiveKind::F64) => Value::Cranelift(
+            Layout::Primitive(Primitive::F64) => Value::Cranelift(
                 self.builder.ins().f64const(Ieee64::from(float)),
                 type_id.unwrap(),
             ),
@@ -471,12 +489,12 @@ where
 
     fn literal(
         &mut self,
-        literal: Literal,
-        r#type: Option<top_level_resolution::Id>,
+        literal: &Literal,
+        r#type: Option<declarations::Id>,
     ) -> Result<Value, SemanticError> {
         match literal {
-            Literal::Integer(integer) => Ok(self.integer(integer, r#type)?),
-            Literal::Float(float) => Ok(self.float(float, r#type)?),
+            Literal::Integer(integer) => Ok(self.integer(*integer, r#type)?),
+            Literal::Float(float) => Ok(self.float(*float, r#type)?),
             _ => todo!(),
         }
     }
@@ -505,6 +523,10 @@ where
                 let value = self.expression(*expression, Some(r#type))?;
                 Ok(Value::Cranelift(value.unwrap(r#type, self)?, r#type))
             }
+            IntrinsicCall::MutablePointer(expression) => {
+                let value = self.expression(*expression, None)?;
+                Ok(Value::MutablePointer(Box::new(value)))
+            }
         }
     }
 
@@ -512,27 +534,28 @@ where
         &mut self,
         operator: UnaryOperator,
         expression: Expression,
-        type_id: Option<top_level_resolution::Id>,
+        type_id: Option<declarations::Id>,
     ) -> Result<Value, SemanticError> {
         match (operator, expression) {
             (UnaryOperator::Minus, Expression::Literal(Literal::Integer(integer))) => {
-                let Some(r#type) = type_id.map(|type_id| self.declarations.get_layout(type_id))
+                let Some(layout) = type_id.map(|type_id| self.declarations.get_layout(type_id))
                 else {
                     return Ok(Value::UnknownSignedIntegerConst(-i128::try_from(integer)?));
                 };
 
-                let Layout::Primitive(r#type) = r#type else {
+                let Layout::Primitive(layout) = layout else {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
-                if !r#type.is_signed_integer() {
+                if !layout.is_signed_integer() {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
                 Ok(Value::Cranelift(
-                    self.builder
-                        .ins()
-                        .iconst(r#type.cranelift_type(), -i64::try_from(integer)?),
+                    self.builder.ins().iconst(
+                        layout.cranelift_type(self.declarations.isa.pointer_type()),
+                        -i64::try_from(integer)?,
+                    ),
                     type_id.unwrap(),
                 ))
             }
@@ -606,10 +629,10 @@ where
     fn expression(
         &mut self,
         expression: Expression,
-        r#type: Option<top_level_resolution::Id>,
+        r#type: Option<declarations::Id>,
     ) -> Result<Value, SemanticError> {
         match expression {
-            Expression::Literal(literal) => self.literal(literal, r#type),
+            Expression::Literal(literal) => self.literal(&literal, r#type),
             Expression::UnaryPrefix(operator, expression) => {
                 self.unary_prefix(operator, *expression, r#type)
             }

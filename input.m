@@ -30,19 +30,21 @@ end
 //     end
 // end
 
+// type MutablePointyPointer @mutable_pointer(Point)
+
+type MutablePointyPointer = @mutable_pointer(Point)
+end
+
 fn new_point = (UInt64 x, UInt64 y) UInt64
     let point = Point
         x = x,
         y = y,
     end
-    add_1_to_x(point)
+    add_1_to_x(@mutable_pointer(point))
     @add(point.x, point.y)
 end
 
-fn add_1_to_x = (Point point) Point
+fn add_1_to_x = (MutablePointyPointer point) UInt64
     point.x = add(point.x, 100)
-    Point
-        x = point.x,
-        y = point.y,
-    end
+    0
 end

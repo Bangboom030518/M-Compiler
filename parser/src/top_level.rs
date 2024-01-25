@@ -161,7 +161,7 @@ pub struct Primitive {
     pub scope: scope::Id,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum PrimitiveKind {
     U8,
     U16,
@@ -175,57 +175,7 @@ pub enum PrimitiveKind {
     I128,
     F32,
     F64,
-}
-
-impl PrimitiveKind {
-    pub fn cranelift_type(&self) -> cranelift::prelude::Type {
-        use cranelift::prelude::*;
-        match self {
-            Self::U8 | Self::I8 => types::I8,
-            Self::U16 | Self::I16 => types::I16,
-            Self::F32 => types::F32,
-            Self::U32 | Self::I32 => types::I32,
-            Self::F64 => types::F64,
-            Self::U64 | Self::I64 => types::I64,
-            Self::U128 | Self::I128 => types::I128,
-        }
-    }
-
-    #[must_use]
-    pub const fn is_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128
-                | Self::I64
-                | Self::I32
-                | Self::I16
-                | Self::I8
-                | Self::U128
-                | Self::U64
-                | Self::U32
-                | Self::U16
-                | Self::U8
-        )
-    }
-
-    #[must_use]
-    pub const fn is_signed_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
-        )
-    }
-
-    #[must_use]
-    pub fn size(&self) -> u32 {
-        match self {
-            Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
-            Self::U32 | Self::I32 | Self::F32 => 4,
-            Self::U64 | Self::I64 | Self::F64 => 8,
-            Self::U128 | Self::I128 => 16,
-        }
-    }
+    MutablePointer(Type),
 }
 
 impl Parse for PrimitiveKind {
@@ -246,6 +196,12 @@ impl Parse for PrimitiveKind {
             "u128" => Self::U128,
             "f32" => Self::F32,
             "f64" => Self::F64,
+            "mutable_pointer" => {
+                parser.take_token_if(&Token::OpenParen)?;
+                let pointer = parser.parse().map(Self::MutablePointer)?;
+                parser.take_token_if(&Token::CloseParen)?;
+                pointer
+            }
             _ => return None,
         };
         Some(kind)

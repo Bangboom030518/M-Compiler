@@ -110,6 +110,7 @@ impl IntrinsicOperator {
 #[derive(PartialEq, Debug, Clone)]
 pub enum IntrinsicCall {
     AssertType(Box<Expression>, Type),
+    MutablePointer(Box<Expression>),
     Binary(Box<Expression>, Box<Expression>, IntrinsicOperator),
 }
 
@@ -126,6 +127,9 @@ impl Parse for IntrinsicCall {
                 let expression = Box::new(parser.parse()?);
                 parser.take_token_if(&Token::Comma)?;
                 Self::AssertType(expression, parser.parse()?)
+            },
+            "mutable_pointer" => {
+                Self::MutablePointer(Box::new(parser.parse()?))
             },
             token if let Some(op) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);

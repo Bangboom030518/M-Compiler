@@ -61,6 +61,7 @@ pub enum Type {
 }
 
 impl Type {
+    #[must_use]
     pub fn ident(self) -> Ident {
         match self {
             Self::Ident(ident) => ident

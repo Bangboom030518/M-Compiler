@@ -1,12 +1,34 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
 
+mod declarations;
+mod function;
+mod layout;
 mod local;
-mod top_level_resolution;
 
 use cranelift::prelude::*;
+use cranelift_module::Module;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+pub struct CraneliftContext<M> {
+    pub context: cranelift::codegen::Context,
+    pub module: M,
+    pub builder_context: cranelift::frontend::FunctionBuilderContext,
+}
+
+impl<M> CraneliftContext<M> {
+    pub fn new(module: M) -> Self
+    where
+        M: Module,
+    {
+        Self {
+            context: module.make_context(),
+            module,
+            builder_context: cranelift::frontend::FunctionBuilderContext::new(),
+        }
+    }
+}
 
 // TODO: annotated results
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -41,6 +63,8 @@ pub enum SemanticError {
     NonStructFieldAccess,
     #[error("Tried to access a non-existent struct field")]
     NonExistentField,
+    #[error("Tried to initialise non-reference type as a reference")]
+    InvalidMutRef,
 }
 
 fn main() {
@@ -67,14 +91,13 @@ fn main() {
 
     let mut module = cranelift_jit::JITModule::new(builder);
 
-    let declarations =
-        top_level_resolution::TopLevelDeclarations::new(file, &isa, &mut module).unwrap();
+    let declarations = declarations::Declarations::new(file, &isa, &mut module).unwrap();
 
-    let mut context = top_level_resolution::CraneliftContext::new(module);
+    let mut context = CraneliftContext::new(module);
 
     let mut functions = HashMap::new();
     for declaration in declarations.declarations.iter().flatten() {
-        let top_level_resolution::Declaration::Function(function) = declaration else {
+        let declarations::Declaration::Function(function) = declaration else {
             continue;
         };
 
