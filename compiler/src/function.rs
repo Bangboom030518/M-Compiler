@@ -9,7 +9,7 @@ use parser::{scope, Expression, Ident, Statement};
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub parameters: Vec<(Ident, declarations::Id)>,
-    pub r#return: declarations::Id,
+    pub return_type: declarations::Id,
     pub signature: Signature,
     pub body: Vec<Statement>,
     pub scope: scope::Id,
@@ -43,11 +43,11 @@ impl Function {
                         })
                         .ok_or(SemanticError::UntypedParameter)?;
 
-                    let r#type = declarations
+                    let type_id = declarations
                         .lookup(r#type, scope)
                         .ok_or(SemanticError::DeclarationNotFound)?;
 
-                    Ok((name, r#type))
+                    Ok((name, type_id))
                 },
             )
             .collect::<Result<Vec<_>, SemanticError>>()?;
@@ -81,7 +81,7 @@ impl Function {
             .ok_or(SemanticError::DeclarationNotFound)?;
 
         let return_type = declarations.get_layout(return_type_id);
-        let r#return = match return_type {
+        signature.returns = vec![match return_type {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
@@ -92,8 +92,7 @@ impl Function {
 
                 AbiParam::new(declarations.isa.pointer_type())
             }
-        };
-        signature.returns = vec![r#return];
+        }];
 
         let mut body = function.body;
 
@@ -111,7 +110,7 @@ impl Function {
         Ok(Self {
             signature,
             parameters,
-            r#return: return_type_id,
+            return_type: return_type_id,
             body,
             scope,
             id,
@@ -126,7 +125,7 @@ impl Function {
     ) -> Result<FuncId, SemanticError> {
         let Self {
             parameters,
-            r#return,
+            return_type: r#return,
             signature,
             body,
             scope,
@@ -147,7 +146,7 @@ impl Function {
         // TODO: `to_vec()`?
         let mut block_params = builder.block_params(entry_block).to_vec();
 
-        if declarations.get_layout(self.r#return).is_aggregate() {
+        if declarations.get_layout(self.return_type).is_aggregate() {
             let param = block_params
                 .pop()
                 .expect("aggregate return param not found");
@@ -163,10 +162,10 @@ impl Function {
             .map(|(index, ((name, type_id), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let r#type = declarations
+                let cranelift_type = declarations
                     .get_layout(*type_id)
                     .cranelift_type(&declarations.isa);
-                builder.declare_var(variable, r#type);
+                builder.declare_var(variable, cranelift_type);
                 builder.def_var(variable, value);
                 Ok((name.clone(), variable, *type_id))
             })
@@ -174,7 +173,7 @@ impl Function {
 
         let mut builder = crate::hir::Builder::new(declarations, &self, names);
         let func = builder.build()?;
-        
+
         // error is here!!!!
         builder.builder.finalize();
 

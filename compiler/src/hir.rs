@@ -1,10 +1,10 @@
 use crate::declarations::{self, Declarations};
-use crate::layout::{Layout, Primitive};
+use crate::layout::Layout;
 use crate::SemanticError;
 pub use builder::Builder;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
-use parser::expression::{CmpOperator, IntrinsicOperator};
+use parser::expression::IntrinsicOperator;
 
 use self::builder::VariableId;
 

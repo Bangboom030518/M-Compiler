@@ -77,7 +77,7 @@ impl<'a> Builder<'a> {
             top_level_scope: function.scope,
             variables,
             new_variable_index: parameters.len(),
-            r#return_type: function.r#return,
+            return_type: function.return_type,
             local_scopes: vec![scope],
             body: &function.body,
         }

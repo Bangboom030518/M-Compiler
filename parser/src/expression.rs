@@ -1,5 +1,3 @@
-use std::iter;
-
 use crate::internal::prelude::*;
 
 pub mod binary;
