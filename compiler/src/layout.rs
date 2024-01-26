@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Field {
-    pub r#type: declarations::Id,
+    pub type_id: declarations::Id,
     pub offset: Offset32,
 }
 

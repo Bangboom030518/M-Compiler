@@ -80,7 +80,7 @@ impl Declarations {
                     layout_fields.insert(
                         name.clone(),
                         layout::Field {
-                            r#type: *r#type,
+                            type_id: *r#type,
                             offset: Offset32::new(offset as i32),
                         },
                     );
@@ -105,9 +105,10 @@ impl Declarations {
                 PrimitiveKind::I32 => layout::Primitive::I32,
                 PrimitiveKind::I64 => layout::Primitive::I64,
                 PrimitiveKind::I128 => layout::Primitive::I128,
-                PrimitiveKind::MutablePointer(r#type) => {
-                    layout::Primitive::MutablePointer(self.lookup(&r#type.ident(), scope).ok_or(SemanticError::DeclarationNotFound)?)
-                }
+                PrimitiveKind::MutablePointer(r#type) => layout::Primitive::MutablePointer(
+                    self.lookup(&r#type.ident(), scope)
+                        .ok_or(SemanticError::DeclarationNotFound)?,
+                ),
             }),
         };
 

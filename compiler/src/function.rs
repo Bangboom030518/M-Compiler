@@ -5,7 +5,6 @@ use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use parser::top_level::TypeBinding;
 use parser::{scope, Expression, Ident, Statement};
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
@@ -58,7 +57,9 @@ impl Function {
             .map(|r#type| {
                 let r#type = declarations.get_layout(r#type.1);
                 match r#type {
-                    Layout::Primitive(primitive) => Ok(AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))),
+                    Layout::Primitive(primitive) => Ok(AbiParam::new(
+                        primitive.cranelift_type(declarations.isa.pointer_type()),
+                    )),
                     Layout::Struct { size, .. } => Ok(AbiParam::special(
                         declarations.isa.pointer_type(),
                         codegen::ir::ArgumentPurpose::StructArgument(*size),
@@ -81,7 +82,9 @@ impl Function {
 
         let return_type = declarations.get_layout(return_type_id);
         let r#return = match return_type {
-            Layout::Primitive(primitive) => AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type())),
+            Layout::Primitive(primitive) => {
+                AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
+            }
             Layout::Struct { .. } => {
                 signature
                     .params
@@ -117,7 +120,7 @@ impl Function {
     }
 
     pub fn compile(
-        self,
+        &self,
         declarations: &Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
     ) -> Result<FuncId, SemanticError> {
@@ -134,7 +137,7 @@ impl Function {
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
         );
-        builder.func.signature = signature;
+        builder.func.signature = *signature;
 
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
@@ -161,28 +164,17 @@ impl Function {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
                 let r#type = declarations
-                    .get_layout(type_id)
+                    .get_layout(*type_id)
                     .cranelift_type(&declarations.isa);
                 builder.declare_var(variable, r#type);
                 builder.def_var(variable, value);
-                Ok((name, (variable, Some(type_id))))
+                Ok((name.clone(), variable, *type_id))
             })
-            .collect::<Result<HashMap<_, _>, SemanticError>>()?;
+            .collect::<Result<_, SemanticError>>()?;
 
-        let mut builder = crate::local::FunctionBuilder {
-            declarations,
-            r#return,
-            scope,
-            new_variable_index: names.len() + SPECIAL_VARIABLES.len(),
-            names,
-            builder,
-            module: &mut cranelift_context.module,
-        };
-
-        for statement in body {
-            builder.handle_statement(statement)?;
-        }
-
+        let mut builder = crate::hir::Builder::new(declarations, &self, names);
+        let func = builder.build()?;
+        
         // error is here!!!!
         builder.builder.finalize();
 

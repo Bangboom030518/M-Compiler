@@ -1,10 +1,10 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
-mod hir;
+
 mod declarations;
 mod function;
+mod hir;
 mod layout;
-mod local;
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
