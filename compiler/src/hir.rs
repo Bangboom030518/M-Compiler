@@ -1,18 +1,19 @@
+use std::collections::HashMap;
+
 use crate::declarations::{self, Declarations};
 use crate::layout::Layout;
 use crate::SemanticError;
 pub use builder::Builder;
+use builder::VariableId;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
-use parser::expression::IntrinsicOperator;
+use parser::expression::{CmpOperator, IntrinsicOperator};
 
-use self::builder::VariableId;
-
-mod builder;
+pub mod builder;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Ignore(TypedExpression),
+    Expression(TypedExpression),
     Assignment(TypedExpression, TypedExpression),
     Let(Variable, TypedExpression),
 }
@@ -20,7 +21,8 @@ pub enum Statement {
 impl Statement {
     fn infer(
         &mut self,
-        function: &mut builder::Function,
+        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
+        return_type: declarations::Id,
         declarations: &Declarations,
     ) -> Result<bool, SemanticError> {
         match self {
@@ -32,8 +34,8 @@ impl Statement {
                 expression,
             ) => todo!(),
             Self::Let(_, _) => todo!(),
-            Self::Ignore(expression) => expression.infer(function, declarations),
-            _ => todo!(),
+            Self::Expression(expression) => expression.infer(variables, return_type, declarations),
+            Self::Assignment(_, _) => todo!(),
         }
     }
 }
@@ -79,20 +81,20 @@ pub enum Expression {
 impl Expression {
     pub fn infer(
         &mut self,
-        function: &mut builder::Function,
+        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
+        return_type: declarations::Id,
         declarations: &Declarations,
     ) -> Result<(Option<declarations::Id>, bool), SemanticError> {
         let result = match self {
             Self::FloatConst(_) | Self::IntegerConst(_) => (None, false),
             Self::LocalAccess(variable) => (
-                *function
-                    .variables
-                    .get(&variable)
+                *variables
+                    .get(variable)
                     .expect("Variable doesn't exist in hir!"),
                 false,
             ),
             Self::FieldAccess(expression, field) => {
-                let has_mutated = expression.infer(function, declarations)?;
+                let has_mutated = expression.infer(variables, return_type, declarations)?;
                 let type_id = expression.type_id;
                 match type_id {
                     None => (None, has_mutated),
@@ -100,12 +102,22 @@ impl Expression {
                         let Layout::Struct { fields, .. } = declarations.get_layout(type_id) else {
                             return Err(SemanticError::NonStructFieldAccess);
                         };
-                        let field = fields.get(&field).ok_or(SemanticError::NonExistentField)?;
+                        let field = fields.get(field).ok_or(SemanticError::NonExistentField)?;
                         (Some(field.type_id), has_mutated)
                     }
                 }
             }
-            _ => todo!(),
+            Self::Return(expression) => {
+                if let Some(type_id) = expression.type_id {
+                    if type_id != return_type {
+                        return Err(SemanticError::MismatchedTypes);
+                    }
+                }
+                expression.type_id = Some(return_type);
+                let has_mutated = expression.infer(variables, return_type, declarations)?;
+                (None, has_mutated)
+            }
+            _ => (None, false),
         };
 
         Ok(result)
@@ -114,21 +126,24 @@ impl Expression {
 
 #[derive(Debug, Clone)]
 pub struct TypedExpression {
-    expression: Expression,
-    type_id: Option<declarations::Id>,
+    pub expression: Expression,
+    pub type_id: Option<declarations::Id>,
 }
 
 impl TypedExpression {
     pub fn infer(
         &mut self,
-        function: &mut builder::Function,
+        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
+        return_type: declarations::Id,
         declarations: &Declarations,
     ) -> Result<bool, SemanticError> {
         if self.type_id.is_some() {
             return Ok(false);
         }
 
-        let (type_id, has_mutated_environment) = self.expression.infer(function, declarations)?;
+        let (type_id, has_mutated_environment) =
+            self.expression
+                .infer(variables, return_type, declarations)?;
         self.type_id = type_id;
         Ok(has_mutated_environment)
     }

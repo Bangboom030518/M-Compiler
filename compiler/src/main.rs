@@ -1,15 +1,16 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
 
-mod declarations;
-mod function;
-mod hir;
-mod layout;
-
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+mod declarations;
+mod function;
+mod hir;
+mod layout;
+mod translate;
 
 pub struct CraneliftContext<M> {
     pub context: cranelift::codegen::Context,
@@ -65,6 +66,10 @@ pub enum SemanticError {
     NonExistentField,
     #[error("Tried to initialise non-reference type as a reference")]
     InvalidMutRef,
+    #[error(
+        "Actions have consequences! You used an intrinsic wrong and now you're on your own :)"
+    )]
+    InvalidIntrinsic,
 }
 
 fn main() {
@@ -110,10 +115,10 @@ fn main() {
     }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("new_point").unwrap();
+    let function = *functions.get("a").unwrap();
 
     let code = context.module.get_finalized_function(function);
 
-    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn(u64, u64) -> u64>(code) };
-    dbg!(unsafe { new_point(1, 1) });
+    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
+    dbg!(unsafe { new_point() });
 }

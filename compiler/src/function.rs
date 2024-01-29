@@ -1,6 +1,7 @@
 use crate::declarations::{self, Declarations};
 use crate::layout::Layout;
-use crate::{CraneliftContext, SemanticError};
+use crate::translate::Translator;
+use crate::{hir, CraneliftContext, SemanticError};
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use parser::top_level::TypeBinding;
@@ -123,20 +124,11 @@ impl Function {
         declarations: &Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
     ) -> Result<FuncId, SemanticError> {
-        let Self {
-            parameters,
-            return_type: r#return,
-            signature,
-            body,
-            scope,
-            id,
-            ..
-        } = self;
         let mut builder = cranelift::prelude::FunctionBuilder::new(
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
         );
-        builder.func.signature = *signature;
+        builder.func.signature = self.signature.clone();
 
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
@@ -155,8 +147,8 @@ impl Function {
             builder.def_var(variable, param);
         };
 
-        let names = parameters
-            .into_iter()
+        let names = self.parameters
+            .iter()
             .zip(block_params)
             .enumerate()
             .map(|(index, ((name, type_id), value))| {
@@ -171,15 +163,20 @@ impl Function {
             })
             .collect::<Result<_, SemanticError>>()?;
 
-        let mut builder = crate::hir::Builder::new(declarations, &self, names);
-        let func = builder.build()?;
+        let mut func = crate::hir::Builder::new(declarations, &self, names).build()?;
+        func.infer(&declarations);
 
-        // error is here!!!!
-        builder.builder.finalize();
+        let mut translator = Translator::new(builder, declarations, &cranelift_context.module);
+
+        for statement in func.body {
+            translator.statement(statement)?
+        }
+
+        translator.finalize();
 
         cranelift_context
             .module
-            .define_function(id, &mut cranelift_context.context)
+            .define_function(self.id, &mut cranelift_context.context)
             .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
 
         #[cfg(debug_assertions)]
@@ -198,6 +195,6 @@ impl Function {
             .module
             .clear_context(&mut cranelift_context.context);
 
-        Ok(id)
+        Ok(self.id)
     }
 }

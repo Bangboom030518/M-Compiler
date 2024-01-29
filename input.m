@@ -13,9 +13,9 @@ end
 //     @sub(a, b)
 // end
 
-fn add = (UInt64 a, UInt64 b) UInt64
-    @add(a, b)
-end
+// fn add = (UInt64 a, UInt64 b) UInt64
+//     @add(a, b)
+// end
 
 // fn less_than = (UInt64 a, UInt64 b) Int8
 //     @lt(a, b)
@@ -35,16 +35,20 @@ end
 type MutablePointyPointer = @mutable_pointer(Point)
 end
 
-fn new_point = (UInt64 x, UInt64 y) UInt64
-    let point = Point
-        x = x,
-        y = y,
-    end
-    add_1_to_x(@mutable_pointer(point))
-    @add(point.x, point.y)
-end
+// fn new_point = (UInt64 x, UInt64 y) UInt64
+//     let point = Point
+//         x = x,
+//         y = y,
+//     end
+//     add_1_to_x(@mutable_pointer(point))
+//     @add(point.x, point.y)
+// end
 
-fn add_1_to_x = (MutablePointyPointer point) UInt64
-    point.x = add(point.x, 100)
+// fn add_1_to_x = (MutablePointyPointer point) UInt64
+//     point.x = add(point.x, 100)
+//     0
+// end
+
+fn a = () UInt64
     0
 end

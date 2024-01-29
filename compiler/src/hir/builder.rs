@@ -1,3 +1,4 @@
+use super::TypedExpression;
 use crate::declarations::Declarations;
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
@@ -8,8 +9,6 @@ use parser::expression::control_flow::If;
 use parser::expression::IntrinsicCall;
 use parser::prelude::Literal;
 use std::collections::HashMap;
-
-use super::TypedExpression;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct VariableId(usize);
@@ -34,12 +33,19 @@ pub struct Function {
 }
 
 impl Function {
-    fn infer(&mut self, declarations: &declarations::Declarations) -> Result<(), SemanticError> {
+    // pub fn infer_body(body: &mut Vec<hir::Statement>, )
+
+    #[must_use]
+    pub fn infer(
+        &mut self,
+        declarations: &declarations::Declarations,
+    ) -> Result<(), SemanticError> {
         let mut inferring = true;
         while inferring {
             inferring = false;
             for statement in &mut self.body {
-                let has_changed_var = statement.infer(self, declarations)?;
+                let has_changed_var =
+                    statement.infer(&mut self.variables, self.return_type, declarations)?;
                 inferring |= has_changed_var;
             }
         }
@@ -66,6 +72,7 @@ impl<'a> Builder<'a> {
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
+        let new_variable_index = parameters.len();
 
         for (ident, variable, type_id) in parameters {
             variables.insert(variable.into(), Some(type_id));
@@ -76,7 +83,7 @@ impl<'a> Builder<'a> {
             declarations,
             top_level_scope: function.scope,
             variables,
-            new_variable_index: parameters.len(),
+            new_variable_index,
             return_type: function.return_type,
             local_scopes: vec![scope],
             body: &function.body,
@@ -86,7 +93,7 @@ impl<'a> Builder<'a> {
     pub fn build(mut self) -> Result<Function, SemanticError> {
         let body = self
             .body
-            .into_iter()
+            .iter()
             .map(|statement| self.statement(statement))
             .collect::<Result<_, _>>()?;
 
@@ -121,7 +128,7 @@ impl<'a> Builder<'a> {
                 Ok(hir::Statement::Let(variable, self.expression(expression)?))
             }
             parser::Statement::Expression(expression) => {
-                Ok(hir::Statement::Ignore(self.expression(expression)?))
+                Ok(hir::Statement::Expression(self.expression(expression)?))
             }
         }
     }
@@ -161,10 +168,15 @@ impl<'a> Builder<'a> {
                 IntrinsicCall::AssertType(expression, r#type) => {
                     let type_id = self
                         .declarations
-                        .lookup(&r#type.ident(), self.top_level_scope)
+                        .lookup(
+                            match r#type {
+                                parser::Type::Ident(ident) => ident,
+                            },
+                            self.top_level_scope,
+                        )
                         .ok_or(SemanticError::DeclarationNotFound)?;
 
-                    self.expression(&expression)
+                    self.expression(expression)
                         .map(|expression| expression.with_type(type_id))
                 }
                 IntrinsicCall::MutablePointer(expression) => {
@@ -180,8 +192,8 @@ impl<'a> Builder<'a> {
                 callable: self.expression(&call.callable)?,
                 arguments: call
                     .arguments
-                    .into_iter()
-                    .map(|argument| self.expression(&argument))
+                    .iter()
+                    .map(|argument| self.expression(argument))
                     .map_ok(super::TypedExpression::from)
                     .collect::<Result<_, _>>()?,
             }))
@@ -192,15 +204,25 @@ impl<'a> Builder<'a> {
                 else_branch,
             }) => Ok(Expression::If(Box::new(hir::If {
                 condition: self.expression(condition)?,
-                then_branch: then_branch
-                    .into_iter()
-                    .map(|statement| self.statement(statement))
-                    .collect::<Result<_, _>>()?,
-                else_branch: else_branch
-                    .into_iter()
-                    .flatten()
-                    .map(|statement| self.statement(statement))
-                    .collect::<Result<_, _>>()?,
+                then_branch: {
+                    self.local_scopes.push(HashMap::new());
+                    let statements = then_branch
+                        .into_iter()
+                        .map(|statement| self.statement(statement))
+                        .collect::<Result<_, _>>()?;
+                    self.local_scopes.pop();
+                    statements
+                },
+                else_branch: {
+                    self.local_scopes.push(HashMap::new());
+                    let statements = else_branch
+                        .into_iter()
+                        .flatten()
+                        .map(|statement| self.statement(statement))
+                        .collect::<Result<_, _>>()?;
+                    self.local_scopes.pop();
+                    statements
+                },
             }))
             .into()),
             parser::Expression::Constructor(parser::expression::Constructor { r#type, fields }) => {
