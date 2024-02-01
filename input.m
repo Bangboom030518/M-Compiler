@@ -50,5 +50,6 @@ end
 // end
 
 fn a = () UInt64
+    return 1
     0
 end

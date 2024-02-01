@@ -6,6 +6,12 @@ use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::{CmpOperator, IntrinsicOperator};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchStatus<T> {
+    Finished,
+    Continue(T),
+}
+
 pub struct Translator<'a, M> {
     builder: cranelift::prelude::FunctionBuilder<'a>,
     declarations: &'a Declarations,
@@ -21,7 +27,7 @@ where
     }
 
     pub fn new(
-        builder: cranelift::prelude::FunctionBuilder<'a>,
+        mut builder: cranelift::prelude::FunctionBuilder<'a>,
         declarations: &'a Declarations,
         module: &'a M,
     ) -> Self {
@@ -32,25 +38,35 @@ where
         }
     }
 
-    pub fn statement(&mut self, statement: hir::Statement) -> Result<(), SemanticError> {
+    pub fn statement(
+        &mut self,
+        statement: hir::Statement,
+    ) -> Result<BranchStatus<()>, SemanticError> {
         match statement {
             hir::Statement::Assignment(left, right) => todo!("assignment"),
             hir::Statement::Expression(expression) => {
-                self.expression(expression)?;
+                if self.expression(expression)? == BranchStatus::Finished {
+                    return Ok(BranchStatus::Finished)
+                }
             }
             hir::Statement::Let(variable, expression) => {
                 self.builder.declare_var(
                     variable,
                     self.declarations
-                        .get_layout(expression.type_id.ok_or(SemanticError::UnknownType)?)
+                        .get_layout(expression.type_id.ok_or_else(|| {
+                            dbg!(&expression);
+                            SemanticError::UnknownType
+                        })?)
                         .cranelift_type(&self.declarations.isa),
                 );
-                let expression = self.expression(expression)?;
+                let BranchStatus::Continue(expression) = self.expression(expression)? else {
+                    return Ok(BranchStatus::Finished);
+                };
                 self.builder.def_var(variable, expression);
             }
         };
 
-        Ok(())
+        Ok(BranchStatus::Continue(()))
     }
 
     fn translate_if(
@@ -60,7 +76,7 @@ where
             mut then_branch,
             mut else_branch,
         }: hir::If,
-    ) -> Result<Value, SemanticError> {
+    ) -> Result<BranchStatus<Value>, SemanticError> {
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
@@ -78,7 +94,9 @@ where
             },
         );
 
-        let condition = self.expression(condition)?;
+        let BranchStatus::Continue(condition) = self.expression(condition)? else {
+            return Ok(BranchStatus::Finished);
+        };
 
         self.builder
             .ins()
@@ -93,7 +111,9 @@ where
 
         if let Some(hir::Statement::Expression(then_return)) = then_return {
             let expression = self.expression(then_return)?;
-            self.builder.ins().jump(merge_block, &[expression]);
+            self.builder
+                .ins()
+                .jump(merge_block, &[todo!("branch finished?")]);
         } else {
             todo!("non-expr ifs: `void`?")
         }
@@ -107,7 +127,9 @@ where
 
         if let Some(hir::Statement::Expression(else_return)) = else_return {
             let expression = self.expression(else_return)?;
-            self.builder.ins().jump(merge_block, &[expression]);
+            self.builder
+                .ins()
+                .jump(merge_block, &[todo!("branch finished lolz")]);
         } else {
             todo!("non-expr ifs: `void`?")
         }
@@ -115,7 +137,9 @@ where
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
 
-        Ok(self.builder.block_params(merge_block)[0])
+        Ok(BranchStatus::Continue(
+            self.builder.block_params(merge_block)[0],
+        ))
     }
 
     fn expression(
@@ -124,13 +148,14 @@ where
             expression,
             type_id,
         }: hir::TypedExpression,
-    ) -> Result<Value, SemanticError> {
-        let type_id = type_id.ok_or(SemanticError::UnknownType)?;
-        let layout = self.declarations.get_layout(type_id);
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        let layout = type_id
+            .map(|type_id| self.declarations.get_layout(type_id))
+            .ok_or(SemanticError::UnknownType);
 
-        match expression {
+        let value = match expression {
             hir::Expression::IntegerConst(int) => {
-                let Layout::Primitive(r#type) = layout else {
+                let Layout::Primitive(r#type) = layout? else {
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
@@ -143,45 +168,51 @@ where
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
 
-                Ok(self.builder.ins().iconst(r#type, i64::try_from(int)?))
+                self.builder.ins().iconst(r#type, i64::try_from(int)?)
             }
             hir::Expression::FloatConst(float) => {
-                match layout {
+                match layout? {
                     // TODO: as
                     Layout::Primitive(Primitive::F32) => {
-                        Ok(self.builder.ins().f32const(Ieee32::from(float as f32)))
+                        self.builder.ins().f32const(Ieee32::from(float as f32))
                     }
                     Layout::Primitive(Primitive::F64) => {
-                        Ok(self.builder.ins().f64const(Ieee64::from(float)))
+                        self.builder.ins().f64const(Ieee64::from(float))
                     }
-                    _ => Err(SemanticError::UnexpectedNumberLiteral),
+                    _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 }
             }
-            hir::Expression::MutablePointer(value) => {
-                let pointer_id = type_id;
-                let Layout::Primitive(Primitive::MutablePointer(inner_id)) =
-                    self.declarations.get_layout(pointer_id)
-                else {
+            hir::Expression::MutablePointer(expression) => {
+                let Layout::Primitive(Primitive::MutablePointer(inner_id)) = layout? else {
                     return Err(SemanticError::InvalidMutRef);
                 };
 
                 let layout = self.declarations.get_layout(*inner_id);
-                let value = self.expression(*value)?;
+                let value = match self.expression(*expression)? {
+                    BranchStatus::Continue(value) => value,
+                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                };
                 if layout.is_aggregate() {
-                    Ok(value)
+                    value
                 } else {
                     todo!("primitive mut refs")
                 }
             }
             hir::Expression::BinaryIntrinsic(binary) => {
-                let left = self.expression(binary.left)?;
-                let right = self.expression(binary.right)?;
+                let left = match self.expression(binary.left)? {
+                    BranchStatus::Continue(value) => value,
+                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                };
+                let right = match self.expression(binary.right)? {
+                    BranchStatus::Continue(value) => value,
+                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                };
 
                 match binary.operator {
-                    IntrinsicOperator::Add => Ok(self.builder.ins().iadd(left, right)),
-                    IntrinsicOperator::Sub => Ok(self.builder.ins().isub(left, right)),
+                    IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
+                    IntrinsicOperator::Sub => self.builder.ins().isub(left, right),
                     IntrinsicOperator::Cmp(operator) => {
-                        let Layout::Primitive(r#type) = layout else {
+                        let Layout::Primitive(r#type) = layout? else {
                             return Err(SemanticError::InvalidIntrinsic);
                         };
 
@@ -194,7 +225,7 @@ where
                                 CmpOperator::Lt => IntCC::SignedLessThan,
                                 CmpOperator::Lte => IntCC::SignedLessThanOrEqual,
                             };
-                            Ok(self.builder.ins().icmp(cc, left, right))
+                            self.builder.ins().icmp(cc, left, right)
                         } else if r#type.is_integer() {
                             let cc = match operator {
                                 CmpOperator::Eq => IntCC::Equal,
@@ -204,7 +235,7 @@ where
                                 CmpOperator::Lt => IntCC::UnsignedLessThan,
                                 CmpOperator::Lte => IntCC::UnsignedLessThanOrEqual,
                             };
-                            Ok(self.builder.ins().icmp(cc, left, right))
+                            self.builder.ins().icmp(cc, left, right)
                         } else {
                             let cc = match operator {
                                 CmpOperator::Eq => FloatCC::Equal,
@@ -214,15 +245,21 @@ where
                                 CmpOperator::Lt => todo!(),
                                 CmpOperator::Lte => todo!(),
                             };
-                            Ok(self.builder.ins().fcmp(cc, left, right))
+                            self.builder.ins().fcmp(cc, left, right)
                         }
                     }
                 }
             }
-            hir::Expression::If(r#if) => self.translate_if(*r#if),
+            hir::Expression::If(r#if) => match self.translate_if(*r#if)? {
+                BranchStatus::Continue(value) => value,
+                BranchStatus::Finished => return Ok(BranchStatus::Finished),
+            },
             hir::Expression::FieldAccess(expression, field) => {
                 let struct_id = expression.type_id.ok_or(SemanticError::UnknownType)?;
-                let value = self.expression(*expression)?;
+                let value = match self.expression(*expression)? {
+                    BranchStatus::Continue(value) => value,
+                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                };
                 let Layout::Struct { fields, .. } = self.declarations.get_layout(struct_id) else {
                     return Err(SemanticError::NonStructFieldAccess);
                 };
@@ -232,20 +269,20 @@ where
                     .ok_or(SemanticError::NonExistentField)?
                     .offset;
 
-                Ok(self.builder.ins().load(
-                    layout.cranelift_type(&self.declarations.isa),
+                self.builder.ins().load(
+                    layout?.cranelift_type(&self.declarations.isa),
                     MemFlags::new(),
                     value,
                     offset,
-                ))
+                )
             }
             hir::Expression::Constructor(constructor) => {
                 let Layout::Struct {
                     fields: type_fields,
                     size,
-                } = layout
+                } = layout?
                 else {
-                    return Err(SemanticError::InvalidConstructor);
+                    return Err(SemanticError::InvalidConstructor.into());
                 };
 
                 let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
@@ -260,22 +297,30 @@ where
                 );
 
                 for (offset, expression) in constructor.0 {
-                    let expression = self.expression(expression)?;
+                    let expression = match self.expression(expression)? {
+                        BranchStatus::Continue(value) => value,
+                        BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                    };
                     self.builder
                         .ins()
                         .stack_store(expression, stack_slot, offset);
                 }
 
-                Ok(addr)
+                addr
             }
             hir::Expression::Return(expression) => {
-                let expression = self.expression(*expression)?;
+                let expression = match self.expression(*expression)? {
+                    BranchStatus::Continue(value) => value,
+                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
+                };
                 self.builder.ins().return_(&[expression]);
-                todo!("void!")
+                return Ok(BranchStatus::Finished);
             }
-            hir::Expression::LocalAccess(variable) => Ok(self.builder.use_var(variable.into())),
+            hir::Expression::LocalAccess(variable) => self.builder.use_var(variable.into()),
             hir::Expression::GlobalAccess(_) => todo!(),
             hir::Expression::Call(_) => todo!(),
-        }
+        };
+
+        Ok(BranchStatus::Continue(value))
     }
 }

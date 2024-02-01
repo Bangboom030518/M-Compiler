@@ -1,43 +1,18 @@
-use std::collections::HashMap;
-
-use crate::declarations::{self, Declarations};
-use crate::layout::Layout;
-use crate::SemanticError;
+use crate::declarations;
 pub use builder::Builder;
 use builder::VariableId;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
-use parser::expression::{CmpOperator, IntrinsicOperator};
+use parser::expression::IntrinsicOperator;
 
 pub mod builder;
+pub mod inferer;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(TypedExpression),
     Assignment(TypedExpression, TypedExpression),
     Let(Variable, TypedExpression),
-}
-
-impl Statement {
-    fn infer(
-        &mut self,
-        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
-        return_type: declarations::Id,
-        declarations: &Declarations,
-    ) -> Result<bool, SemanticError> {
-        match self {
-            Self::Assignment(
-                TypedExpression {
-                    expression: Expression::LocalAccess(var),
-                    ..
-                },
-                expression,
-            ) => todo!(),
-            Self::Let(_, _) => todo!(),
-            Self::Expression(expression) => expression.infer(variables, return_type, declarations),
-            Self::Assignment(_, _) => todo!(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -78,52 +53,6 @@ pub enum Expression {
     GlobalAccess(declarations::Id),
 }
 
-impl Expression {
-    pub fn infer(
-        &mut self,
-        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
-        return_type: declarations::Id,
-        declarations: &Declarations,
-    ) -> Result<(Option<declarations::Id>, bool), SemanticError> {
-        let result = match self {
-            Self::FloatConst(_) | Self::IntegerConst(_) => (None, false),
-            Self::LocalAccess(variable) => (
-                *variables
-                    .get(variable)
-                    .expect("Variable doesn't exist in hir!"),
-                false,
-            ),
-            Self::FieldAccess(expression, field) => {
-                let has_mutated = expression.infer(variables, return_type, declarations)?;
-                let type_id = expression.type_id;
-                match type_id {
-                    None => (None, has_mutated),
-                    Some(type_id) => {
-                        let Layout::Struct { fields, .. } = declarations.get_layout(type_id) else {
-                            return Err(SemanticError::NonStructFieldAccess);
-                        };
-                        let field = fields.get(field).ok_or(SemanticError::NonExistentField)?;
-                        (Some(field.type_id), has_mutated)
-                    }
-                }
-            }
-            Self::Return(expression) => {
-                if let Some(type_id) = expression.type_id {
-                    if type_id != return_type {
-                        return Err(SemanticError::MismatchedTypes);
-                    }
-                }
-                expression.type_id = Some(return_type);
-                let has_mutated = expression.infer(variables, return_type, declarations)?;
-                (None, has_mutated)
-            }
-            _ => (None, false),
-        };
-
-        Ok(result)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TypedExpression {
     pub expression: Expression,
@@ -131,24 +60,7 @@ pub struct TypedExpression {
 }
 
 impl TypedExpression {
-    pub fn infer(
-        &mut self,
-        variables: &mut HashMap<VariableId, Option<declarations::Id>>,
-        return_type: declarations::Id,
-        declarations: &Declarations,
-    ) -> Result<bool, SemanticError> {
-        if self.type_id.is_some() {
-            return Ok(false);
-        }
-
-        let (type_id, has_mutated_environment) =
-            self.expression
-                .infer(variables, return_type, declarations)?;
-        self.type_id = type_id;
-        Ok(has_mutated_environment)
-    }
-
-    pub fn new(expression: Expression, type_id: Option<declarations::Id>) -> Self {
+    pub const fn new(expression: Expression, type_id: Option<declarations::Id>) -> Self {
         Self {
             expression,
             type_id,

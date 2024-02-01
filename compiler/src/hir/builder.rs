@@ -32,27 +32,6 @@ pub struct Function {
     pub body: Vec<hir::Statement>,
 }
 
-impl Function {
-    // pub fn infer_body(body: &mut Vec<hir::Statement>, )
-
-    #[must_use]
-    pub fn infer(
-        &mut self,
-        declarations: &declarations::Declarations,
-    ) -> Result<(), SemanticError> {
-        let mut inferring = true;
-        while inferring {
-            inferring = false;
-            for statement in &mut self.body {
-                let has_changed_var =
-                    statement.infer(&mut self.variables, self.return_type, declarations)?;
-                inferring |= has_changed_var;
-            }
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone)]
 pub struct Builder<'a> {
     declarations: &'a declarations::Declarations,

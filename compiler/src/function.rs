@@ -1,7 +1,8 @@
 use crate::declarations::{self, Declarations};
+use crate::hir::inferer;
 use crate::layout::Layout;
-use crate::translate::Translator;
-use crate::{hir, CraneliftContext, SemanticError};
+use crate::translate::{BranchStatus, Translator};
+use crate::{CraneliftContext, SemanticError};
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use parser::top_level::TypeBinding;
@@ -147,7 +148,8 @@ impl Function {
             builder.def_var(variable, param);
         };
 
-        let names = self.parameters
+        let names = self
+            .parameters
             .iter()
             .zip(block_params)
             .enumerate()
@@ -163,15 +165,18 @@ impl Function {
             })
             .collect::<Result<_, SemanticError>>()?;
 
-        let mut func = crate::hir::Builder::new(declarations, &self, names).build()?;
-        func.infer(&declarations);
+        let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
+        inferer::Inferer::function(&mut func, declarations)?;
 
         let mut translator = Translator::new(builder, declarations, &cranelift_context.module);
 
         for statement in func.body {
-            translator.statement(statement)?
+            if translator.statement(statement)? == BranchStatus::Finished {
+                break;
+            }
         }
 
+        dbg!("BRUMMMM!");
         translator.finalize();
 
         cranelift_context
