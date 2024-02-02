@@ -26,8 +26,8 @@ where
         self.builder.finalize();
     }
 
-    pub fn new(
-        mut builder: cranelift::prelude::FunctionBuilder<'a>,
+    pub const fn new(
+        builder: cranelift::prelude::FunctionBuilder<'a>,
         declarations: &'a Declarations,
         module: &'a M,
     ) -> Self {
@@ -46,7 +46,7 @@ where
             hir::Statement::Assignment(left, right) => todo!("assignment"),
             hir::Statement::Expression(expression) => {
                 if self.expression(expression)? == BranchStatus::Finished {
-                    return Ok(BranchStatus::Finished)
+                    return Ok(BranchStatus::Finished);
                 }
             }
             hir::Statement::Let(variable, expression) => {
@@ -69,12 +69,27 @@ where
         Ok(BranchStatus::Continue(()))
     }
 
+    fn block(
+        &mut self,
+        hir::Block {
+            statements,
+            expression,
+        }: hir::Block,
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        for statement in statements {
+            if self.statement(statement)? == BranchStatus::Finished {
+                return Ok(BranchStatus::Finished);
+            }
+        }
+        self.expression(expression.unwrap_or_else(|| todo!("void blocks")))
+    }
+
     fn translate_if(
         &mut self,
         hir::If {
             condition,
-            mut then_branch,
-            mut else_branch,
+            then_branch,
+            else_branch,
         }: hir::If,
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let then_block = self.builder.create_block();
@@ -104,35 +119,21 @@ where
 
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
-        let then_return = then_branch.pop();
-        for statement in then_branch {
-            todo!("handle statement!")
-        }
-
-        if let Some(hir::Statement::Expression(then_return)) = then_return {
-            let expression = self.expression(then_return)?;
-            self.builder
-                .ins()
-                .jump(merge_block, &[todo!("branch finished?")]);
-        } else {
-            todo!("non-expr ifs: `void`?")
-        }
+        match self.block(then_branch)? {
+            BranchStatus::Finished => {}
+            BranchStatus::Continue(value) => {
+                self.builder.ins().jump(merge_block, &[value]);
+            }
+        };
 
         self.builder.switch_to_block(else_block);
         self.builder.seal_block(else_block);
-        let else_return = else_branch.pop();
-        for statement in else_branch {
-            todo!("handle statement!")
-        }
-
-        if let Some(hir::Statement::Expression(else_return)) = else_return {
-            let expression = self.expression(else_return)?;
-            self.builder
-                .ins()
-                .jump(merge_block, &[todo!("branch finished lolz")]);
-        } else {
-            todo!("non-expr ifs: `void`?")
-        }
+        match self.block(else_branch)? {
+            BranchStatus::Finished => {}
+            BranchStatus::Continue(value) => {
+                self.builder.ins().jump(merge_block, &[value]);
+            }
+        };
 
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);

@@ -3,6 +3,7 @@
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
+use layout::Layout;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -55,7 +56,7 @@ pub enum SemanticError {
     #[error("Incorrect function arity was assumed")]
     InvalidNumberOfArguments,
     #[error("Mismatched types")]
-    MismatchedTypes,
+    MismatchedTypes { expected: Layout, found: Layout },
     #[error("Tried to construct something other than a struct")]
     InvalidConstructor,
     #[error("Missing a struct field that must be specified")]

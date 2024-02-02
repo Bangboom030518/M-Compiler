@@ -50,6 +50,9 @@ end
 // end
 
 fn a = () UInt64
-    return 1
-    0
+    if @assert_type(1, Int8)
+        1
+    else
+        0
+    end
 end

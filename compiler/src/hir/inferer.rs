@@ -11,6 +11,15 @@ enum EnvironmentState {
     NonMutated,
 }
 
+impl EnvironmentState {
+    fn merge(&mut self, rhs: Self) {
+        *self = match (*self, rhs) {
+            (Self::NonMutated, Self::NonMutated) => Self::NonMutated,
+            _ => Self::Mutated,
+        };
+    }
+}
+
 pub struct Inferer<'a> {
     variables: &'a mut HashMap<VariableId, Option<declarations::Id>>,
     return_type: declarations::Id,
@@ -56,53 +65,108 @@ impl<'a> Inferer<'a> {
         }
     }
 
+    fn block(
+        &mut self,
+        block: &mut hir::Block,
+        expected_type: Option<declarations::Id>,
+    ) -> Result<EnvironmentState, SemanticError> {
+        let mut environment_state = EnvironmentState::NonMutated;
+
+        for statement in &mut block.statements {
+            environment_state.merge(self.statement(statement)?);
+        }
+
+        if let Some(expression) = &mut block.expression {
+            environment_state.merge(self.expression(expression, expected_type)?);
+        }
+
+        Ok(environment_state)
+    }
+
     fn expression(
         &mut self,
         expression: &mut hir::TypedExpression,
         expected_type: Option<declarations::Id>,
     ) -> Result<EnvironmentState, SemanticError> {
-        match expression.type_id {
-            id @ Some(_) if id != expected_type => return Err(SemanticError::MismatchedTypes),
-            Some(_) => return Ok(EnvironmentState::NonMutated),
-            None => {}
-        };
-
-        let (type_id, environment_state) = match &mut expression.expression {
-            hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) => {
-                (expected_type, EnvironmentState::NonMutated)
+        if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {
+            if expected != found {
+                return Err(SemanticError::MismatchedTypes {
+                    expected: self.declarations.get_layout(expected).clone(),
+                    found: self.declarations.get_layout(found).clone(),
+                });
             }
-            hir::Expression::LocalAccess(variable) => (
-                *self
+        }
+
+        let environment_state = match &mut expression.expression {
+            hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) => {
+                EnvironmentState::NonMutated
+            }
+            hir::Expression::LocalAccess(variable) => {
+                expression.type_id = *self
                     .variables
                     .get(variable)
-                    .expect("Variable doesn't exist in hir!"),
-                EnvironmentState::NonMutated,
-            ),
-            hir::Expression::FieldAccess(expression, field) => {
-                let environment_state = self.expression(expression, None)?;
-                let type_id = expression.type_id;
+                    .expect("Variable doesn't exist in hir!");
+
+                EnvironmentState::NonMutated
+            }
+            hir::Expression::FieldAccess(left, field) => {
+                let environment_state = self.expression(left, None)?;
+                let type_id = left.type_id;
                 match type_id {
-                    None => (None, environment_state),
+                    None => environment_state,
                     Some(type_id) => {
                         let Layout::Struct { fields, .. } = self.declarations.get_layout(type_id)
                         else {
                             return Err(SemanticError::NonStructFieldAccess);
                         };
                         let field = fields.get(field).ok_or(SemanticError::NonExistentField)?;
-                        (Some(field.type_id), environment_state)
+
+                        if expression.type_id.is_none() {
+                            expression.type_id = Some(field.type_id);
+                        } else {
+                            // TODO: assert same
+                        };
+                        environment_state
                     }
                 }
             }
-            hir::Expression::Return(expression) => {
-                expression.type_id = Some(self.return_type);
-                (
-                    expected_type,
-                    self.expression(expression, Some(self.return_type))?,
-                )
+            hir::Expression::Return(inner) => {
+                inner.type_id = Some(self.return_type);
+                let environment_state = self.expression(inner, Some(self.return_type))?;
+                expression.type_id = expression.type_id.or(expected_type);
+                environment_state
+            }
+            hir::Expression::If(if_expression) => {
+                let hir::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } = &mut **if_expression;
+                let mut environment_state = self.expression(condition, None)?;
+
+                environment_state.merge(self.block(then_branch, expected_type)?);
+                let mut expected_type = expected_type.or_else(|| {
+                    then_branch
+                        .expression
+                        .as_ref()
+                        .and_then(|expression| expression.type_id)
+                });
+
+                environment_state.merge(self.block(else_branch, expected_type)?);
+
+                if let Some(expression) = &else_branch.expression {
+                    if let Some(type_id) = expression.type_id {
+                        if expected_type.is_none() {
+                            expected_type = Some(type_id);
+                            environment_state.merge(self.block(then_branch, expected_type)?);
+                        }
+                    }
+                }
+                expression.type_id = expression.type_id.or(expected_type);
+                environment_state
             }
             _ => todo!(),
         };
-        expression.type_id = type_id;
 
         Ok(environment_state)
     }

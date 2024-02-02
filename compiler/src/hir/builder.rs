@@ -112,7 +112,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn lookup(&self, ident: &parser::Ident) -> Result<Expression, SemanticError> {
+    fn lookup(&self, ident: &parser::Ident) -> Result<Expression, SemanticError> {
         for scope in self.local_scopes.iter().rev() {
             if let Some(variable) = scope.get(ident) {
                 return Ok(Expression::LocalAccess((*variable).into()));
@@ -120,12 +120,42 @@ impl<'a> Builder<'a> {
         }
 
         self.declarations
-            .lookup(&ident, self.top_level_scope)
+            .lookup(ident, self.top_level_scope)
             .map(Expression::GlobalAccess)
             .ok_or(SemanticError::DeclarationNotFound)
     }
 
-    pub fn expression(
+    fn block(&mut self, statements: &[parser::Statement]) -> Result<hir::Block, SemanticError> {
+        self.local_scopes.push(HashMap::new());
+
+        let Some((last, statements)) = statements.split_last() else {
+            return Ok(hir::Block {
+                statements: Vec::new(),
+                expression: None,
+            });
+        };
+
+        let mut statements = statements
+            .iter()
+            .map(|statement| self.statement(statement))
+            .collect::<Result<Vec<_>, SemanticError>>()?;
+
+        let expression = if let parser::Statement::Expression(expression) = last {
+            Some(self.expression(expression)?)
+        } else {
+            statements.push(self.statement(last)?);
+            None
+        };
+
+        self.local_scopes.pop();
+
+        Ok(hir::Block {
+            statements,
+            expression,
+        })
+    }
+
+    fn expression(
         &mut self,
         expression: &parser::Expression,
     ) -> Result<hir::TypedExpression, SemanticError> {
@@ -166,7 +196,7 @@ impl<'a> Builder<'a> {
                 self.expression(expression)?.with_type(self.return_type),
             ))
             .into()),
-            parser::Expression::Ident(ident) => Ok(self.lookup(&ident)?.into()),
+            parser::Expression::Ident(ident) => Ok(self.lookup(ident)?.into()),
             parser::Expression::Call(call) => Ok(hir::Expression::Call(Box::new(hir::Call {
                 callable: self.expression(&call.callable)?,
                 arguments: call
@@ -183,25 +213,9 @@ impl<'a> Builder<'a> {
                 else_branch,
             }) => Ok(Expression::If(Box::new(hir::If {
                 condition: self.expression(condition)?,
-                then_branch: {
-                    self.local_scopes.push(HashMap::new());
-                    let statements = then_branch
-                        .into_iter()
-                        .map(|statement| self.statement(statement))
-                        .collect::<Result<_, _>>()?;
-                    self.local_scopes.pop();
-                    statements
-                },
-                else_branch: {
-                    self.local_scopes.push(HashMap::new());
-                    let statements = else_branch
-                        .into_iter()
-                        .flatten()
-                        .map(|statement| self.statement(statement))
-                        .collect::<Result<_, _>>()?;
-                    self.local_scopes.pop();
-                    statements
-                },
+                then_branch: self.block(then_branch)?,
+                else_branch: self
+                    .block(else_branch.as_ref().map_or(&[], |else_branch| else_branch))?,
             }))
             .into()),
             parser::Expression::Constructor(parser::expression::Constructor { r#type, fields }) => {
@@ -227,10 +241,10 @@ impl<'a> Builder<'a> {
                 Ok(TypedExpression::new(
                     Expression::Constructor(hir::Constructor(
                         fields
-                            .into_iter()
+                            .iter()
                             .map(|(ident, expression)| {
                                 let field = *layout_fields
-                                    .get(&ident)
+                                    .get(ident)
                                     .ok_or(SemanticError::NonExistentField)?;
 
                                 Ok((

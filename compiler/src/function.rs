@@ -168,6 +168,8 @@ impl Function {
         let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
         inferer::Inferer::function(&mut func, declarations)?;
 
+        dbg!(&func.body);
+
         let mut translator = Translator::new(builder, declarations, &cranelift_context.module);
 
         for statement in func.body {

@@ -9,6 +9,12 @@ pub mod builder;
 pub mod inferer;
 
 #[derive(Debug, Clone)]
+pub struct Block {
+    pub statements: Vec<Statement>,
+    pub expression: Option<TypedExpression>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(TypedExpression),
     Assignment(TypedExpression, TypedExpression),
@@ -25,8 +31,8 @@ pub struct BinaryIntrinsic {
 #[derive(Debug, Clone)]
 pub struct If {
     pub condition: TypedExpression,
-    pub then_branch: Vec<Statement>,
-    pub else_branch: Vec<Statement>,
+    pub then_branch: Block,
+    pub else_branch: Block,
 }
 
 #[derive(Debug, Clone)]
