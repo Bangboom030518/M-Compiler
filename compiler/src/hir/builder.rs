@@ -155,6 +155,53 @@ impl<'a> Builder<'a> {
         })
     }
 
+    fn constructor(
+        &mut self,
+        constructor: &parser::expression::Constructor,
+    ) -> Result<TypedExpression, SemanticError> {
+        let type_id = self.lookup_type(&constructor.r#type)?;
+
+        let Layout::Struct {
+            fields: layout_fields,
+            ..
+        } = self.declarations.get_layout(type_id)
+        else {
+            return Err(SemanticError::InvalidConstructor);
+        };
+
+        // TODO: Make sure all fields are present
+        Ok(TypedExpression::new(
+            Expression::Constructor(hir::Constructor(
+                constructor
+                    .fields
+                    .iter()
+                    .map(|(ident, expression)| {
+                        layout_fields
+                            .get(ident)
+                            .ok_or(SemanticError::NonExistentField)
+                            .and_then(|field| {
+                                self.expression(expression).map(|expression| {
+                                    (field.offset, expression.with_type(field.type_id))
+                                })
+                            })
+                    })
+                    .collect::<Result<_, SemanticError>>()?,
+            )),
+            Some(type_id),
+        ))
+    }
+
+    fn lookup_type(&self, path: &parser::Type) -> Result<declarations::Id, SemanticError> {
+        self.declarations
+            .lookup(
+                match path {
+                    parser::Type::Ident(ident) => ident,
+                },
+                self.top_level_scope,
+            )
+            .ok_or(SemanticError::DeclarationNotFound)
+    }
+
     fn expression(
         &mut self,
         expression: &parser::Expression,
@@ -175,15 +222,7 @@ impl<'a> Builder<'a> {
                     .into())
                 }
                 IntrinsicCall::AssertType(expression, r#type) => {
-                    let type_id = self
-                        .declarations
-                        .lookup(
-                            match r#type {
-                                parser::Type::Ident(ident) => ident,
-                            },
-                            self.top_level_scope,
-                        )
-                        .ok_or(SemanticError::DeclarationNotFound)?;
+                    let type_id = self.lookup_type(r#type)?;
 
                     self.expression(expression)
                         .map(|expression| expression.with_type(type_id))
@@ -218,45 +257,7 @@ impl<'a> Builder<'a> {
                     .block(else_branch.as_ref().map_or(&[], |else_branch| else_branch))?,
             }))
             .into()),
-            parser::Expression::Constructor(parser::expression::Constructor { r#type, fields }) => {
-                let type_id = self
-                    .declarations
-                    .lookup(
-                        &match r#type {
-                            parser::Type::Ident(ident) => ident.clone(),
-                        },
-                        self.top_level_scope,
-                    )
-                    .ok_or(SemanticError::DeclarationNotFound)?;
-
-                let Layout::Struct {
-                    fields: layout_fields,
-                    ..
-                } = self.declarations.get_layout(type_id)
-                else {
-                    return Err(SemanticError::InvalidConstructor);
-                };
-
-                // TODO: Make sure all fields are present
-                Ok(TypedExpression::new(
-                    Expression::Constructor(hir::Constructor(
-                        fields
-                            .iter()
-                            .map(|(ident, expression)| {
-                                let field = *layout_fields
-                                    .get(ident)
-                                    .ok_or(SemanticError::NonExistentField)?;
-
-                                Ok((
-                                    field.offset,
-                                    self.expression(expression)?.with_type(field.type_id),
-                                ))
-                            })
-                            .collect::<Result<_, SemanticError>>()?,
-                    )),
-                    Some(type_id),
-                ))
-            }
+            parser::Expression::Constructor(constructor) => self.constructor(constructor),
             parser::Expression::FieldAccess(expression, field) => Ok(Expression::FieldAccess(
                 Box::new(self.expression(expression)?),
                 field.clone(),

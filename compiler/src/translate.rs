@@ -160,7 +160,7 @@ where
                     return Err(SemanticError::UnexpectedNumberLiteral);
                 };
 
-                let r#type = match r#type {
+                let cranelift_type = match r#type {
                     Primitive::I8 | Primitive::U8 => types::I8,
                     Primitive::I16 | Primitive::U16 => types::I16,
                     Primitive::I32 | Primitive::U32 => types::I32,
@@ -169,7 +169,7 @@ where
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
 
-                self.builder.ins().iconst(r#type, i64::try_from(int)?)
+                self.builder.ins().iconst(cranelift_type, i64::try_from(int)?)
             }
             hir::Expression::FloatConst(float) => {
                 match layout? {
