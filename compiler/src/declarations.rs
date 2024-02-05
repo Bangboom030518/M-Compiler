@@ -81,7 +81,7 @@ impl Declarations {
                         name.clone(),
                         layout::Field {
                             type_id: *r#type,
-                            offset: Offset32::new(offset as i32),
+                            offset: Offset32::new(i32::try_from(offset).expect("struct offset exceded `i32::MAX`")),
                         },
                     );
                     let layout = self.insert_layout(*r#type, scope)?;

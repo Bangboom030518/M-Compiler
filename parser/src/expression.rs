@@ -81,6 +81,46 @@ pub enum CmpOperator {
     Ne,
 }
 
+impl CmpOperator {
+    #[must_use]
+    pub const fn signed_intcc(self) -> cranelift::prelude::IntCC {
+        use cranelift::prelude::IntCC;
+        match self {
+            Self::Eq => IntCC::Equal,
+            Self::Ne => IntCC::NotEqual,
+            Self::Gt => IntCC::SignedGreaterThan,
+            Self::Gte => IntCC::SignedGreaterThanOrEqual,
+            Self::Lt => IntCC::SignedLessThan,
+            Self::Lte => IntCC::SignedLessThanOrEqual,
+        }
+    }
+
+    #[must_use]
+    pub const fn unsigned_intcc(self) -> cranelift::prelude::IntCC {
+        use cranelift::prelude::IntCC;
+        match self {
+            Self::Eq => IntCC::Equal,
+            Self::Ne => IntCC::NotEqual,
+            Self::Gt => IntCC::UnsignedGreaterThan,
+            Self::Gte => IntCC::UnsignedGreaterThanOrEqual,
+            Self::Lt => IntCC::UnsignedLessThan,
+            Self::Lte => IntCC::UnsignedLessThanOrEqual,
+        }
+    }
+
+    #[must_use]
+    pub fn floatcc(self) -> cranelift::prelude::FloatCC {
+        use cranelift::prelude::FloatCC;
+        match self {
+            Self::Eq => FloatCC::Equal,
+            Self::Ne => FloatCC::NotEqual,
+            Self::Gt => todo!(),
+            Self::Gte => todo!(),
+            Self::Lt => todo!(),
+            Self::Lte => todo!(),
+        }
+    }
+}
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum IntrinsicOperator {
     Cmp(CmpOperator),

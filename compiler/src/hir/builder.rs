@@ -51,8 +51,7 @@ impl<'a> Builder<'a> {
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
-        let new_variable_index = parameters.len();
-
+        let new_variable_index = parameters.len() + crate::function::SPECIAL_VARIABLES.len();
         for (ident, variable, type_id) in parameters {
             variables.insert(variable.into(), Some(type_id));
             scope.insert(ident, variable);
@@ -103,8 +102,12 @@ impl<'a> Builder<'a> {
                     .last_mut()
                     .expect("Must always have a scope")
                     .insert(ident.clone(), variable);
+                self.variables.insert(variable.into(), None);
 
-                Ok(hir::Statement::Let(variable, self.expression(expression)?))
+                Ok(hir::Statement::Let(
+                    variable.into(),
+                    self.expression(expression)?,
+                ))
             }
             parser::Statement::Expression(expression) => {
                 Ok(hir::Statement::Expression(self.expression(expression)?))
@@ -258,11 +261,13 @@ impl<'a> Builder<'a> {
             }))
             .into()),
             parser::Expression::Constructor(constructor) => self.constructor(constructor),
-            parser::Expression::FieldAccess(expression, field) => Ok(Expression::FieldAccess(
-                Box::new(self.expression(expression)?),
-                field.clone(),
-            )
-            .into()),
+            parser::Expression::FieldAccess(expression, field) => {
+                Ok(Expression::FieldAccess(Box::new(hir::FieldAccess {
+                    expression: self.expression(expression)?,
+                    field: field.clone(),
+                }))
+                .into())
+            }
             parser::Expression::Binary(_) => todo!(),
             parser::Expression::UnaryPrefix(_, _) => todo!(),
         }

@@ -5,10 +5,11 @@ use crate::layout::Layout;
 use crate::{hir, SemanticError};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum EnvironmentState {
-    Mutated,
+    #[default]
     NonMutated,
+    Mutated,
 }
 
 impl EnvironmentState {
@@ -52,16 +53,37 @@ impl<'a> Inferer<'a> {
         statement: &mut hir::Statement,
     ) -> Result<EnvironmentState, SemanticError> {
         match statement {
+            // TODO: distinct variant?
             hir::Statement::Assignment(
                 TypedExpression {
                     expression: hir::Expression::LocalAccess(var),
                     ..
                 },
                 expression,
-            ) => todo!(),
-            hir::Statement::Let(_, _) => todo!(),
+            ) => self.expression(
+                expression,
+                *self.variables.get(&*var).expect("variable doesn't exist!"),
+            ),
+            hir::Statement::Let(variable, expression) => {
+                let variable_type = self
+                    .variables
+                    .get(variable)
+                    .expect("variable doesn't exist!");
+
+                let environment_state = self.expression(expression, *variable_type)?;
+
+                self.variables
+                    .insert(*variable, expression.type_id)
+                    .expect("variable doesn't exist!");
+
+                Ok(environment_state)
+            }
             hir::Statement::Expression(expression) => self.expression(expression, None),
-            hir::Statement::Assignment(_, _) => todo!(),
+            hir::Statement::Assignment(left, right) => {
+                let mut environment_state = EnvironmentState::default();
+                environment_state.merge(self.expression(left, None)?);
+                todo!("syntax for `*a = b`")
+            }
         }
     }
 
@@ -70,7 +92,7 @@ impl<'a> Inferer<'a> {
         block: &mut hir::Block,
         expected_type: Option<declarations::Id>,
     ) -> Result<EnvironmentState, SemanticError> {
-        let mut environment_state = EnvironmentState::NonMutated;
+        let mut environment_state = EnvironmentState::default();
 
         for statement in &mut block.statements {
             environment_state.merge(self.statement(statement)?);
@@ -88,30 +110,32 @@ impl<'a> Inferer<'a> {
         expression: &mut hir::TypedExpression,
         expected_type: Option<declarations::Id>,
     ) -> Result<EnvironmentState, SemanticError> {
-        if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {
-            if expected != found {
-                return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.get_layout(expected).clone(),
-                    found: self.declarations.get_layout(found).clone(),
-                });
-            }
-        }
-
         let environment_state = match &mut expression.expression {
             hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) => {
                 EnvironmentState::NonMutated
             }
             hir::Expression::LocalAccess(variable) => {
-                expression.type_id = *self
+                let variable_type = self
                     .variables
-                    .get(variable)
-                    .expect("Variable doesn't exist in hir!");
+                    .get_mut(variable)
+                    .expect("variable doesn't exist!");
 
-                EnvironmentState::NonMutated
+                if variable_type.is_none() {
+                    if let expected_type @ Some(_) = expected_type {
+                        expression.type_id = expected_type;
+                        *variable_type = expected_type;
+                        EnvironmentState::Mutated
+                    } else {
+                        EnvironmentState::NonMutated
+                    }
+                } else {
+                    expression.type_id = *variable_type;
+                    EnvironmentState::NonMutated
+                }
             }
-            hir::Expression::FieldAccess(left, field) => {
-                let environment_state = self.expression(left, None)?;
-                let type_id = left.type_id;
+            hir::Expression::FieldAccess(access) => {
+                let environment_state = self.expression(&mut access.expression, None)?;
+                let type_id = access.expression.type_id;
                 match type_id {
                     None => environment_state,
                     Some(type_id) => {
@@ -119,7 +143,9 @@ impl<'a> Inferer<'a> {
                         else {
                             return Err(SemanticError::NonStructFieldAccess);
                         };
-                        let field = fields.get(field).ok_or(SemanticError::NonExistentField)?;
+                        let field = fields
+                            .get(&access.field)
+                            .ok_or(SemanticError::NonExistentField)?;
 
                         if expression.type_id.is_none() {
                             expression.type_id = Some(field.type_id);
@@ -132,9 +158,7 @@ impl<'a> Inferer<'a> {
             }
             hir::Expression::Return(inner) => {
                 inner.type_id = Some(self.return_type);
-                let environment_state = self.expression(inner, Some(self.return_type))?;
-                expression.type_id = expression.type_id.or(expected_type);
-                environment_state
+                self.expression(inner, Some(self.return_type))?
             }
             hir::Expression::If(if_expression) => {
                 let hir::If {
@@ -162,11 +186,55 @@ impl<'a> Inferer<'a> {
                         }
                     }
                 }
-                expression.type_id = expression.type_id.or(expected_type);
                 environment_state
             }
-            _ => todo!(),
+            hir::Expression::Call(call) => {
+                let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
+                    todo!("closures!")
+                };
+                let function = self.declarations.get_function(declaration)?;
+
+                if function.parameters.len() != call.arguments.len() {
+                    return Err(SemanticError::InvalidNumberOfArguments);
+                }
+                let mut environment_state = EnvironmentState::NonMutated;
+
+                for (type_id, argument) in function
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.1)
+                    .zip(call.arguments.iter_mut())
+                {
+                    argument.type_id = Some(type_id);
+                    environment_state.merge(self.expression(argument, Some(type_id))?);
+                }
+
+                expression.type_id = Some(function.return_type);
+
+                environment_state
+            }
+            hir::Expression::BinaryIntrinsic(binary) => {
+                // TODO: `right -> left` inference!
+                let mut environment_state = EnvironmentState::NonMutated;
+                environment_state.merge(self.expression(&mut binary.left, None)?);
+                environment_state.merge(self.expression(&mut binary.right, binary.left.type_id)?);
+                environment_state
+            }
+            hir::Expression::Constructor(_) => todo!("constructor"),
+            hir::Expression::MutablePointer(_) => todo!("mutable pointer"),
+            hir::Expression::GlobalAccess(_) => todo!("global access!"),
         };
+
+        if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {
+            if expected != found {
+                return Err(SemanticError::MismatchedTypes {
+                    expected: self.declarations.get_layout(expected).clone(),
+                    found: self.declarations.get_layout(found).clone(),
+                });
+            }
+        }
+
+        expression.type_id = expression.type_id.or(expected_type);
 
         Ok(environment_state)
     }

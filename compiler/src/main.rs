@@ -116,10 +116,10 @@ fn main() {
     }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("a").unwrap();
+    let function = *functions.get("new_point").unwrap();
 
     let code = context.module.get_finalized_function(function);
 
-    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
-    dbg!(unsafe { new_point() });
+    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn(u64, u64) -> u64>(code) };
+    dbg!(unsafe { new_point(1, 1) });
 }

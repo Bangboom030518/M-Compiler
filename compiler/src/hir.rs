@@ -18,7 +18,7 @@ pub struct Block {
 pub enum Statement {
     Expression(TypedExpression),
     Assignment(TypedExpression, TypedExpression),
-    Let(Variable, TypedExpression),
+    Let(VariableId, TypedExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -45,12 +45,18 @@ pub struct Call {
 pub struct Constructor(pub Vec<(Offset32, TypedExpression)>);
 
 #[derive(Debug, Clone)]
+pub struct FieldAccess {
+    pub expression: TypedExpression,
+    pub field: parser::Ident,
+}
+
+#[derive(Debug, Clone)]
 pub enum Expression {
     IntegerConst(u128),
     FloatConst(f64),
     BinaryIntrinsic(Box<BinaryIntrinsic>),
     If(Box<If>),
-    FieldAccess(Box<TypedExpression>, parser::Ident),
+    FieldAccess(Box<FieldAccess>),
     Constructor(Constructor),
     MutablePointer(Box<TypedExpression>),
     Call(Box<Call>),
