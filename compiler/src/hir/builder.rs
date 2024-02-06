@@ -164,11 +164,7 @@ impl<'a> Builder<'a> {
     ) -> Result<TypedExpression, SemanticError> {
         let type_id = self.lookup_type(&constructor.r#type)?;
 
-        let Layout::Struct {
-            fields: layout_fields,
-            ..
-        } = self.declarations.get_layout(type_id)
-        else {
+        let Layout::Struct(layout) = self.declarations.get_layout(type_id) else {
             return Err(SemanticError::InvalidConstructor);
         };
 
@@ -179,7 +175,8 @@ impl<'a> Builder<'a> {
                     .fields
                     .iter()
                     .map(|(ident, expression)| {
-                        layout_fields
+                        layout
+                            .fields
                             .get(ident)
                             .ok_or(SemanticError::NonExistentField)
                             .and_then(|field| {

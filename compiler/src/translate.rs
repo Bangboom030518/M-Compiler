@@ -189,7 +189,7 @@ where
         access: hir::FieldAccess,
         layout: Result<&Layout, SemanticError>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let Layout::Struct { fields, .. } = self.declarations.get_layout(
+        let Layout::Struct(struct_layout) = self.declarations.get_layout(
             access
                 .expression
                 .type_id
@@ -204,7 +204,8 @@ where
             layout?.cranelift_type(&self.declarations.isa),
             MemFlags::new(),
             value,
-            fields
+            struct_layout
+                .fields
                 .get(&access.field)
                 .ok_or(SemanticError::NonExistentField)?
                 .offset,
@@ -279,13 +280,13 @@ where
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
             hir::Expression::FieldAccess(access) => self.field_access(*access, layout)?,
             hir::Expression::Constructor(constructor) => {
-                let Layout::Struct { size, .. } = layout? else {
+                let Layout::Struct(layout) = layout? else {
                     return Err(SemanticError::InvalidConstructor);
                 };
 
                 let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
                     kind: StackSlotKind::ExplicitSlot,
-                    size: *size,
+                    size: layout.size,
                 });
 
                 let addr = self.builder.ins().stack_addr(

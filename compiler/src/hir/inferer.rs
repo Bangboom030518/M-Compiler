@@ -1,7 +1,7 @@
 use super::builder::{self, VariableId};
 use super::TypedExpression;
 use crate::declarations::{self, Declarations};
-use crate::layout::Layout;
+use crate::layout::{self, Layout, Primitive};
 use crate::{hir, SemanticError};
 use std::collections::HashMap;
 
@@ -133,18 +133,23 @@ impl<'a> Inferer<'a> {
                     EnvironmentState::NonMutated
                 }
             }
-            hir::Expression::FieldAccess(access) => {
-                let environment_state = self.expression(&mut access.expression, None)?;
-                let type_id = access.expression.type_id;
+            hir::Expression::FieldAccess(field_access) => {
+                let environment_state = self.expression(&mut field_access.expression, None)?;
+                let type_id = field_access.expression.type_id;
                 match type_id {
                     None => environment_state,
                     Some(type_id) => {
-                        let Layout::Struct { fields, .. } = self.declarations.get_layout(type_id)
+                        let Layout::Struct(layout) = self
+                            .declarations
+                            .get_layout(type_id)
+                            .deref_pointers(self.declarations)
                         else {
                             return Err(SemanticError::NonStructFieldAccess);
                         };
-                        let field = fields
-                            .get(&access.field)
+
+                        let field = layout
+                            .fields
+                            .get(&field_access.field)
                             .ok_or(SemanticError::NonExistentField)?;
 
                         if expression.type_id.is_none() {
@@ -215,13 +220,30 @@ impl<'a> Inferer<'a> {
             }
             hir::Expression::BinaryIntrinsic(binary) => {
                 // TODO: `right -> left` inference!
-                let mut environment_state = EnvironmentState::NonMutated;
+                let mut environment_state = EnvironmentState::default();
                 environment_state.merge(self.expression(&mut binary.left, None)?);
                 environment_state.merge(self.expression(&mut binary.right, binary.left.type_id)?);
                 environment_state
             }
-            hir::Expression::Constructor(_) => todo!("constructor"),
-            hir::Expression::MutablePointer(_) => todo!("mutable pointer"),
+            hir::Expression::Constructor(constructor) => {
+                let mut environment_state = EnvironmentState::default();
+                for (_, field) in &mut constructor.0 {
+                    environment_state.merge(self.expression(field, None)?);
+                }
+                environment_state
+            }
+            hir::Expression::MutablePointer(pointer) => {
+                if let Some(type_id) = expression.type_id {
+                    let Layout::Primitive(layout::Primitive::MutablePointer(inner)) =
+                        self.declarations.get_layout(type_id)
+                    else {
+                        return Err(SemanticError::InvalidMutRef);
+                    };
+                    self.expression(pointer, Some(*inner))?
+                } else {
+                    EnvironmentState::default()
+                }
+            }
             hir::Expression::GlobalAccess(_) => todo!("global access!"),
         };
 

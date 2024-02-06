@@ -2,7 +2,6 @@ use crate::declarations;
 pub use builder::Builder;
 use builder::VariableId;
 use cranelift::codegen::ir::immediates::Offset32;
-use cranelift::prelude::*;
 use parser::expression::IntrinsicOperator;
 
 pub mod builder;

@@ -87,10 +87,10 @@ impl Declarations {
                     let layout = self.insert_layout(*r#type, scope)?;
                     offset += layout.size(&self.isa);
                 }
-                Layout::Struct {
+                Layout::Struct(layout::Struct {
                     fields: layout_fields,
                     size: offset,
-                }
+                })
             }
             Type::Primitive(primitive) => Layout::Primitive(match primitive {
                 PrimitiveKind::F32 => layout::Primitive::F32,

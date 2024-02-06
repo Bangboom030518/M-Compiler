@@ -1,6 +1,8 @@
-use crate::declarations;
+use crate::declarations::Declarations;
+use crate::{declarations, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
+use parser::top_level::DeclarationKind;
 use parser::Ident;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,11 +14,14 @@ pub struct Field {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Struct {
+    pub fields: HashMap<Ident, Field>,
+    pub size: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Layout {
-    Struct {
-        fields: HashMap<Ident, Field>,
-        size: u32,
-    },
+    Struct(Struct),
     Primitive(Primitive),
 }
 
@@ -24,18 +29,27 @@ impl Layout {
     pub fn size(&self, isa: &Arc<dyn TargetIsa>) -> u32 {
         match self {
             Self::Primitive(primitive) => primitive.size(u32::from(isa.pointer_bytes())),
-            Self::Struct { size, .. } => *size,
+            Self::Struct(Struct { size, .. }) => *size,
         }
     }
 
     pub const fn is_aggregate(&self) -> bool {
-        matches!(self, Self::Struct { .. })
+        matches!(self, Self::Struct(_))
     }
 
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
-            Self::Struct { .. } => isa.pointer_type(),
+            Self::Struct(_) => isa.pointer_type(),
+        }
+    }
+
+    pub fn deref_pointers<'a>(&'a self, declarations: &'a Declarations) -> &'a Self {
+        match self {
+            Self::Primitive(Primitive::MutablePointer(inner_type)) => {
+                declarations.get_layout(*inner_type).deref_pointers(declarations)
+            },
+            _ => self,
         }
     }
 }

@@ -62,9 +62,9 @@ impl Function {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
                     )),
-                    Layout::Struct { size, .. } => Ok(AbiParam::special(
+                    Layout::Struct(layout) => Ok(AbiParam::special(
                         declarations.isa.pointer_type(),
-                        codegen::ir::ArgumentPurpose::StructArgument(*size),
+                        codegen::ir::ArgumentPurpose::StructArgument(layout.size),
                     )),
                 }
             })
@@ -129,6 +129,7 @@ impl Function {
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
         );
+
         builder.func.signature = self.signature.clone();
 
         let entry_block = builder.create_block();
