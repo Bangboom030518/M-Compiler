@@ -64,7 +64,7 @@ impl Type {
     #[must_use]
     pub fn ident(self) -> Ident {
         match self {
-            Self::Ident(ident) => ident
+            Self::Ident(ident) => ident,
         }
     }
 }
@@ -92,13 +92,19 @@ pub enum Statement {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Assignment(pub Expression, pub Expression);
+pub struct Assignment {
+    pub left: Expression,
+    pub right: Expression,
+}
 
 impl Parse for Assignment {
     fn parse(parser: &mut Parser) -> Option<Self> {
         let left = parser.parse()?;
         parser.take_token_if(&Token::Assignment)?;
-        Some(Self(left, parser.parse()?))
+        Some(Self {
+            left,
+            right: parser.parse()?,
+        })
     }
 }
 

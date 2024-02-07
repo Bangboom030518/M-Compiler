@@ -54,16 +54,26 @@ impl<'a> Inferer<'a> {
     ) -> Result<EnvironmentState, SemanticError> {
         match statement {
             // TODO: distinct variant?
-            hir::Statement::Assignment(
-                TypedExpression {
-                    expression: hir::Expression::LocalAccess(var),
-                    ..
-                },
-                expression,
-            ) => self.expression(
-                expression,
-                *self.variables.get(&*var).expect("variable doesn't exist!"),
-            ),
+            hir::Statement::Assignment(hir::Assignment { left, right }) => {
+                let mut environment_state = EnvironmentState::default();
+                
+                environment_state.merge(self.expression(
+                    right,
+                    left.type_id,
+                )?);
+                
+                environment_state.merge(self.expression(
+                    left,
+                    right.type_id,
+                )?);
+                
+                environment_state.merge(self.expression(
+                    right,
+                    left.type_id,
+                )?);
+                
+                Ok(environment_state)
+            }
             hir::Statement::Let(variable, expression) => {
                 let variable_type = self
                     .variables
@@ -79,11 +89,6 @@ impl<'a> Inferer<'a> {
                 Ok(environment_state)
             }
             hir::Statement::Expression(expression) => self.expression(expression, None),
-            hir::Statement::Assignment(left, right) => {
-                let mut environment_state = EnvironmentState::default();
-                environment_state.merge(self.expression(left, None)?);
-                todo!("syntax for `*a = b`")
-            }
         }
     }
 

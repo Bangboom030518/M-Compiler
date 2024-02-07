@@ -93,9 +93,12 @@ impl<'a> Builder<'a> {
         statement: &parser::Statement,
     ) -> Result<hir::Statement, SemanticError> {
         match statement {
-            parser::Statement::Assignment(parser::Assignment(left, right)) => Ok(
-                hir::Statement::Assignment(self.expression(left)?, self.expression(right)?),
-            ),
+            parser::Statement::Assignment(parser::Assignment { left, right }) => {
+                Ok(hir::Statement::Assignment(hir::Assignment::new(
+                    self.expression(left)?,
+                    self.expression(right)?,
+                )))
+            }
             parser::Statement::Let(ident, expression) => {
                 let variable = self.create_variable();
                 self.local_scopes

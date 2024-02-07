@@ -1,3 +1,5 @@
+use std::f32::consts::E;
+
 use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
@@ -43,7 +45,18 @@ where
         statement: hir::Statement,
     ) -> Result<BranchStatus<()>, SemanticError> {
         match statement {
-            hir::Statement::Assignment(_, _) => todo!("assignment"),
+            hir::Statement::Assignment(assignment) => {
+                let BranchStatus::Continue(left) = self.expression(assignment.left)? else {
+                    return Ok(BranchStatus::Finished);
+                };
+                let BranchStatus::Continue(right) = self.load_primitive(assignment.right)? else {
+                    return Ok(BranchStatus::Finished);
+                };
+
+                self.builder
+                    .ins()
+                    .store(MemFlags::new(), right, left, Offset32::new(0));
+            }
             hir::Statement::Expression(expression) => {
                 if self.expression(expression)? == BranchStatus::Finished {
                     return Ok(BranchStatus::Finished);
@@ -113,7 +126,7 @@ where
             todo!("void ifs")
         }
 
-        let BranchStatus::Continue(condition) = self.expression(condition)? else {
+        let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
         };
 
@@ -150,21 +163,21 @@ where
     fn binary_intrinsic(
         &mut self,
         binary: hir::BinaryIntrinsic,
-        layout: Result<&Layout, SemanticError>,
+        layout: &Layout,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let BranchStatus::Continue(left) = self.expression(binary.left)? else {
+        let BranchStatus::Continue(left) = self.load_primitive(binary.left)? else {
             return Ok(BranchStatus::Finished);
         };
-        let right = match self.expression(binary.right)? {
-            BranchStatus::Continue(value) => value,
-            BranchStatus::Finished => return Ok(BranchStatus::Finished),
+
+        let BranchStatus::Continue(right) = self.load_primitive(binary.right)? else {
+            return Ok(BranchStatus::Finished);
         };
 
         let value = match binary.operator {
             IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
             IntrinsicOperator::Sub => self.builder.ins().isub(left, right),
             IntrinsicOperator::Cmp(operator) => {
-                let Layout::Primitive(primitive) = layout? else {
+                let Layout::Primitive(primitive) = layout else {
                     return Err(SemanticError::InvalidIntrinsic);
                 };
 
@@ -187,7 +200,6 @@ where
     fn field_access(
         &mut self,
         access: hir::FieldAccess,
-        layout: Result<&Layout, SemanticError>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let Layout::Struct(struct_layout) = self.declarations.get_layout(
             access
@@ -197,19 +209,141 @@ where
         ) else {
             return Err(SemanticError::NonStructFieldAccess);
         };
+
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
         };
-        let value = self.builder.ins().load(
-            layout?.cranelift_type(&self.declarations.isa),
-            MemFlags::new(),
-            value,
-            struct_layout
-                .fields
-                .get(&access.field)
-                .ok_or(SemanticError::NonExistentField)?
-                .offset,
+
+        let offset = struct_layout
+            .fields
+            .get(&access.field)
+            .ok_or(SemanticError::NonExistentField)?
+            .offset;
+
+        let offset = self.builder.ins().iconst(
+            self.declarations.isa.pointer_type(),
+            Imm64::new(offset.into()),
         );
+
+        Ok(BranchStatus::Continue(
+            self.builder.ins().iadd(value, offset),
+        ))
+    }
+
+    fn constructor(
+        &mut self,
+        constructor: hir::Constructor,
+        layout: &Layout,
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        let Layout::Struct(layout) = layout else {
+            return Err(SemanticError::InvalidConstructor);
+        };
+
+        let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
+            kind: StackSlotKind::ExplicitSlot,
+            size: layout.size,
+        });
+
+        let addr = self.builder.ins().stack_addr(
+            self.declarations.isa.pointer_type(),
+            stack_slot,
+            Offset32::new(0),
+        );
+
+        for (offset, expression) in constructor.0 {
+            // TODO: handle nested aggregates
+            let expression = match self.load_primitive(expression)? {
+                BranchStatus::Continue(value) => value,
+                BranchStatus::Finished => return Ok(BranchStatus::Finished),
+            };
+            self.builder
+                .ins()
+                .stack_store(expression, stack_slot, offset);
+        }
+
+        Ok(BranchStatus::Continue(addr))
+    }
+
+    fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, SemanticError> {
+        let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
+            todo!("closures!")
+        };
+        let function = self.declarations.get_function(declaration)?;
+
+        let mut arguments = Vec::new();
+        for expression in call.arguments {
+            let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
+                return Ok(BranchStatus::Finished);
+            };
+            arguments.push(value);
+        }
+
+        let return_layout = self.declarations.get_layout(function.return_type);
+
+        if return_layout.is_aggregate() {
+            let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                return_layout.size(&self.declarations.isa),
+            ));
+
+            let addr = self.builder.ins().stack_addr(
+                self.declarations.isa.pointer_type(),
+                stack_slot,
+                Offset32::new(0),
+            );
+
+            arguments.push(addr);
+        }
+
+        let func_ref = self
+            .module
+            .declare_func_in_func(function.id, self.builder.func);
+
+        let call = self.builder.ins().call(func_ref, arguments.as_slice());
+
+        Ok(BranchStatus::Continue(self.builder.inst_results(call)[0]))
+    }
+
+    fn put_in_stack_slot(&mut self, value: Value, size: u32) -> Value {
+        let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
+            kind: StackSlotKind::ExplicitSlot,
+            size,
+        });
+
+        self.builder
+            .ins()
+            .stack_store(value, stack_slot, Offset32::new(0));
+
+        self.builder.ins().stack_addr(
+            self.declarations.isa.pointer_type(),
+            stack_slot,
+            Offset32::new(0),
+        )
+    }
+
+    fn load_primitive(
+        &mut self,
+        expression: hir::TypedExpression,
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        let layout = self
+            .declarations
+            .get_layout(expression.type_id.ok_or(SemanticError::UnknownType)?);
+
+        let BranchStatus::Continue(value) = self.expression(expression)? else {
+            return Ok(BranchStatus::Finished);
+        };
+
+        let value = if layout.is_aggregate() {
+            value
+        } else {
+            self.builder.ins().load(
+                layout.cranelift_type(&self.declarations.isa),
+                MemFlags::new(),
+                value,
+                Offset32::new(0),
+            )
+        };
+
         Ok(BranchStatus::Continue(value))
     }
 
@@ -239,25 +373,30 @@ where
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
 
-                BranchStatus::Continue(
-                    self.builder
-                        .ins()
-                        .iconst(cranelift_type, i64::try_from(int)?),
-                )
+                let value = self
+                    .builder
+                    .ins()
+                    .iconst(cranelift_type, i64::try_from(int)?);
+
+                BranchStatus::Continue(self.put_in_stack_slot(
+                    value,
+                    primitive.size(self.declarations.isa.pointer_bytes().into()),
+                ))
             }
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
-                    // TODO: as
-                    Layout::Primitive(Primitive::F32) =>
-                    {
+                    Layout::Primitive(Primitive::F32) => {
                         #[allow(clippy::cast_possible_truncation)]
-                        self.builder.ins().f32const(Ieee32::from(float as f32))
+                        let value = self.builder.ins().f32const(Ieee32::from(float as f32));
+                        self.put_in_stack_slot(value, 4)
                     }
                     Layout::Primitive(Primitive::F64) => {
-                        self.builder.ins().f64const(Ieee64::from(float))
+                        let value = self.builder.ins().f64const(Ieee64::from(float));
+                        self.put_in_stack_slot(value, 8)
                     }
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
+
                 BranchStatus::Continue(value)
             }
             hir::Expression::MutablePointer(expression) => {
@@ -276,86 +415,24 @@ where
                     todo!("primitive mut refs")
                 }
             }
-            hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout)?,
+            hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
-            hir::Expression::FieldAccess(access) => self.field_access(*access, layout)?,
-            hir::Expression::Constructor(constructor) => {
-                let Layout::Struct(layout) = layout? else {
-                    return Err(SemanticError::InvalidConstructor);
-                };
-
-                let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
-                    kind: StackSlotKind::ExplicitSlot,
-                    size: layout.size,
-                });
-
-                let addr = self.builder.ins().stack_addr(
-                    self.declarations.isa.pointer_type(),
-                    stack_slot,
-                    Offset32::new(0),
-                );
-
-                for (offset, expression) in constructor.0 {
-                    let expression = match self.expression(expression)? {
-                        BranchStatus::Continue(value) => value,
-                        BranchStatus::Finished => return Ok(BranchStatus::Finished),
-                    };
-                    self.builder
-                        .ins()
-                        .stack_store(expression, stack_slot, offset);
-                }
-
-                BranchStatus::Continue(addr)
-            }
+            hir::Expression::FieldAccess(access) => self.field_access(*access)?,
+            hir::Expression::Constructor(constructor) => self.constructor(constructor, layout?)?,
             hir::Expression::Return(expression) => {
-                let BranchStatus::Continue(expression) = self.expression(*expression)? else {
+                let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                self.builder.ins().return_(&[expression]);
+
+                self.builder.ins().return_(&[value]);
+
                 return Ok(BranchStatus::Finished);
             }
             hir::Expression::LocalAccess(variable) => {
                 BranchStatus::Continue(self.builder.use_var(variable.into()))
             }
             hir::Expression::GlobalAccess(_) => todo!(),
-            hir::Expression::Call(call) => {
-                let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
-                    todo!("closures!")
-                };
-                let function = self.declarations.get_function(declaration)?;
-
-                let mut arguments = Vec::new();
-                for expression in call.arguments {
-                    let BranchStatus::Continue(value) = self.expression(expression)? else {
-                        return Ok(BranchStatus::Finished);
-                    };
-                    arguments.push(value);
-                }
-
-                let return_layout = self.declarations.get_layout(function.return_type);
-
-                if return_layout.is_aggregate() {
-                    let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        return_layout.size(&self.declarations.isa),
-                    ));
-
-                    let addr = self.builder.ins().stack_addr(
-                        self.declarations.isa.pointer_type(),
-                        stack_slot,
-                        Offset32::new(0),
-                    );
-
-                    arguments.push(addr);
-                }
-
-                let func_ref = self
-                    .module
-                    .declare_func_in_func(function.id, self.builder.func);
-                let call = self.builder.ins().call(func_ref, arguments.as_slice());
-
-                BranchStatus::Continue(self.builder.inst_results(call)[0])
-            }
+            hir::Expression::Call(call) => self.call(*call)?,
         };
 
         Ok(value)

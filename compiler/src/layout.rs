@@ -1,8 +1,7 @@
+use crate::declarations;
 use crate::declarations::Declarations;
-use crate::{declarations, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::top_level::DeclarationKind;
 use parser::Ident;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,9 +45,9 @@ impl Layout {
 
     pub fn deref_pointers<'a>(&'a self, declarations: &'a Declarations) -> &'a Self {
         match self {
-            Self::Primitive(Primitive::MutablePointer(inner_type)) => {
-                declarations.get_layout(*inner_type).deref_pointers(declarations)
-            },
+            Self::Primitive(Primitive::MutablePointer(inner_type)) => declarations
+                .get_layout(*inner_type)
+                .deref_pointers(declarations),
             _ => self,
         }
     }

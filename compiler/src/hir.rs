@@ -14,9 +14,21 @@ pub struct Block {
 }
 
 #[derive(Debug, Clone)]
+pub struct Assignment {
+    pub left: TypedExpression,
+    pub right: TypedExpression,
+}
+
+impl Assignment {
+    pub const fn new(left: TypedExpression, right: TypedExpression) -> Self {
+        Self { left, right }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(TypedExpression),
-    Assignment(TypedExpression, TypedExpression),
+    Assignment(Assignment),
     Let(VariableId, TypedExpression),
 }
 
