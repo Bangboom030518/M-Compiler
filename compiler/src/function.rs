@@ -3,6 +3,7 @@ use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
 use crate::{CraneliftContext, SemanticError};
+use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use parser::top_level::TypeBinding;
@@ -157,11 +158,34 @@ impl Function {
             .map(|(index, ((name, type_id), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
+                let layout = declarations.get_layout(*type_id);
+                let size = layout.size(&declarations.isa);
                 let cranelift_type = declarations
                     .get_layout(*type_id)
                     .cranelift_type(&declarations.isa);
+
+                let value = if layout.is_aggregate() {
+                    value
+                } else {
+                    let stack_slot = builder.create_sized_stack_slot(StackSlotData {
+                        kind: StackSlotKind::ExplicitSlot,
+                        size,
+                    });
+
+                    builder
+                        .ins()
+                        .stack_store(value, stack_slot, Offset32::new(0));
+
+                    builder.ins().stack_addr(
+                        declarations.isa.pointer_type(),
+                        stack_slot,
+                        Offset32::new(0),
+                    )
+                };
+
                 builder.declare_var(variable, cranelift_type);
                 builder.def_var(variable, value);
+
                 Ok((name.clone(), variable, *type_id))
             })
             .collect::<Result<_, SemanticError>>()?;

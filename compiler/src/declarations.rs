@@ -81,7 +81,9 @@ impl Declarations {
                         name.clone(),
                         layout::Field {
                             type_id: *r#type,
-                            offset: Offset32::new(i32::try_from(offset).expect("struct offset exceded `i32::MAX`")),
+                            offset: Offset32::new(
+                                i32::try_from(offset).expect("struct offset exceded `i32::MAX`"),
+                            ),
                         },
                     );
                     let layout = self.insert_layout(*r#type, scope)?;
@@ -218,8 +220,8 @@ impl Declarations {
     }
 
     #[must_use]
-    pub fn get(&self, Id(id): Id) -> &Declaration {
-        self.declarations.get(id).unwrap().as_ref().unwrap()
+    fn get(&self, Id(id): Id) -> &Declaration {
+        self.declarations.get(id).unwrap_or_else(|| panic!("🎉 declaration `{id}` doesn't exist 🎉")).as_ref().unwrap_or_else(|| panic!("🎉 declaration `{id}` was uninitialised 🎉"))
     }
 
     pub fn get_function(&self, id: Id) -> Result<&Function, SemanticError> {

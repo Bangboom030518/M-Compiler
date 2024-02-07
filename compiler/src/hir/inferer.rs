@@ -1,7 +1,6 @@
 use super::builder::{self, VariableId};
-use super::TypedExpression;
 use crate::declarations::{self, Declarations};
-use crate::layout::{self, Layout, Primitive};
+use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
 use std::collections::HashMap;
 

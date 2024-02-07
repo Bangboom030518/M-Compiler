@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-
 use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
@@ -40,6 +38,13 @@ where
         }
     }
 
+    pub fn iconst(&mut self, value: u32) -> Value {
+        self.builder.ins().iconst(
+            self.declarations.isa.pointer_type(),
+            Imm64::from(i64::from(value)),
+        )
+    }
+
     pub fn statement(
         &mut self,
         statement: hir::Statement,
@@ -49,13 +54,23 @@ where
                 let BranchStatus::Continue(left) = self.expression(assignment.left)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                let BranchStatus::Continue(right) = self.load_primitive(assignment.right)? else {
+
+                let layout = self
+                    .declarations
+                    .get_layout(assignment.right.type_id.ok_or(SemanticError::UnknownType)?);
+
+                let size = self.iconst(layout.size(&self.declarations.isa));
+
+                let BranchStatus::Continue(right) = self.expression(assignment.right)? else {
                     return Ok(BranchStatus::Finished);
                 };
 
-                self.builder
-                    .ins()
-                    .store(MemFlags::new(), right, left, Offset32::new(0));
+                self.builder.call_memmove(
+                    self.declarations.isa.frontend_config(),
+                    left,
+                    right,
+                    size,
+                );
             }
             hir::Statement::Expression(expression) => {
                 if self.expression(expression)? == BranchStatus::Finished {
@@ -129,7 +144,6 @@ where
         let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
         };
-
         self.builder
             .ins()
             .brif(condition, then_block, &[], else_block, &[]);
@@ -194,7 +208,11 @@ where
                 }
             }
         };
-        Ok(BranchStatus::Continue(value))
+
+        Ok(BranchStatus::Continue(self.put_in_stack_slot(
+            value,
+            layout.size(&self.declarations.isa),
+        )))
     }
 
     fn field_access(
@@ -251,14 +269,21 @@ where
         );
 
         for (offset, expression) in constructor.0 {
-            // TODO: handle nested aggregates
-            let expression = match self.load_primitive(expression)? {
+            let layout = self
+                .declarations
+                .get_layout(expression.type_id.ok_or(SemanticError::UnknownType)?);
+
+            let size = self.iconst(layout.size(&self.declarations.isa));
+
+            let addr = self.builder.ins().iadd_imm(addr, i64::from(offset));
+
+            let value = match self.expression(expression)? {
                 BranchStatus::Continue(value) => value,
                 BranchStatus::Finished => return Ok(BranchStatus::Finished),
             };
+
             self.builder
-                .ins()
-                .stack_store(expression, stack_slot, offset);
+                .call_memmove(self.declarations.isa.frontend_config(), addr, value, size);
         }
 
         Ok(BranchStatus::Continue(addr))
@@ -300,8 +325,13 @@ where
             .declare_func_in_func(function.id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
-
-        Ok(BranchStatus::Continue(self.builder.inst_results(call)[0]))
+        let value = self.builder.inst_results(call)[0];
+        let value = if return_layout.is_aggregate() {
+            value
+        } else {
+            self.put_in_stack_slot(value, return_layout.size(&self.declarations.isa))
+        };
+        Ok(BranchStatus::Continue(value))
     }
 
     fn put_in_stack_slot(&mut self, value: Value, size: u32) -> Value {
