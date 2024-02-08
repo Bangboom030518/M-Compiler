@@ -68,6 +68,7 @@ impl Declarations {
             return Ok(layout.clone());
         }
 
+        // TODO: handle nested layouts
         let Declaration::Type(r#type) = self.get(id) else {
             return Err(SemanticError::FunctionUsedAsType);
         };
@@ -221,7 +222,11 @@ impl Declarations {
 
     #[must_use]
     fn get(&self, Id(id): Id) -> &Declaration {
-        self.declarations.get(id).unwrap_or_else(|| panic!("🎉 declaration `{id}` doesn't exist 🎉")).as_ref().unwrap_or_else(|| panic!("🎉 declaration `{id}` was uninitialised 🎉"))
+        self.declarations
+            .get(id)
+            .unwrap_or_else(|| panic!("🎉 declaration `{id}` doesn't exist 🎉"))
+            .as_ref()
+            .unwrap_or_else(|| panic!("🎉 declaration `{id}` was uninitialised 🎉"))
     }
 
     pub fn get_function(&self, id: Id) -> Result<&Function, SemanticError> {

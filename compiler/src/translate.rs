@@ -57,7 +57,7 @@ where
 
                 let layout = self
                     .declarations
-                    .get_layout(assignment.right.type_id.ok_or(SemanticError::UnknownType)?);
+                    .get_layout(assignment.right.expect_type()?);
 
                 let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -81,10 +81,7 @@ where
                 self.builder.declare_var(
                     variable.into(),
                     self.declarations
-                        .get_layout(expression.type_id.ok_or_else(|| {
-                            dbg!(&expression);
-                            SemanticError::UnknownType
-                        })?)
+                        .get_layout(expression.expect_type()?)
                         .cranelift_type(&self.declarations.isa),
                 );
                 let BranchStatus::Continue(expression) = self.expression(expression)? else {
@@ -127,10 +124,7 @@ where
         if let Some(then_return) = &then_branch.expression {
             self.builder.append_block_param(
                 merge_block,
-                match self
-                    .declarations
-                    .get_layout(then_return.type_id.ok_or(SemanticError::UnknownType)?)
-                {
+                match self.declarations.get_layout(then_return.expect_type()?) {
                     Layout::Primitive(primitive) => {
                         primitive.cranelift_type(self.declarations.isa.pointer_type())
                     }
@@ -219,17 +213,19 @@ where
         &mut self,
         access: hir::FieldAccess,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let Layout::Struct(struct_layout) = self.declarations.get_layout(
-            access
-                .expression
-                .type_id
-                .ok_or(SemanticError::UnknownType)?,
-        ) else {
-            return Err(SemanticError::NonStructFieldAccess);
-        };
+        let layout = self
+            .declarations
+            .get_layout(access.expression.expect_type()?)
+            .deref_pointers(self.declarations);
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
+        };
+
+        let struct_layout = match layout {
+            Layout::Struct(struct_layout) => struct_layout,
+            // Layout::Primitive(Primitive::MutablePointer(inner)) => {}
+            layout => return Err(SemanticError::InvalidFieldAccess(layout.clone())),
         };
 
         let offset = struct_layout
@@ -269,9 +265,7 @@ where
         );
 
         for (offset, expression) in constructor.0 {
-            let layout = self
-                .declarations
-                .get_layout(expression.type_id.ok_or(SemanticError::UnknownType)?);
+            let layout = self.declarations.get_layout(expression.expect_type()?);
 
             let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -355,9 +349,7 @@ where
         &mut self,
         expression: hir::TypedExpression,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = self
-            .declarations
-            .get_layout(expression.type_id.ok_or(SemanticError::UnknownType)?);
+        let layout = self.declarations.get_layout(expression.expect_type()?);
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
@@ -386,7 +378,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = type_id
             .map(|type_id| self.declarations.get_layout(type_id))
-            .ok_or(SemanticError::UnknownType);
+            .ok_or_else(|| SemanticError::UnknownType(expression.clone()));
 
         let value = match expression {
             hir::Expression::IntegerConst(int) => {
@@ -429,22 +421,7 @@ where
 
                 BranchStatus::Continue(value)
             }
-            hir::Expression::MutablePointer(expression) => {
-                let Layout::Primitive(Primitive::MutablePointer(inner_id)) = layout? else {
-                    return Err(SemanticError::InvalidMutRef);
-                };
-
-                let layout = self.declarations.get_layout(*inner_id);
-                let value = match self.expression(*expression)? {
-                    BranchStatus::Continue(value) => value,
-                    BranchStatus::Finished => return Ok(BranchStatus::Finished),
-                };
-                if layout.is_aggregate() {
-                    BranchStatus::Continue(value)
-                } else {
-                    todo!("primitive mut refs")
-                }
-            }
+            hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => self.expression(*inner)?,
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
             hir::Expression::FieldAccess(access) => self.field_access(*access)?,

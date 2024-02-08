@@ -12,7 +12,15 @@ enum EnvironmentState {
 }
 
 impl EnvironmentState {
-    fn merge(&mut self, rhs: Self) {
+    const fn merge(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Self::NonMutated, Self::NonMutated) => Self::NonMutated,
+            _ => Self::Mutated,
+        }
+    }
+
+    #[deprecated(note = "use `merge` instead!")]
+    fn merge_old(&mut self, rhs: Self) {
         *self = match (*self, rhs) {
             (Self::NonMutated, Self::NonMutated) => Self::NonMutated,
             _ => Self::Mutated,
@@ -52,25 +60,12 @@ impl<'a> Inferer<'a> {
         statement: &mut hir::Statement,
     ) -> Result<EnvironmentState, SemanticError> {
         match statement {
-            // TODO: distinct variant?
             hir::Statement::Assignment(hir::Assignment { left, right }) => {
-                let mut environment_state = EnvironmentState::default();
-                
-                environment_state.merge(self.expression(
-                    right,
-                    left.type_id,
-                )?);
-                
-                environment_state.merge(self.expression(
-                    left,
-                    right.type_id,
-                )?);
-                
-                environment_state.merge(self.expression(
-                    right,
-                    left.type_id,
-                )?);
-                
+                let environment_state = EnvironmentState::default()
+                    .merge(self.expression(right, left.type_id)?)
+                    .merge(self.expression(left, right.type_id)?)
+                    .merge(self.expression(right, left.type_id)?);
+
                 Ok(environment_state)
             }
             hir::Statement::Let(variable, expression) => {
@@ -99,11 +94,11 @@ impl<'a> Inferer<'a> {
         let mut environment_state = EnvironmentState::default();
 
         for statement in &mut block.statements {
-            environment_state.merge(self.statement(statement)?);
+            environment_state.merge_old(self.statement(statement)?);
         }
 
         if let Some(expression) = &mut block.expression {
-            environment_state.merge(self.expression(expression, expected_type)?);
+            environment_state.merge_old(self.expression(expression, expected_type)?);
         }
 
         Ok(environment_state)
@@ -143,25 +138,28 @@ impl<'a> Inferer<'a> {
                 match type_id {
                     None => environment_state,
                     Some(type_id) => {
-                        let Layout::Struct(layout) = self
+                        match self
                             .declarations
                             .get_layout(type_id)
                             .deref_pointers(self.declarations)
-                        else {
-                            return Err(SemanticError::NonStructFieldAccess);
-                        };
+                        {
+                            Layout::Struct(layout) => {
+                                let field = layout
+                                    .fields
+                                    .get(&field_access.field)
+                                    .ok_or(SemanticError::NonExistentField)?;
 
-                        let field = layout
-                            .fields
-                            .get(&field_access.field)
-                            .ok_or(SemanticError::NonExistentField)?;
-
-                        if expression.type_id.is_none() {
-                            expression.type_id = Some(field.type_id);
-                        } else {
-                            // TODO: assert same
-                        };
-                        environment_state
+                                if expression.type_id.is_none() {
+                                    expression.type_id = Some(field.type_id);
+                                } else {
+                                    // TODO: assert same
+                                };
+                                environment_state
+                            }
+                            layout => {
+                                return Err(SemanticError::InvalidFieldAccess(layout.clone()))
+                            }
+                        }
                     }
                 }
             }
@@ -177,7 +175,7 @@ impl<'a> Inferer<'a> {
                 } = &mut **if_expression;
                 let mut environment_state = self.expression(condition, None)?;
 
-                environment_state.merge(self.block(then_branch, expected_type)?);
+                environment_state.merge_old(self.block(then_branch, expected_type)?);
                 let mut expected_type = expected_type.or_else(|| {
                     then_branch
                         .expression
@@ -185,13 +183,13 @@ impl<'a> Inferer<'a> {
                         .and_then(|expression| expression.type_id)
                 });
 
-                environment_state.merge(self.block(else_branch, expected_type)?);
+                environment_state.merge_old(self.block(else_branch, expected_type)?);
 
                 if let Some(expression) = &else_branch.expression {
                     if let Some(type_id) = expression.type_id {
                         if expected_type.is_none() {
                             expected_type = Some(type_id);
-                            environment_state.merge(self.block(then_branch, expected_type)?);
+                            environment_state.merge_old(self.block(then_branch, expected_type)?);
                         }
                     }
                 }
@@ -215,7 +213,7 @@ impl<'a> Inferer<'a> {
                     .zip(call.arguments.iter_mut())
                 {
                     argument.type_id = Some(type_id);
-                    environment_state.merge(self.expression(argument, Some(type_id))?);
+                    environment_state.merge_old(self.expression(argument, Some(type_id))?);
                 }
 
                 expression.type_id = Some(function.return_type);
@@ -225,14 +223,15 @@ impl<'a> Inferer<'a> {
             hir::Expression::BinaryIntrinsic(binary) => {
                 // TODO: `right -> left` inference!
                 let mut environment_state = EnvironmentState::default();
-                environment_state.merge(self.expression(&mut binary.left, None)?);
-                environment_state.merge(self.expression(&mut binary.right, binary.left.type_id)?);
+                environment_state.merge_old(self.expression(&mut binary.left, None)?);
+                environment_state
+                    .merge_old(self.expression(&mut binary.right, binary.left.type_id)?);
                 environment_state
             }
             hir::Expression::Constructor(constructor) => {
                 let mut environment_state = EnvironmentState::default();
                 for (_, field) in &mut constructor.0 {
-                    environment_state.merge(self.expression(field, None)?);
+                    environment_state.merge_old(self.expression(field, None)?);
                 }
                 environment_state
             }
@@ -249,6 +248,22 @@ impl<'a> Inferer<'a> {
                 }
             }
             hir::Expression::GlobalAccess(_) => todo!("global access!"),
+            hir::Expression::Deref(inner) => {
+                let environment_state = self.expression(inner, None)?;
+                expression.type_id = expression.type_id.or_else(|| {
+                    inner
+                        .type_id
+                        .map(|id| self.declarations.get_layout(id))
+                        .and_then(|layout| match layout {
+                            layout::Layout::Primitive(layout::Primitive::MutablePointer(inner)) => {
+                                Some(*inner)
+                            }
+                            _ => None,
+                        })
+                });
+
+                environment_state
+            }
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {
@@ -256,6 +271,7 @@ impl<'a> Inferer<'a> {
                 return Err(SemanticError::MismatchedTypes {
                     expected: self.declarations.get_layout(expected).clone(),
                     found: self.declarations.get_layout(found).clone(),
+                    expression: expression.expression.clone(),
                 });
             }
         }

@@ -33,14 +33,14 @@ impl<M> CraneliftContext<M> {
 }
 
 // TODO: annotated results
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SemanticError {
     #[error("Number literal used as non-number")]
     UnexpectedNumberLiteral,
     #[error("Integer literal too thicc, phatt and chonky")]
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
     #[error("Type resolution failed to infer the type")]
-    UnknownType,
+    UnknownType(hir::Expression),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
     #[error("Declaration not found")]
@@ -56,13 +56,13 @@ pub enum SemanticError {
     #[error("Incorrect function arity was assumed")]
     InvalidNumberOfArguments,
     #[error("Mismatched types")]
-    MismatchedTypes { expected: Layout, found: Layout },
+    MismatchedTypes { expected: Layout, found: Layout, expression: hir::Expression },
     #[error("Tried to construct something other than a struct")]
     InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
     MissingStructField,
     #[error("Was stoopid and tried to access the field of a non-struct type")]
-    NonStructFieldAccess,
+    InvalidFieldAccess(Layout),
     #[error("Tried to access a non-existent struct field")]
     NonExistentField,
     #[error("Tried to initialise non-reference type as a reference")]

@@ -233,6 +233,9 @@ impl<'a> Builder<'a> {
                 IntrinsicCall::MutablePointer(expression) => {
                     Ok(Expression::MutablePointer(Box::new(self.expression(expression)?)).into())
                 }
+                IntrinsicCall::Deref(expression) => {
+                    Ok(Expression::Deref(Box::new(self.expression(expression)?)).into())
+                }
             },
             parser::Expression::Return(expression) => Ok(hir::Expression::Return(Box::new(
                 self.expression(expression)?.with_type(self.return_type),
