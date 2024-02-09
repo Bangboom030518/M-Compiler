@@ -99,7 +99,8 @@ impl TypedExpression {
     }
 
     pub fn expect_type(&self) -> Result<declarations::Id, SemanticError> {
-        self.type_id.ok_or_else(|| SemanticError::UnknownType(self.expression.clone()))
+        self.type_id
+            .ok_or_else(|| SemanticError::UnknownType(self.expression.clone()))
     }
 }
 

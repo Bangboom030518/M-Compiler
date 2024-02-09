@@ -173,6 +173,7 @@ impl Parse for IntrinsicCall {
             "deref" => {
                 Self::Deref(Box::new(parser.parse()?))
             },
+            
             token if let Some(op) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(&Token::Comma)?;

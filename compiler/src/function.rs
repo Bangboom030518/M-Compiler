@@ -7,117 +7,135 @@ use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Module};
 use parser::top_level::TypeBinding;
-use parser::{scope, Expression, Ident, Statement};
+use parser::{scope, Ident};
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Function {
-    pub parameters: Vec<(Ident, declarations::Id)>,
+#[derive(Debug, Clone)]
+pub struct MSignature {
+    pub parameters: Vec<declarations::Id>,
     pub return_type: declarations::Id,
     pub signature: Signature,
-    pub body: Vec<Statement>,
-    pub scope: scope::Id,
-    pub id: FuncId,
     pub name: Ident,
+}
+
+impl MSignature {
+    fn new(
+        parameters: &[parser::Type],
+        return_type: parser::Type,
+        declarations: &Declarations,
+        name: Ident,
+        scope_id: scope::Id,
+        module: &mut impl Module,
+    ) -> Result<Self, SemanticError> {
+        let mut signature = module.make_signature();
+
+        let parameters = parameters
+            .iter()
+            .map(|r#type| {
+                let type_id = declarations
+                    .lookup(&r#type.ident(), scope_id)
+                    .ok_or(SemanticError::DeclarationNotFound)?;
+
+                Ok(type_id)
+            })
+            .collect::<Result<Vec<_>, SemanticError>>()?;
+
+        signature.params = parameters
+            .iter()
+            .map(|type_id| {
+                let layout = declarations.get_layout(*type_id);
+                match layout {
+                    Layout::Primitive(primitive) => {
+                        AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
+                    }
+                    Layout::Struct(layout) => AbiParam::special(
+                        declarations.isa.pointer_type(),
+                        codegen::ir::ArgumentPurpose::StructArgument(layout.size),
+                    ),
+                }
+            })
+            .collect();
+
+        let return_type = declarations
+            .lookup(&return_type.ident(), scope_id)
+            .ok_or(SemanticError::DeclarationNotFound)?;
+
+        Ok(Self {
+            parameters,
+            return_type,
+            signature,
+            name,
+        })
+    }
+}
+
+pub struct ExternFunction {
+    symbol_name: String,
+    signature: MSignature,
+    id: FuncId,
+}
+
+pub struct MFunction {
+    body: Vec<parser::Statement>,
+    scope_id: scope::Id,
+    signature: MSignature,
+    parameter_names: Vec<Ident>,
+    id: FuncId,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
 pub const SPECIAL_VARIABLES: &[usize] = &[AGGREGATE_PARAM_VARIABLE];
 
-impl Function {
+impl MFunction {
     // TODO: memcpy for structs
     pub fn new(
         function: parser::top_level::Function,
         declarations: &Declarations,
-        scope: ::parser::scope::Id,
-        name: &Ident,
+        scope_id: parser::scope::Id,
+        name: Ident,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
-        let mut signature = Signature::new(declarations.isa.default_call_conv());
-
-        let parameters = function
+        let parameters: (Vec<_>, Vec<_>) = function
             .parameters
             .into_iter()
-            .map(
-                |parser::top_level::Parameter(TypeBinding { r#type, name })| {
-                    let r#type = r#type
-                        .as_ref()
-                        .map(|r#type| match r#type {
-                            ::parser::Type::Ident(ident) => ident,
-                        })
-                        .ok_or(SemanticError::UntypedParameter)?;
+            .map(|parser::top_level::Parameter(TypeBinding { r#type, name })| (name, r#type))
+            .unzip();
 
-                    let type_id = declarations
-                        .lookup(r#type, scope)
-                        .ok_or(SemanticError::DeclarationNotFound)?;
-
-                    Ok((name, type_id))
-                },
-            )
-            .collect::<Result<Vec<_>, SemanticError>>()?;
-
-        signature.params = parameters
-            .iter()
-            .map(|r#type| {
-                let r#type = declarations.get_layout(r#type.1);
-                match r#type {
-                    Layout::Primitive(primitive) => Ok(AbiParam::new(
-                        primitive.cranelift_type(declarations.isa.pointer_type()),
-                    )),
-                    Layout::Struct(layout) => Ok(AbiParam::special(
-                        declarations.isa.pointer_type(),
-                        codegen::ir::ArgumentPurpose::StructArgument(layout.size),
-                    )),
-                }
-            })
-            .collect::<Result<Vec<_>, SemanticError>>()?;
-
-        let return_type = function
-            .return_type
-            .as_ref()
-            .map(|r#type| match r#type {
-                ::parser::Type::Ident(ident) => ident,
-            })
-            .ok_or(SemanticError::MissingReturnType)?;
-
-        let return_type_id = declarations
-            .lookup(return_type, scope)
-            .ok_or(SemanticError::DeclarationNotFound)?;
-
-        let return_type = declarations.get_layout(return_type_id);
-        signature.returns = vec![match return_type {
-            Layout::Primitive(primitive) => {
-                AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
-            }
-            Layout::Struct { .. } => {
-                signature
-                    .params
-                    .push(AbiParam::new(declarations.isa.pointer_type()));
-
-                AbiParam::new(declarations.isa.pointer_type())
-            }
-        }];
+        let signature = MSignature::new(
+            &parameters
+                .1
+                .into_iter()
+                .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
+                .collect::<Result<Vec<_>, _>>()?,
+            function
+                .return_type
+                .ok_or(SemanticError::MissingReturnType)?,
+            declarations,
+            name,
+            scope_id,
+            module,
+        )?;
 
         let mut body = function.body;
 
-        if let Some(Statement::Expression(expr)) = body.last_mut() {
-            if !matches!(expr, Expression::Return(_)) {
+        if let Some(parser::Statement::Expression(expr)) = body.last_mut() {
+            if !matches!(expr, parser::Expression::Return(_)) {
                 // TODO: `.clone()`
-                *expr = Expression::Return(Box::new(expr.clone()));
+                *expr = parser::Expression::Return(Box::new(expr.clone()));
             }
         }
 
-        let id = module
-            .declare_function(name.as_ref(), cranelift_module::Linkage::Export, &signature)
-            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+        let id = module.declare_function(
+            name.as_ref(),
+            cranelift_module::Linkage::Export,
+            &signature.signature,
+        ).expect("Internal Module Error!");
 
         Ok(Self {
             signature,
-            parameters,
-            return_type: return_type_id,
+            parameter_names: parameters.0,
+            scope_id,
             body,
-            scope,
             id,
-            name: name.clone(),
         })
     }
 
@@ -131,7 +149,7 @@ impl Function {
             &mut cranelift_context.builder_context,
         );
 
-        builder.func.signature = self.signature.clone();
+        builder.func.signature = self.signature.signature.clone();
 
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
@@ -141,7 +159,7 @@ impl Function {
         // TODO: `to_vec()`?
         let mut block_params = builder.block_params(entry_block).to_vec();
 
-        if declarations.get_layout(self.return_type).is_aggregate() {
+        if declarations.get_layout(self.signature.return_type).is_aggregate() {
             let param = block_params
                 .pop()
                 .expect("aggregate return param not found");
@@ -151,11 +169,13 @@ impl Function {
         };
 
         let names = self
+            .signature
             .parameters
             .iter()
+            .zip(self.parameter_names)
             .zip(block_params)
             .enumerate()
-            .map(|(index, ((name, type_id), value))| {
+            .map(|(index, ((type_id, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
                 let layout = declarations.get_layout(*type_id);

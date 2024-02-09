@@ -2,6 +2,7 @@ use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
+use cranelift::codegen::ir::{DataFlowGraph, DynamicStackSlotData, DynamicType, DynamicTypeData};
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::IntrinsicOperator;
@@ -421,7 +422,9 @@ where
 
                 BranchStatus::Continue(value)
             }
-            hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => self.expression(*inner)?,
+            hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => {
+                self.expression(*inner)?
+            }
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
             hir::Expression::FieldAccess(access) => self.field_access(*access)?,

@@ -56,7 +56,11 @@ pub enum SemanticError {
     #[error("Incorrect function arity was assumed")]
     InvalidNumberOfArguments,
     #[error("Mismatched types")]
-    MismatchedTypes { expected: Layout, found: Layout, expression: hir::Expression },
+    MismatchedTypes {
+        expected: Layout,
+        found: Layout,
+        expression: hir::Expression,
+    },
     #[error("Tried to construct something other than a struct")]
     InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
@@ -116,10 +120,10 @@ fn main() {
     }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("new_point").unwrap();
+    let function = *functions.get("main").unwrap();
 
     let code = context.module.get_finalized_function(function);
 
-    let new_point = unsafe { std::mem::transmute::<*const u8, unsafe fn(u64, u64) -> u64>(code) };
-    dbg!(unsafe { new_point(1, 1) });
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
+    dbg!(unsafe { main() });
 }

@@ -176,6 +176,7 @@ pub enum PrimitiveKind {
     F32,
     F64,
     MutablePointer(Type),
+    // MutableSlice(Type),
 }
 
 impl Parse for PrimitiveKind {
@@ -202,6 +203,12 @@ impl Parse for PrimitiveKind {
                 parser.take_token_if(&Token::CloseParen)?;
                 pointer
             }
+            // "mutable_slice" => {
+            //     parser.take_token_if(&Token::OpenParen)?;
+            //     let pointer = parser.parse().map(Self::MutableSlice)?;
+            //     parser.take_token_if(&Token::CloseParen)?;
+            //     pointer
+            // }
             _ => return None,
         };
         Some(kind)
@@ -230,9 +237,49 @@ impl Parse for Primitive {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct ExternFunction {
+    pub symbol: String,
+    pub parameters: Vec<Type>,
+    pub return_type: Type,
+}
+
+impl Parse for ExternFunction {
+    fn parse(parser: &mut Parser) -> Option<Self> {
+        parser.take_token_if(&Token::At)?;
+        if parser.parse::<Ident>()?.0 != "extern" {
+            return None;
+        };
+
+        parser.take_token_if(&Token::OpenParen)?;
+        let Token::String(symbol) = parser.take_token()? else {
+            return None;
+        };
+
+        parser.take_token_if(&Token::Comma)?;
+        parser.take_token_if(&Token::Function)?;
+
+        parser.take_token_if(&Token::OpenParen)?;
+        let parameters = parser.parse_csv();
+        parser.take_token_if(&Token::CloseParen)?;
+
+        let return_type = parser.parse()?;
+        let _ = parser.take_token_if(&Token::Comma);
+
+        parser.take_token_if(&Token::CloseParen)?;
+
+        Some(Self {
+            symbol,
+            parameters,
+            return_type,
+        })
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum DeclarationKind {
     Function(Function),
+    ExternFunction(ExternFunction),
     Const(Expression),
     Union(Union),
     Struct(Struct),
@@ -257,7 +304,13 @@ impl Parse for Declaration {
                 Token::At => DeclarationKind::Primitive(parser.parse()?),
                 _ => return None,
             },
-            Token::Function => DeclarationKind::Function(parser.parse()?),
+            Token::Function => {
+                if parser.peek_token()? == Token::At {
+                    DeclarationKind::ExternFunction(parser.parse()?)
+                } else {
+                    DeclarationKind::Function(parser.parse()?)
+                }
+            }
             Token::Const => DeclarationKind::Const(parser.parse()?),
             _ => return None,
         };

@@ -112,6 +112,10 @@ impl Declarations {
                     self.lookup(&r#type.ident(), scope)
                         .ok_or(SemanticError::DeclarationNotFound)?,
                 ),
+                // PrimitiveKind::MutableSlice(r#type) => layout::Primitive::MutableSlice(
+                //     self.lookup(&r#type.ident(), scope)
+                //         .ok_or(SemanticError::DeclarationNotFound)?,
+                // ),
             }),
         };
 
@@ -152,7 +156,8 @@ impl Declarations {
         for (name, id) in self.scopes[&scope_id].declarations.clone() {
             match declarations.remove_entry(&name).expect("TODO").1 {
                 DeclarationKind::Struct(r#struct) => {
-                    self.append_new(r#struct.scope, scope_cache, module)?;
+                    // TODO: VV
+                    // self.append_new(r#struct.scope, scope_cache, module)?;
 
                     let fields = r#struct
                         .fields
@@ -164,7 +169,8 @@ impl Declarations {
                                     match r#type {
                                         ::parser::Type::Ident(identifier) => identifier,
                                     },
-                                    r#struct.scope,
+                                    // TODO: `r#struct.scope`
+                                    scope_id,
                                 )
                                 .ok_or(SemanticError::DeclarationNotFound)?;
                             Ok((name.clone(), type_id))
@@ -180,6 +186,7 @@ impl Declarations {
                 }
                 DeclarationKind::Function(function) => functions.push((function, id, name)),
                 DeclarationKind::Const(_) => todo!(),
+                DeclarationKind::ExternFunction(function) => todo!("extern functions"),
             }
         }
 
