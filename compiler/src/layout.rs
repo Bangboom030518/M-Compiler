@@ -36,6 +36,13 @@ impl Layout {
         matches!(self, Self::Struct(_))
     }
 
+    pub const fn should_load(&self) -> bool {
+        match self {
+            Self::Struct(_) => false,
+            Self::Primitive(primitive) => !primitive.is_pointer(),
+        }
+    }
+
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
@@ -88,6 +95,11 @@ impl Primitive {
             Self::U128 | Self::I128 => types::I128,
             Self::MutablePointer(_) | Self::MutableSlice(_) => pointer,
         }
+    }
+
+    #[must_use]
+    pub const fn is_pointer(&self) -> bool {
+        matches!(self, Self::MutablePointer(_) | Self::MutableSlice(_))
     }
 
     #[must_use]

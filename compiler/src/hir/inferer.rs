@@ -175,6 +175,8 @@ impl<'a> Inferer<'a> {
         expression: &mut hir::TypedExpression,
         expected_type: Option<declarations::Id>,
     ) -> Result<EnvironmentState, SemanticError> {
+        expression.type_id = expression.type_id.or(expected_type);
+
         let environment_state = match &mut expression.expression {
             hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) => {
                 EnvironmentState::NonMutated
@@ -212,24 +214,24 @@ impl<'a> Inferer<'a> {
                 let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
                     todo!("closures!")
                 };
-                let function = self.declarations.get_function(declaration)?;
+                let signature = self.declarations.get_function(declaration)?.signature();
 
-                if function.parameters.len() != call.arguments.len() {
+                if signature.parameters.len() != call.arguments.len() {
                     return Err(SemanticError::InvalidNumberOfArguments);
                 }
                 let mut environment_state = EnvironmentState::NonMutated;
 
-                for (type_id, argument) in function
+                for (type_id, argument) in signature
                     .parameters
                     .iter()
-                    .map(|parameter| parameter.1)
+                    .copied()
                     .zip(call.arguments.iter_mut())
                 {
                     argument.type_id = Some(type_id);
                     environment_state.merge_mut(self.expression(argument, Some(type_id))?);
                 }
 
-                expression.type_id = Some(function.return_type);
+                expression.type_id = Some(signature.return_type);
 
                 environment_state
             }
@@ -284,8 +286,6 @@ impl<'a> Inferer<'a> {
                 });
             }
         }
-
-        expression.type_id = expression.type_id.or(expected_type);
 
         Ok(environment_state)
     }

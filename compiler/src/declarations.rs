@@ -1,9 +1,8 @@
-use crate::function::Function;
 use crate::layout::{self, Layout};
-use crate::SemanticError;
+use crate::{function, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use cranelift_module::Module;
+use cranelift_module::{FuncId, Module};
 use itertools::Itertools;
 use parser::top_level::{DeclarationKind, PrimitiveKind};
 use parser::{scope, Ident};
@@ -20,6 +19,29 @@ enum Type {
         ident: Ident,
     },
     Primitive(PrimitiveKind),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Function {
+    Internal(function::Internal),
+    External(function::External),
+}
+
+// TODO: refactor VV
+impl Function {
+    pub const fn signature(&self) -> &function::MSignature {
+        match self {
+            Self::External(func) => &func.signature,
+            Self::Internal(func) => &func.signature,
+        }
+    }
+
+    pub const fn id(&self) -> FuncId {
+        match self {
+            Self::External(func) => func.id,
+            Self::Internal(func) => func.id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,10 +130,12 @@ impl Declarations {
                 PrimitiveKind::I32 => layout::Primitive::I32,
                 PrimitiveKind::I64 => layout::Primitive::I64,
                 PrimitiveKind::I128 => layout::Primitive::I128,
-                PrimitiveKind::MutablePointer(r#type) => layout::Primitive::MutablePointer(
-                    self.lookup(&r#type.ident(), scope)
-                        .ok_or(SemanticError::DeclarationNotFound)?,
-                ),
+                PrimitiveKind::MutablePointer(r#type) => {
+                    let ident = r#type.ident();
+                    layout::Primitive::MutablePointer(
+                    self.lookup(&ident, scope)
+                        .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
+                )},
                 // PrimitiveKind::MutableSlice(r#type) => layout::Primitive::MutableSlice(
                 //     self.lookup(&r#type.ident(), scope)
                 //         .ok_or(SemanticError::DeclarationNotFound)?,
@@ -152,6 +176,7 @@ impl Declarations {
         self.scopes.insert(scope_id, scope);
 
         let mut functions = Vec::new();
+        let mut extern_functions = Vec::new();
 
         for (name, id) in self.scopes[&scope_id].declarations.clone() {
             match declarations.remove_entry(&name).expect("TODO").1 {
@@ -163,16 +188,17 @@ impl Declarations {
                         .fields
                         .iter()
                         .map(|parser::top_level::Field { r#type, name }| {
+                            let ident = match r#type {
+                                ::parser::Type::Ident(identifier) => identifier,
+                            };
                             // TODO: will need to handle generics
                             let type_id = self
                                 .lookup(
-                                    match r#type {
-                                        ::parser::Type::Ident(identifier) => identifier,
-                                    },
+                                    ident,
                                     // TODO: `r#struct.scope`
                                     scope_id,
                                 )
-                                .ok_or(SemanticError::DeclarationNotFound)?;
+                                .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
                             Ok((name.clone(), type_id))
                         })
                         .collect::<Result<Vec<_>, SemanticError>>()?;
@@ -180,13 +206,15 @@ impl Declarations {
                     let ident = name.clone();
                     self.initialise(id, Declaration::Type(Type::Struct { ident, fields }));
                 }
-                DeclarationKind::Union(_) => todo!("unions!"),
+                DeclarationKind::Union(_) => todo!("unions"),
                 DeclarationKind::Primitive(primitive) => {
                     self.initialise(id, Declaration::Type(Type::Primitive(primitive.kind)));
                 }
                 DeclarationKind::Function(function) => functions.push((function, id, name)),
-                DeclarationKind::Const(_) => todo!(),
-                DeclarationKind::ExternFunction(function) => todo!("extern functions"),
+                DeclarationKind::Const(_) => todo!("consts"),
+                DeclarationKind::ExternFunction(function) => {
+                    extern_functions.push((function, id, name));
+                }
             }
         }
 
@@ -211,7 +239,18 @@ impl Declarations {
         for (function, id, name) in functions {
             self.initialise(
                 id,
-                Declaration::Function(Function::new(function, self, scope_id, &name, module)?),
+                Declaration::Function(Function::Internal(function::Internal::new(
+                    function, self, scope_id, name, module,
+                )?)),
+            );
+        }
+
+        for (function, id, name) in extern_functions {
+            self.initialise(
+                id,
+                Declaration::Function(Function::External(function::External::new(
+                    function, self, scope_id, name, module,
+                )?)),
             );
         }
 

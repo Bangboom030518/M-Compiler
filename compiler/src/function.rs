@@ -5,11 +5,11 @@ use crate::translate::{BranchStatus, Translator};
 use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{FuncId, Linkage, Module};
 use parser::top_level::TypeBinding;
 use parser::{scope, Ident};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MSignature {
     pub parameters: Vec<declarations::Id>,
     pub return_type: declarations::Id,
@@ -24,16 +24,18 @@ impl MSignature {
         declarations: &Declarations,
         name: Ident,
         scope_id: scope::Id,
-        module: &mut impl Module,
+        module: &impl Module,
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
-
         let parameters = parameters
             .iter()
-            .map(|r#type| {
+            .map(|path| {
+                let ident = match path {
+                    parser::Type::Ident(ident) => ident,
+                };
                 let type_id = declarations
-                    .lookup(&r#type.ident(), scope_id)
-                    .ok_or(SemanticError::DeclarationNotFound)?;
+                    .lookup(ident, scope_id)
+                    .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
 
                 Ok(type_id)
             })
@@ -47,17 +49,31 @@ impl MSignature {
                     Layout::Primitive(primitive) => {
                         AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
                     }
-                    Layout::Struct(layout) => AbiParam::special(
-                        declarations.isa.pointer_type(),
-                        codegen::ir::ArgumentPurpose::StructArgument(layout.size),
-                    ),
+                    Layout::Struct(_) => AbiParam::new(declarations.isa.pointer_type()),
                 }
             })
             .collect();
 
-        let return_type = declarations
-            .lookup(&return_type.ident(), scope_id)
-            .ok_or(SemanticError::DeclarationNotFound)?;
+        // TODO: yuck
+        let return_type = {
+            let ident = return_type.ident();
+            declarations
+                .lookup(&ident, scope_id)
+                .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?
+        };
+
+        signature.returns = vec![match declarations.get_layout(return_type) {
+            Layout::Primitive(primitive) => {
+                AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
+            }
+            Layout::Struct(_) => {
+                signature
+                    .params
+                    .push(AbiParam::new(declarations.isa.pointer_type()));
+
+                AbiParam::new(declarations.isa.pointer_type())
+            }
+        }];
 
         Ok(Self {
             parameters,
@@ -68,24 +84,55 @@ impl MSignature {
     }
 }
 
-pub struct ExternFunction {
-    symbol_name: String,
-    signature: MSignature,
-    id: FuncId,
+#[derive(Debug, Clone, PartialEq)]
+pub struct External {
+    pub symbol_name: String,
+    pub signature: MSignature,
+    pub id: FuncId,
 }
 
-pub struct MFunction {
-    body: Vec<parser::Statement>,
-    scope_id: scope::Id,
-    signature: MSignature,
-    parameter_names: Vec<Ident>,
-    id: FuncId,
+impl External {
+    pub fn new(
+        function: parser::top_level::ExternFunction,
+        declarations: &Declarations,
+        scope_id: parser::scope::Id,
+        name: Ident,
+        module: &mut impl Module,
+    ) -> Result<Self, SemanticError> {
+        let signature = MSignature::new(
+            &function.parameters,
+            function.return_type,
+            declarations,
+            name,
+            scope_id,
+            module,
+        )?;
+
+        let id = module
+            .declare_function(&function.symbol, Linkage::Import, &signature.signature)
+            .expect("internal module error");
+
+        Ok(Self {
+            symbol_name: function.symbol,
+            signature,
+            id,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Internal {
+    pub body: Vec<parser::Statement>,
+    pub scope_id: scope::Id,
+    pub signature: MSignature,
+    pub parameter_names: Vec<Ident>,
+    pub id: FuncId,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
 pub const SPECIAL_VARIABLES: &[usize] = &[AGGREGATE_PARAM_VARIABLE];
 
-impl MFunction {
+impl Internal {
     // TODO: memcpy for structs
     pub fn new(
         function: parser::top_level::Function,
@@ -99,7 +146,6 @@ impl MFunction {
             .into_iter()
             .map(|parser::top_level::Parameter(TypeBinding { r#type, name })| (name, r#type))
             .unzip();
-
         let signature = MSignature::new(
             &parameters
                 .1
@@ -124,11 +170,13 @@ impl MFunction {
             }
         }
 
-        let id = module.declare_function(
-            name.as_ref(),
-            cranelift_module::Linkage::Export,
-            &signature.signature,
-        ).expect("Internal Module Error!");
+        let id = module
+            .declare_function(
+                signature.name.as_ref(),
+                cranelift_module::Linkage::Export,
+                &signature.signature,
+            )
+            .expect("Internal Module Error!");
 
         Ok(Self {
             signature,
@@ -159,7 +207,10 @@ impl MFunction {
         // TODO: `to_vec()`?
         let mut block_params = builder.block_params(entry_block).to_vec();
 
-        if declarations.get_layout(self.signature.return_type).is_aggregate() {
+        if declarations
+            .get_layout(self.signature.return_type)
+            .is_aggregate()
+        {
             let param = block_params
                 .pop()
                 .expect("aggregate return param not found");
@@ -172,7 +223,7 @@ impl MFunction {
             .signature
             .parameters
             .iter()
-            .zip(self.parameter_names)
+            .zip(&self.parameter_names)
             .zip(block_params)
             .enumerate()
             .map(|(index, ((type_id, name), value))| {
@@ -184,9 +235,7 @@ impl MFunction {
                     .get_layout(*type_id)
                     .cranelift_type(&declarations.isa);
 
-                let value = if layout.is_aggregate() {
-                    value
-                } else {
+                let value = if layout.should_load() {
                     let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                         kind: StackSlotKind::ExplicitSlot,
                         size,
@@ -201,6 +250,8 @@ impl MFunction {
                         stack_slot,
                         Offset32::new(0),
                     )
+                } else {
+                    value
                 };
 
                 builder.declare_var(variable, cranelift_type);

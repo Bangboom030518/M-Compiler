@@ -2,7 +2,6 @@ use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
-use cranelift::codegen::ir::{DataFlowGraph, DynamicStackSlotData, DynamicType, DynamicTypeData};
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::IntrinsicOperator;
@@ -298,7 +297,9 @@ where
             arguments.push(value);
         }
 
-        let return_layout = self.declarations.get_layout(function.return_type);
+        let return_layout = self
+            .declarations
+            .get_layout(function.signature().return_type);
 
         if return_layout.is_aggregate() {
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -317,7 +318,7 @@ where
 
         let func_ref = self
             .module
-            .declare_func_in_func(function.id, self.builder.func);
+            .declare_func_in_func(function.id(), self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
         let value = self.builder.inst_results(call)[0];
@@ -356,15 +357,15 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let value = if layout.is_aggregate() {
-            value
-        } else {
+        let value = if layout.should_load() {
             self.builder.ins().load(
                 layout.cranelift_type(&self.declarations.isa),
                 MemFlags::new(),
                 value,
                 Offset32::new(0),
             )
+        } else {
+            value
         };
 
         Ok(BranchStatus::Continue(value))
@@ -423,11 +424,16 @@ where
                 BranchStatus::Continue(value)
             }
             hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => {
+                layout?;
                 self.expression(*inner)?
             }
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
-            hir::Expression::If(r#if) => self.translate_if(*r#if)?,
-            hir::Expression::FieldAccess(access) => self.field_access(*access)?,
+            hir::Expression::If(r#if) => {
+                self.translate_if(*r#if)?
+            }
+            hir::Expression::FieldAccess(access) => {
+                self.field_access(*access)?
+            }
             hir::Expression::Constructor(constructor) => self.constructor(constructor, layout?)?,
             hir::Expression::Return(expression) => {
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {

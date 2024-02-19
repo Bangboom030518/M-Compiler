@@ -46,7 +46,7 @@ pub struct Builder<'a> {
 impl<'a> Builder<'a> {
     pub fn new(
         declarations: &'a Declarations,
-        function: &'a function::Function,
+        function: &'a function::Internal,
         parameters: Vec<(parser::Ident, Variable, declarations::Id)>,
     ) -> Self {
         let mut variables = HashMap::new();
@@ -59,10 +59,10 @@ impl<'a> Builder<'a> {
 
         Self {
             declarations,
-            top_level_scope: function.scope,
+            top_level_scope: function.scope_id,
             variables,
             new_variable_index,
-            return_type: function.return_type,
+            return_type: function.signature.return_type,
             local_scopes: vec![scope],
             body: &function.body,
         }
@@ -128,7 +128,7 @@ impl<'a> Builder<'a> {
         self.declarations
             .lookup(ident, self.top_level_scope)
             .map(Expression::GlobalAccess)
-            .ok_or(SemanticError::DeclarationNotFound)
+            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
     }
 
     fn block(&mut self, statements: &[parser::Statement]) -> Result<hir::Block, SemanticError> {
@@ -195,14 +195,12 @@ impl<'a> Builder<'a> {
     }
 
     fn lookup_type(&self, path: &parser::Type) -> Result<declarations::Id, SemanticError> {
+        let ident = match path {
+            parser::Type::Ident(ident) => ident,
+        };
         self.declarations
-            .lookup(
-                match path {
-                    parser::Type::Ident(ident) => ident,
-                },
-                self.top_level_scope,
-            )
-            .ok_or(SemanticError::DeclarationNotFound)
+            .lookup(ident, self.top_level_scope)
+            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
     }
 
     fn expression(

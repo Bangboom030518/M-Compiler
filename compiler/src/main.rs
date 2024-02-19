@@ -43,8 +43,8 @@ pub enum SemanticError {
     UnknownType(hir::Expression),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
-    #[error("Declaration not found")]
-    DeclarationNotFound,
+    #[error("Declaration not found: '{0}'")]
+    DeclarationNotFound(parser::Ident),
     #[error("Expected a type, found a function")]
     FunctionUsedAsType,
     #[error("Expected a function, found a type")]
@@ -107,23 +107,24 @@ fn main() {
 
     let mut functions = HashMap::new();
     for declaration in declarations.declarations.iter().flatten() {
-        let declarations::Declaration::Function(function) = declaration else {
+        let declarations::Declaration::Function(declarations::Function::Internal(function)) =
+            declaration
+        else {
             continue;
         };
 
-        let id = function
-            .clone()
-            .compile(&declarations, &mut context)
-            .expect("TODO");
+        let name = function.signature.name.to_string();
+        let id = function.compile(&declarations, &mut context).expect("TODO");
 
-        functions.insert(function.name.to_string(), id);
+        functions.insert(name, id);
     }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("main").unwrap();
+    let function = *functions.get("print").unwrap();
 
     let code = context.module.get_finalized_function(function);
 
-    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
-    dbg!(unsafe { main() });
+    let ptr = "Hello World!\0".as_ptr();
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn(*const u8) -> u64>(code) };
+    unsafe { main(ptr) };
 }
