@@ -65,6 +65,7 @@ pub struct FieldAccess {
 pub enum Expression {
     IntegerConst(u128),
     FloatConst(f64),
+    StringConst(String),
     BinaryIntrinsic(Box<BinaryIntrinsic>),
     If(Box<If>),
     FieldAccess(Box<FieldAccess>),

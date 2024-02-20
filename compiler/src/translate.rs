@@ -1,3 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+
 use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
@@ -423,17 +426,29 @@ where
 
                 BranchStatus::Continue(value)
             }
+            hir::Expression::StringConst(string) => {
+                let data = self
+                    .module
+                    .declare_anonymous_data(false, false)
+                    .expect("Internal Module Error");
+                let mut desc = cranelift_module::DataDescription::new();
+                desc.define(string.as_bytes().to_vec().into_boxed_slice());
+                self.module.define_data(data, &desc).expect("Internal Module Error :(");
+                let value = self.module.declare_data_in_func(data, self.builder.func);
+
+                BranchStatus::Continue(
+                    self.builder
+                        .ins()
+                        .global_value(self.declarations.isa.pointer_type(), value),
+                )
+            }
             hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => {
                 layout?;
                 self.expression(*inner)?
             }
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
-            hir::Expression::If(r#if) => {
-                self.translate_if(*r#if)?
-            }
-            hir::Expression::FieldAccess(access) => {
-                self.field_access(*access)?
-            }
+            hir::Expression::If(r#if) => self.translate_if(*r#if)?,
+            hir::Expression::FieldAccess(access) => self.field_access(*access)?,
             hir::Expression::Constructor(constructor) => self.constructor(constructor, layout?)?,
             hir::Expression::Return(expression) => {
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {

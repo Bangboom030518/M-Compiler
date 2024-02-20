@@ -100,8 +100,7 @@ fn main() {
     );
 
     let mut module = cranelift_jit::JITModule::new(builder);
-
-    let declarations = declarations::Declarations::new(file, &isa, &mut module).unwrap();
+    let declarations = declarations::Declarations::new(&file, &isa, &mut module).unwrap();
 
     let mut context = CraneliftContext::new(module);
 
@@ -127,4 +126,10 @@ fn main() {
     let ptr = "Hello World!\0".as_ptr();
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn(*const u8) -> u64>(code) };
     unsafe { main(ptr) };
+}
+
+#[no_mangle]
+extern "C" fn sus(i: u64) -> u8 {
+    println!("{i}");
+    0
 }

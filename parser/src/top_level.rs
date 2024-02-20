@@ -175,8 +175,9 @@ pub enum PrimitiveKind {
     I128,
     F32,
     F64,
+    USize,
     MutablePointer(Type),
-    // MutableSlice(Type),
+    MutableSlice(Type),
 }
 
 impl Parse for PrimitiveKind {
@@ -197,18 +198,19 @@ impl Parse for PrimitiveKind {
             "u128" => Self::U128,
             "f32" => Self::F32,
             "f64" => Self::F64,
+            "usize" => Self::USize,
             "mutable_pointer" => {
                 parser.take_token_if(&Token::OpenParen)?;
                 let pointer = parser.parse().map(Self::MutablePointer)?;
                 parser.take_token_if(&Token::CloseParen)?;
                 pointer
             }
-            // "mutable_slice" => {
-            //     parser.take_token_if(&Token::OpenParen)?;
-            //     let pointer = parser.parse().map(Self::MutableSlice)?;
-            //     parser.take_token_if(&Token::CloseParen)?;
-            //     pointer
-            // }
+            "mutable_slice" => {
+                parser.take_token_if(&Token::OpenParen)?;
+                let pointer = parser.parse().map(Self::MutableSlice)?;
+                parser.take_token_if(&Token::CloseParen)?;
+                pointer
+            }
             _ => return None,
         };
         Some(kind)

@@ -74,6 +74,7 @@ pub enum Primitive {
     I128,
     F32,
     F64,
+    USize,
     MutablePointer(declarations::Id),
     MutableSlice(declarations::Id),
 }
@@ -93,7 +94,7 @@ impl Primitive {
             Self::F64 => types::F64,
             Self::U64 | Self::I64 => types::I64,
             Self::U128 | Self::I128 => types::I128,
-            Self::MutablePointer(_) | Self::MutableSlice(_) => pointer,
+            Self::MutablePointer(_) | Self::MutableSlice(_) | Self::USize => pointer,
         }
     }
 
@@ -116,6 +117,7 @@ impl Primitive {
                 | Self::U32
                 | Self::U16
                 | Self::U8
+                | Self::USize
         )
     }
 
@@ -135,7 +137,7 @@ impl Primitive {
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
             Self::U128 | Self::I128 => 16,
-            Self::MutablePointer(_) | Self::MutableSlice(_) => pointer_size,
+            Self::MutablePointer(_) | Self::MutableSlice(_) | Self::USize => pointer_size,
         }
     }
 }

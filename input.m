@@ -14,10 +14,15 @@ end
 // type HiString = @mutable_pointer(@array(UInt8, N))
 // @mutable_slice(UInt64) --> @mutable_pointer(@array(UInt8, UNKNOWN))
 
+type ByteList = @mutable_slice(UInt8)
+end
+
 type HiPtr = @mutable_pointer(Hi)
 end
 
 fn puts = @extern("puts", fn(HiPtr) UInt8)
+fn puts_byte_list = @extern("puts", fn(ByteList) UInt8)
+fn sus = @extern("sus", fn(UInt64) UInt8)
 
 fn print = (Hi pointer) UInt8
     let hi = Hi
@@ -25,13 +30,13 @@ fn print = (Hi pointer) UInt8
         byte1 = 0x69, // 'i',
         byte2 = 0x00, // '\0',
     end
-    
-    puts(@mutable_pointer(hi))
+    str_test()
+    // puts(@mutable_pointer(hi))
     0
 end
 
 fn str_test = () UInt8
-    let hi = "hi"
-    hi = "hello"
+    // TODO: this is wrong - where's the length?????
+    puts_byte_list("money money money!!!\0")
     0
 end

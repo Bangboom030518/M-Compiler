@@ -178,7 +178,8 @@ impl<'a> Inferer<'a> {
         expression.type_id = expression.type_id.or(expected_type);
 
         let environment_state = match &mut expression.expression {
-            hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) => {
+            hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) | hir::Expression::StringConst(_) => {
+                // TODO: assert type here
                 EnvironmentState::NonMutated
             }
             hir::Expression::LocalAccess(variable) => {

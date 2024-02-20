@@ -211,7 +211,8 @@ impl<'a> Builder<'a> {
             parser::Expression::Literal(literal) => match literal {
                 Literal::Integer(int) => Ok(Expression::IntegerConst(*int).into()),
                 Literal::Float(float) => Ok(Expression::FloatConst(*float).into()),
-                _ => todo!("non-numeric literal"),
+                Literal::String(string) => Ok(Expression::StringConst(string.clone()).into()),
+                Literal::Char(_) => todo!("char literals"),
             },
             parser::Expression::IntrinsicCall(intrinsic) => match intrinsic {
                 IntrinsicCall::Binary(left, right, operator) => {

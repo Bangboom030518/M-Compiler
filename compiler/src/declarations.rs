@@ -68,7 +68,7 @@ pub struct Declarations {
 
 impl Declarations {
     pub fn new(
-        mut file: scope::File,
+        file: &scope::File,
         isa: &Arc<dyn TargetIsa>,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
@@ -79,7 +79,7 @@ impl Declarations {
             layouts: HashMap::new(),
         };
 
-        declarations.append_new(file.root, &mut file.cache, module)?;
+        declarations.append_new(file.root, &file.cache, module)?;
 
         Ok(declarations)
     }
@@ -130,16 +130,21 @@ impl Declarations {
                 PrimitiveKind::I32 => layout::Primitive::I32,
                 PrimitiveKind::I64 => layout::Primitive::I64,
                 PrimitiveKind::I128 => layout::Primitive::I128,
+                PrimitiveKind::USize => layout::Primitive::USize,
                 PrimitiveKind::MutablePointer(r#type) => {
                     let ident = r#type.ident();
                     layout::Primitive::MutablePointer(
-                    self.lookup(&ident, scope)
-                        .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
-                )},
-                // PrimitiveKind::MutableSlice(r#type) => layout::Primitive::MutableSlice(
-                //     self.lookup(&r#type.ident(), scope)
-                //         .ok_or(SemanticError::DeclarationNotFound)?,
-                // ),
+                        self.lookup(&ident, scope)
+                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
+                    )
+                },
+                PrimitiveKind::MutableSlice(r#type) => {
+                    let ident = r#type.ident();
+                    layout::Primitive::MutableSlice(
+                        self.lookup(&ident, scope)
+                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
+                    )
+                }
             }),
         };
 
@@ -159,7 +164,7 @@ impl Declarations {
     fn append_new(
         &mut self,
         scope_id: scope::Id,
-        scope_cache: &mut scope::Cache,
+        scope_cache: &scope::Cache,
         module: &mut impl Module,
     ) -> Result<(), SemanticError> {
         // TODO: `.clone()`
@@ -194,8 +199,7 @@ impl Declarations {
                             // TODO: will need to handle generics
                             let type_id = self
                                 .lookup(
-                                    ident,
-                                    // TODO: `r#struct.scope`
+                                    ident, // TODO: `r#struct.scope`
                                     scope_id,
                                 )
                                 .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
