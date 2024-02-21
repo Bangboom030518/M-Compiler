@@ -1,8 +1,6 @@
 #![feature(iter_collect_into)]
 
 use itertools::Itertools;
-use std::iter::Peekable;
-use std::str::Chars;
 
 macro_rules! define_token_enums {
     ($($variants:ident),*) => {
@@ -66,16 +64,69 @@ define_token_enums!(
     Comma
 );
 
-#[derive(Debug)]
-pub struct Tokenizer<'a>(Peekable<Chars<'a>>);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpannedToken {
+    pub token: Token,
+    pub span: std::ops::Range<usize>,
+}
 
-impl<'a> From<&'a str> for Tokenizer<'a> {
-    fn from(value: &'a str) -> Self {
-        Self(value.chars().peekable())
+impl SpannedToken {
+    fn new(token: Token, span: std::ops::Range<usize>) -> Self {
+        Self { token, span }
     }
 }
 
-impl<'a> Tokenizer<'a> {
+#[derive(Debug)]
+pub struct Tokenizer(TokenizerCharsIter);
+
+#[derive(Debug)]
+pub struct TokenizerCharsIter {
+    source: Vec<char>,
+    index: usize,
+}
+
+impl itertools::PeekingNext for TokenizerCharsIter {
+    fn peeking_next<F>(&mut self, accept: F) -> Option<Self::Item>
+    where
+        F: FnOnce(&Self::Item) -> bool,
+    {
+        let ch = self.peek()?;
+
+        if accept(&ch) {
+            self.index += 1;
+            Some(ch)
+        } else {
+            None
+        }
+    }
+}
+
+impl Iterator for TokenizerCharsIter {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ch = self.peek()?;
+        self.index += 1;
+        Some(ch)
+    }
+}
+
+impl TokenizerCharsIter {
+    fn peek(&self) -> Option<char> {
+        self.source.get(self.index).copied()
+    }
+}
+
+impl<'a> From<&'a str> for Tokenizer {
+    fn from(source: &'a str) -> Self {
+        Self(TokenizerCharsIter {
+            source: source.chars().collect(),
+            index: 0,
+        })
+    }
+}
+
+impl Tokenizer {
     fn take_ident_or_keyword(&mut self, first_char: char) -> Token {
         let ident: String = std::iter::once(first_char)
             .chain(
@@ -149,9 +200,9 @@ impl<'a> Tokenizer<'a> {
     fn take_number(&mut self, first_char: char) -> Token {
         if first_char == '0' {
             match self.0.peek() {
-                Some(&'x' | &'X') => return self.take_number_base(16),
-                Some(&'o' | &'O') => return self.take_number_base(8),
-                Some(&'b' | &'B') => return self.take_number_base(2),
+                Some('x' | 'X') => return self.take_number_base(16),
+                Some('o' | 'O') => return self.take_number_base(8),
+                Some('b' | 'B') => return self.take_number_base(2),
                 _ => {}
             }
         }
@@ -163,7 +214,7 @@ impl<'a> Tokenizer<'a> {
             )
             .collect();
 
-        if self.0.peek() != Some(&'.') {
+        if self.0.peek() != Some('.') {
             return digits.parse().map(Token::Integer).unwrap_or_default();
         }
         self.0.next().unwrap();
@@ -178,15 +229,15 @@ impl<'a> Tokenizer<'a> {
 
     fn take_comment_or_divide(&mut self) -> Token {
         match self.0.peek() {
-            Some(&'/') => {
+            Some('/') => {
                 self.0.next();
                 Token::Comment(self.0.peeking_take_while(|&ch| ch != '\n').collect())
             }
-            Some(&'*') => {
+            Some('*') => {
                 self.0.next();
                 let mut comment = String::new();
                 while let Some(ch) = self.0.next() {
-                    if ch == '*' && self.0.peek() == Some(&'/') {
+                    if ch == '*' && self.0.peek() == Some('/') {
                         self.next();
                         break;
                     }
@@ -199,11 +250,12 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-impl<'a> Iterator for Tokenizer<'a> {
-    type Item = Token;
+impl Iterator for Tokenizer {
+    type Item = SpannedToken;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(match self.0.next()? {
+        let start = self.0.index;
+        let token = match self.0.next()? {
             '+' => Token::Plus,
             '-' => Token::Minus,
             '%' => Token::Remainder,
@@ -211,7 +263,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             ',' => Token::Comma,
             '@' => Token::At,
             '!' => {
-                if self.0.peek() == Some(&'=') {
+                if self.0.peek() == Some('=') {
                     self.0.next();
                     Token::NotEqual
                 } else {
@@ -219,7 +271,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '>' => {
-                if self.0.peek() == Some(&'=') {
+                if self.0.peek() == Some('=') {
                     self.0.next();
                     Token::GreaterThanOrEqual
                 } else {
@@ -227,7 +279,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '<' => {
-                if self.0.peek() == Some(&'=') {
+                if self.0.peek() == Some('=') {
                     self.0.next();
                     Token::LessThanOrEqual
                 } else {
@@ -240,7 +292,7 @@ impl<'a> Iterator for Tokenizer<'a> {
             '\n' => Token::Newline,
             '"' => self.take_string(),
             '*' => {
-                if self.0.peek() == Some(&'*') {
+                if self.0.peek() == Some('*') {
                     self.0.next();
                     Token::Exponent
                 } else {
@@ -248,7 +300,7 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '=' => {
-                if self.0.peek() == Some(&'=') {
+                if self.0.peek() == Some('=') {
                     self.0.next();
                     Token::Equal
                 } else {
@@ -256,11 +308,12 @@ impl<'a> Iterator for Tokenizer<'a> {
                 }
             }
             '/' => self.take_comment_or_divide(),
-            ch if ch.is_whitespace() => self.next()?,
+            ch if ch.is_whitespace() => return self.next(),
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
             ch if ch.is_numeric() => self.take_number(ch),
             _ => Token::Illegal,
-        })
+        };
+        Some(SpannedToken::new(token, start..self.0.index))
     }
 }
 
@@ -268,7 +321,7 @@ impl<'a> Iterator for Tokenizer<'a> {
 fn tokenize_stuff() {
     let input = "+ / * /*Hello World*/ const identifier_test";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.collect_vec();
+    let tokens = tokenizer.map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![
@@ -286,7 +339,7 @@ fn tokenize_stuff() {
 fn tokenize_string() {
     let input = r#"+ "Hello World \r \u{001B}""#;
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.collect_vec();
+    let tokens = tokenizer.map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![
@@ -300,7 +353,7 @@ fn tokenize_string() {
 fn tokenize_number() {
     let input = "0xf 1 0.5";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.collect_vec();
+    let tokens = tokenizer.map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![Token::Integer(0xf), Token::Integer(1), Token::Float(0.5),]

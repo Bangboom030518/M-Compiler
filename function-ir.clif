@@ -1,3 +1,23 @@
+function u0:0() -> i8 windows_fastcall {
+    ss0 = explicit_slot 1
+    ss1 = explicit_slot 1
+    gv0 = symbol colocated userextname0
+    sig0 = (i64) -> i8 windows_fastcall
+    fn0 = u0:2 sig0
+
+block0:
+    v0 = symbol_value.i64 gv0
+    v1 = call fn0(v0)
+    v6 = stack_addr.i64 ss0
+    store notrap v1, v6
+    v2 = stack_addr.i64 ss0
+    v3 = iconst.i8 0
+    v7 = stack_addr.i64 ss1
+    store notrap v3, v7  ; v3 = 0
+    v4 = stack_addr.i64 ss1
+    v5 = load.i8 v4
+    return v5
+}
 function u0:0(i64) -> i8 windows_fastcall {
     ss0 = explicit_slot 3
     ss1 = explicit_slot 1
@@ -12,7 +32,7 @@ function u0:0(i64) -> i8 windows_fastcall {
     fn0 = %Memmove sig0
     fn1 = %Memmove sig1
     fn2 = %Memmove sig2
-    fn3 = colocated u0:1 sig3
+    fn3 = colocated u0:0 sig3
 
 block0(v0: i64):
     v1 = stack_addr.i64 ss0
@@ -50,24 +70,4 @@ block0(v0: i64):
     v20 = stack_addr.i64 ss5
     v21 = load.i8 v20
     return v21
-}
-function u0:0() -> i8 windows_fastcall {
-    ss0 = explicit_slot 1
-    ss1 = explicit_slot 1
-    gv0 = symbol colocated userextname0
-    sig0 = (i64) -> i8 windows_fastcall
-    fn0 = u0:2 sig0
-
-block0:
-    v0 = symbol_value.i64 gv0
-    v1 = call fn0(v0)
-    v6 = stack_addr.i64 ss0
-    store notrap v1, v6
-    v2 = stack_addr.i64 ss0
-    v3 = iconst.i8 0
-    v7 = stack_addr.i64 ss1
-    store notrap v3, v7  ; v3 = 0
-    v4 = stack_addr.i64 ss1
-    v5 = load.i8 v4
-    return v5
 }

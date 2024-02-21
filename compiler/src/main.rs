@@ -119,13 +119,12 @@ fn main() {
     }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("print").unwrap();
+    let function = *functions.get("main").unwrap();
 
     let code = context.module.get_finalized_function(function);
 
-    let ptr = "Hello World!\0".as_ptr();
-    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn(*const u8) -> u64>(code) };
-    unsafe { main(ptr) };
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
+    unsafe { main() };
 }
 
 #[no_mangle]

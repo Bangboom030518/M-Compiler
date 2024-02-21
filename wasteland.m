@@ -131,3 +131,79 @@ fn main = () UInt64
     0
 end
 
+interface ToString
+    fn String to_string(Self self)
+end
+
+interface Iterator<T>
+    fn T next(mut Ptr<Self> self)
+end
+
+type Map<T, U> struct
+    Iterator<T> iterator
+    Fn(T) -> U mapping
+    
+    implement Iterator<T>
+        fn next(self)
+            self.mapping(self.iterator.next())
+        end
+    end
+end
+
+fn<T, U> Map<T, U> map(Iterator<T> iterator, Fn<(T), U> mapping)
+    Map
+        iterator = iterator,
+        mapping = mapping,
+    end
+end
+
+type Null struct
+end
+
+fn main()
+    print("Hello World")
+end
+
+type Counter struct
+    count USize
+
+    implement Iterator<USize>
+        fn next(self)
+            let count = self.counter;
+            self.counter += 1;
+            count
+        end
+    end
+
+    implement Iterator<UInt64>
+        fn next(self)
+            let count = self.counter |> to_u64()
+            self.counter += 1;
+            count
+        end
+    end
+end
+
+fn a()
+    capitalize(text)
+
+    [0, 1, 2, 3]
+        |> Array.into_iterator()
+        |> map()
+        |> collect_to_string()
+        |> string.capitalize()
+end
+
+fn<I: Iterator> map Map<I> ()
+
+type Point = struct
+    UInt8 x,
+    UInt8 y,
+
+    fn to_string(Self self)
+        sprintf("%u %u", self.x, self.y)
+    end
+end
+
+type MyPoint = distinct Point
+end
