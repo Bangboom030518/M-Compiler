@@ -25,17 +25,17 @@ macro_rules! define_token_enums {
             pub fn kind(&self) -> TokenType {
                 match self {
                     $(Self::$variants => TokenType::$variants,)*
-                    Self::String(String) => TokenType::String,
+                    Self::String(_) => TokenType::String,
                     Self::Char(_) => TokenType::Char,
-                    Self::Ident(String) => TokenType::Ident,
-                    Self::Comment(String) => TokenType::String,
-                    Self::Integer(u128) => TokenType::Integer,
-                    Self::Float(f64) => TokenType::Float,
+                    Self::Ident(_) => TokenType::Ident,
+                    Self::Comment(_) => TokenType::Comment,
+                    Self::Integer(_) => TokenType::Integer,
+                    Self::Float(_) => TokenType::Float,
                 }
             }
         }
 
-        #[derive(Clone, Copy, Debug, PartialEq)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum TokenType {
             $($variants),*,
             String,
@@ -44,7 +44,6 @@ macro_rules! define_token_enums {
             Comment,
             Integer,
             Float,
-            Eoi,
         }
     };
 }
@@ -58,7 +57,6 @@ define_token_enums!(
     Let,
     End,
     Return,
-    Newline,
     Exponent,
     Union,
     Struct,
@@ -80,18 +78,21 @@ define_token_enums!(
     OpenParen,
     CloseParen,
     Comma,
-    Illegal
+    Illegal,
+    Eoi
 );
+
+pub type Span = std::ops::Range<usize>;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SpannedToken {
     pub token: Token,
-    pub span: std::ops::Range<usize>,
+    pub span: Span,
 }
 
 impl SpannedToken {
-    fn new(token: Token, span: std::ops::Range<usize>) -> Self {
-        Self { token, span }
+    pub fn kind(&self) -> TokenType {
+        self.token.kind()
     }
 }
 
@@ -257,7 +258,7 @@ impl Tokenizer {
                 let mut comment = String::new();
                 while let Some(ch) = self.0.next() {
                     if ch == '*' && self.0.peek() == Some('/') {
-                        self.next();
+                        self.take();
                         break;
                     }
                     comment.push(ch)
@@ -267,14 +268,16 @@ impl Tokenizer {
             _ => Token::Divide,
         }
     }
-}
 
-impl Iterator for Tokenizer {
-    type Item = SpannedToken;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn take(&mut self) -> SpannedToken {
         let start = self.0.index;
-        let token = match self.0.next()? {
+        let Some(ch) = self.0.next() else {
+            return SpannedToken {
+                token: Token::Eoi,
+                span: self.0.index..self.0.index,
+            };
+        };
+        let token = match ch {
             '+' => Token::Plus,
             '-' => Token::Minus,
             '%' => Token::Remainder,
@@ -307,8 +310,6 @@ impl Iterator for Tokenizer {
             }
             '(' => Token::OpenParen,
             ')' => Token::CloseParen,
-            // TODO: `\r\n`?
-            '\n' => Token::Newline,
             '"' => self.take_string(),
             '*' => {
                 if self.0.peek() == Some('*') {
@@ -327,12 +328,29 @@ impl Iterator for Tokenizer {
                 }
             }
             '/' => self.take_comment_or_divide(),
-            ch if ch.is_whitespace() => return self.next(),
+            ch if ch.is_whitespace() => return self.take(),
             ch if ch.is_alphabetic() || ch == '_' => self.take_ident_or_keyword(ch),
             ch if ch.is_numeric() => self.take_number(ch),
             _ => Token::Illegal,
         };
-        Some(SpannedToken::new(token, start..self.0.index))
+
+        SpannedToken {
+            token,
+            span: start..self.0.index,
+        }
+    }
+
+    // TODO: trait!
+    #[cfg(test)]
+    fn into_iter(mut self) -> impl Iterator<Item = SpannedToken> {
+        std::iter::from_fn(move || {
+            let token = self.take();
+            if token.kind() == TokenType::Eoi {
+                None
+            } else {
+                Some(token)
+            }
+        })
     }
 }
 
@@ -340,7 +358,7 @@ impl Iterator for Tokenizer {
 fn tokenize_stuff() {
     let input = "+ / * /*Hello World*/ const identifier_test";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![
@@ -358,7 +376,7 @@ fn tokenize_stuff() {
 fn tokenize_string() {
     let input = r#"+ "Hello World \r \u{001B}""#;
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![
@@ -372,7 +390,7 @@ fn tokenize_string() {
 fn tokenize_number() {
     let input = "0xf 1 0.5";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
     assert_eq!(
         tokens,
         vec![Token::Integer(0xf), Token::Integer(1), Token::Float(0.5),]
