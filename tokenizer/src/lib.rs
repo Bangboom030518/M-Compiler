@@ -4,17 +4,35 @@ use itertools::Itertools;
 
 macro_rules! define_token_enums {
     ($($variants:ident),*) => {
-        #[derive(Clone, Debug, Default, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         pub enum Token {
             $($variants),*,
-            #[default]
-            Illegal,
             String(String),
             Char(char),
             Ident(String),
             Comment(String),
             Integer(u128),
             Float(f64),
+        }
+
+        impl Default for Token {
+            fn default() -> Self {
+                Self::Illegal
+            }
+        }
+
+        impl Token {
+            pub fn kind(&self) -> TokenType {
+                match self {
+                    $(Self::$variants => TokenType::$variants,)*
+                    Self::String(String) => TokenType::String,
+                    Self::Char(_) => TokenType::Char,
+                    Self::Ident(String) => TokenType::Ident,
+                    Self::Comment(String) => TokenType::String,
+                    Self::Integer(u128) => TokenType::Integer,
+                    Self::Float(f64) => TokenType::Float,
+                }
+            }
         }
 
         #[derive(Clone, Copy, Debug, PartialEq)]
@@ -61,7 +79,8 @@ define_token_enums!(
     Bang,
     OpenParen,
     CloseParen,
-    Comma
+    Comma,
+    Illegal
 );
 
 #[derive(Clone, Debug, Default, PartialEq)]

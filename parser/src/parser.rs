@@ -1,4 +1,4 @@
-use tokenizer::SpannedToken;
+use tokenizer::{SpannedToken, TokenType};
 
 use crate::internal::prelude::*;
 
@@ -58,6 +58,7 @@ impl Parser {
         }?;
         if matches!(token.token, Token::Comment(_)) {
             self.position += 1;
+
             self.peek_any()
         } else {
             Some(token)
@@ -159,8 +160,8 @@ impl Parser {
         self.peek_token().is_none().then_some(())
     }
 
-    pub fn peek_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
-        if self.peek_token().as_ref() == Some(token) {
+    pub fn peek_token_if<'b>(&mut self, token: &'b TokenType) -> Option<SpannedToken> {
+        if self.peek_token().as_ref().kind() == Some(token) {
             Some(token)
         } else {
             None
@@ -168,7 +169,7 @@ impl Parser {
     }
 
     #[must_use]
-    pub fn take_token_if<'b>(&mut self, token: &'b Token) -> Option<&'b Token> {
+    pub fn take_token_if<'b>(&mut self, token: &'b TokenType) -> Option<&'b SpannedToken> {
         let token = self.peek_token_if(token);
         if token.is_some() {
             self.position += 1;
