@@ -1,16 +1,18 @@
+use tokenizer::SpannedToken;
+
 use crate::internal::prelude::*;
 
 #[derive(Debug)]
-pub struct Parser<'a> {
-    tokenizer: Tokenizer<'a>,
-    tokens: Vec<Token>,
+pub struct Parser {
+    tokenizer: Tokenizer,
+    tokens: Vec<SpannedToken>,
     position: usize,
     scope_cache: scope::Cache,
     pub(crate) scope: scope::Id,
 }
 
-impl<'a> From<Tokenizer<'a>> for Parser<'a> {
-    fn from(tokenizer: Tokenizer<'a>) -> Self {
+impl From<Tokenizer> for Parser {
+    fn from(tokenizer: Tokenizer) -> Self {
         Self {
             tokenizer,
             tokens: Vec::new(),
@@ -21,8 +23,8 @@ impl<'a> From<Tokenizer<'a>> for Parser<'a> {
     }
 }
 
-impl<'a> From<Parser<'a>> for scope::File {
-    fn from(value: Parser<'a>) -> Self {
+impl From<Parser> for scope::File {
+    fn from(value: Parser) -> Self {
         Self {
             root: value.scope,
             cache: value.scope_cache,
@@ -30,7 +32,7 @@ impl<'a> From<Parser<'a>> for scope::File {
     }
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     pub fn create_scope(&mut self) -> scope::Id {
         let id = self.scope_cache.create_scope(self.scope);
         self.scope = id;
@@ -46,7 +48,7 @@ impl<'a> Parser<'a> {
         self.scope = self.scope_cache[self.scope].parent.unwrap();
     }
 
-    pub fn peek_any(&mut self) -> Option<Token> {
+    pub fn peek_any(&mut self) -> Option<SpannedToken> {
         let token = match self.tokens.get(self.position).cloned() {
             token @ Some(_) => token,
             None => {
@@ -54,7 +56,7 @@ impl<'a> Parser<'a> {
                 self.tokens.last().cloned()
             }
         }?;
-        if matches!(token, Token::Comment(_)) {
+        if matches!(token.token, Token::Comment(_)) {
             self.position += 1;
             self.peek_any()
         } else {
@@ -62,7 +64,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn peek_token(&mut self) -> Option<Token> {
+    pub fn peek_token(&mut self) -> Option<SpannedToken> {
         let token = self.peek_any()?;
         if matches!(token, Token::Newline) {
             self.position += 1;
@@ -72,7 +74,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn take_token(&mut self) -> Option<Token> {
+    pub fn take_token(&mut self) -> Option<SpannedToken> {
         let token @ Some(_) = self.peek_token() else {
             return None;
         };
