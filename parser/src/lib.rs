@@ -4,7 +4,7 @@
     clippy::unwrap_used,
     clippy::unreachable
 )]
-#![feature(assert_matches, iter_collect_into)]
+#![feature(assert_matches, iter_collect_into, if_let_guard)]
 
 pub use expression::Expression;
 use internal::prelude::*;

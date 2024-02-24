@@ -1,41 +1,47 @@
-use crate::internal::prelude::*;
-use crate::Expression;
+use tokenizer::TokenType;
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::internal::prelude::*;
+use crate::{Error, Expression};
+
+#[derive(Debug, Clone)]
 pub struct If {
     pub condition: Box<Expression>,
     pub then_branch: Vec<Statement>,
     pub else_branch: Option<Vec<Statement>>,
+    span: tokenizer::Span,
 }
 
 impl Parse for If {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::If)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        let start = parser.take_token_if(TokenType::If)?.span.start;
         let condition = Box::new(parser.parse()?);
-        parser.take_newline()?;
 
         let mut true_branch = Vec::new();
-        while let Some(expression) = parser.parse_line() {
+        while let Ok(expression) = parser.parse() {
             true_branch.push(expression);
         }
 
-        let false_branch = if parser.take_token_if(&Token::Else).is_some() {
-            parser.take_newline()?;
+        let false_branch = if parser.take_token_if(TokenType::Else).is_ok() {
             let mut false_branch = Vec::new();
-            while let Some(expression) = parser.parse_line() {
+            while let Ok(expression) = parser.parse() {
                 false_branch.push(expression);
             }
             Some(false_branch)
         } else {
             None
         };
-        parser.take_token_if(&Token::End)?;
+        let end = parser.take_token_if(TokenType::End)?.span.end;
 
-        Some(Self {
+        Ok(Self {
             condition,
             then_branch: true_branch,
             else_branch: false_branch,
+            span: start..end,
         })
+    }
+
+    fn span(&self) -> tokenizer::Span {
+        self.span
     }
 }
 

@@ -1,4 +1,6 @@
-use crate::internal::prelude::*;
+use tokenizer::TokenType;
+
+use crate::{internal::prelude::*, Error};
 use std::iter;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -8,7 +10,7 @@ pub struct TypeBinding {
 }
 
 impl TypeBinding {
-    fn parse(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Option<Self> {
+    fn parse(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Result<Self, Error> {
         let r#type = parser.parse()?;
         if peek(parser) {
             Some(Self {
@@ -31,7 +33,7 @@ impl TypeBinding {
 pub struct Variant(TypeBinding);
 
 impl Parse for Variant {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         TypeBinding::parse(parser, |parser| parser.peek_newline_or_eof().is_some()).map(Self)
     }
 }
@@ -43,7 +45,7 @@ pub struct Field {
 }
 
 impl Parse for Field {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         Some(Self {
             r#type: parser.parse()?,
             name: parser.parse()?,
@@ -55,9 +57,9 @@ impl Parse for Field {
 pub struct Parameter(pub TypeBinding);
 
 impl Parse for Parameter {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         TypeBinding::parse(parser, |parser| {
-            parser.peek_token_if(&Token::Comma).is_some()
+            parser.peek_token_if(TokenType::Comma).is_some()
         })
         .map(Self)
     }
@@ -71,8 +73,8 @@ pub struct Struct {
 }
 
 impl Parse for Struct {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::Struct)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        parser.take_token_if(TokenType::Struct)?;
         parser.take_newline()?;
         let scope_id = parser.create_scope();
 
@@ -84,7 +86,7 @@ impl Parse for Struct {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.take_token_if(&Token::End)?;
+        parser.take_token_if(TokenType::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -101,8 +103,8 @@ pub struct Union {
 }
 
 impl Parse for Union {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::Union)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        parser.take_token_if(TokenType::Union)?;
         parser.take_newline()?;
         let scope_id = parser.create_scope();
         let variants = iter::from_fn(|| parser.parse_line()).collect_vec();
@@ -113,7 +115,7 @@ impl Parse for Union {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.take_token_if(&Token::End)?;
+        parser.take_token_if(TokenType::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -123,7 +125,7 @@ impl Parse for Union {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Option<Type>,
@@ -131,12 +133,12 @@ pub struct Function {
 }
 
 impl Parse for Function {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::OpenParen)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        parser.take_token_if(TokenType::OpenParen)?;
 
         let parameters = parser.parse_csv();
 
-        parser.take_token_if(&Token::CloseParen)?;
+        parser.take_token_if(TokenType::CloseParen)?;
 
         let return_type = parser.parse();
         let mut body = Vec::new();
@@ -145,7 +147,7 @@ impl Parse for Function {
         while let Some(input) = parser.parse_line() {
             body.push(input);
         }
-        parser.take_token_if(&Token::End)?;
+        parser.take_token_if(TokenType::End)?;
 
         Some(Self {
             parameters,
@@ -181,7 +183,7 @@ pub enum PrimitiveKind {
 }
 
 impl Parse for PrimitiveKind {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let Token::Ident(ident) = parser.take_token()? else {
             return None;
         };
@@ -200,15 +202,15 @@ impl Parse for PrimitiveKind {
             "f64" => Self::F64,
             "usize" => Self::USize,
             "mutable_pointer" => {
-                parser.take_token_if(&Token::OpenParen)?;
+                parser.take_token_if(TokenType::OpenParen)?;
                 let pointer = parser.parse().map(Self::MutablePointer)?;
-                parser.take_token_if(&Token::CloseParen)?;
+                parser.take_token_if(TokenType::CloseParen)?;
                 pointer
             }
             "mutable_slice" => {
-                parser.take_token_if(&Token::OpenParen)?;
+                parser.take_token_if(TokenType::OpenParen)?;
                 let pointer = parser.parse().map(Self::MutableSlice)?;
-                parser.take_token_if(&Token::CloseParen)?;
+                parser.take_token_if(TokenType::CloseParen)?;
                 pointer
             }
             _ => return None,
@@ -218,8 +220,8 @@ impl Parse for PrimitiveKind {
 }
 
 impl Parse for Primitive {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::At)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        parser.take_token_if(TokenType::At)?;
         let kind = parser.parse()?;
         parser.take_newline()?;
         let scope_id = parser.create_scope();
@@ -229,7 +231,7 @@ impl Parse for Primitive {
                 .declarations
                 .insert(declaration.name, declaration.kind);
         }
-        parser.take_token_if(&Token::End)?;
+        parser.take_token_if(TokenType::End)?;
         parser.exit_scope();
 
         Some(Self {
@@ -247,28 +249,28 @@ pub struct ExternFunction {
 }
 
 impl Parse for ExternFunction {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::At)?;
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        parser.take_token_if(TokenType::At)?;
         if parser.parse::<Ident>()?.0 != "extern" {
             return None;
         };
 
-        parser.take_token_if(&Token::OpenParen)?;
+        parser.take_token_if(TokenType::OpenParen)?;
         let Token::String(symbol) = parser.take_token()? else {
             return None;
         };
 
-        parser.take_token_if(&Token::Comma)?;
-        parser.take_token_if(&Token::Function)?;
+        parser.take_token_if(TokenType::Comma)?;
+        parser.take_token_if(TokenType::Function)?;
 
-        parser.take_token_if(&Token::OpenParen)?;
+        parser.take_token_if(TokenType::OpenParen)?;
         let parameters = parser.parse_csv();
-        parser.take_token_if(&Token::CloseParen)?;
+        parser.take_token_if(TokenType::CloseParen)?;
 
         let return_type = parser.parse()?;
-        let _ = parser.take_token_if(&Token::Comma);
+        let _ = parser.take_token_if(TokenType::Comma);
 
-        parser.take_token_if(&Token::CloseParen)?;
+        parser.take_token_if(TokenType::CloseParen)?;
 
         Some(Self {
             symbol,
@@ -278,7 +280,7 @@ impl Parse for ExternFunction {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum DeclarationKind {
     Function(Function),
     ExternFunction(ExternFunction),
@@ -288,17 +290,17 @@ pub enum DeclarationKind {
     Primitive(Primitive),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Declaration {
     pub name: Ident,
     pub kind: DeclarationKind,
 }
 
 impl Parse for Declaration {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let kind = parser.take_token()?;
         let name = parser.parse()?;
-        parser.take_token_if(&Token::Assignment)?;
+        parser.take_token_if(TokenType::Assignment)?;
         let kind = match kind {
             Token::Type => match parser.peek_token()? {
                 Token::Union => DeclarationKind::Union(parser.parse()?),

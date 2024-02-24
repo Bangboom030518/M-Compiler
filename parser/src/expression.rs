@@ -1,4 +1,6 @@
-use crate::internal::prelude::*;
+use tokenizer::{Span, TokenType};
+
+use crate::{internal::prelude::*, Error};
 
 pub mod binary;
 pub mod control_flow;
@@ -22,52 +24,77 @@ impl Parse for UnaryOperator {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Literal {
+pub enum LiteralKind {
     String(String),
     Integer(u128),
     Float(f64),
     Char(char),
 }
 
+#[derive(Clone, Debug)]
+pub struct Literal {
+    kind: LiteralKind,
+    span: tokenizer::Span,
+}
+
 impl Parse for Literal {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        match parser.take_token()? {
-            Token::String(string) => Some(Self::String(string)),
-            Token::Integer(integer) => Some(Self::Integer(integer)),
-            Token::Float(float) => Some(Self::Float(float)),
-            Token::Char(char) => Some(Self::Char(char)),
-            _ => None,
-        }
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        let (kind, span) = parser.take_token_if(TokenType::String).map(|token| match token.token {
+            Token::String(string) => (LiteralKind::String(string), token.span),
+            _ => unreachable!(),
+        }).or_else(|_| parser.take_token_if(TokenType::Integer).map(|token| match token.token {
+            Token::Integer(integer) => (LiteralKind::Integer(integer), token.span),
+            _ => unreachable!(),
+        })).or_else(|_| parser.take_token_if(TokenType::Float).map(|token| match token.token {
+            Token::Float(float) => (LiteralKind::Float(float), token.span),
+            _ => unreachable!(),
+        })).or_else(|_| parser.take_token_if(TokenType::Char).map(|token| match token.token {
+            Token::Char(char) => (LiteralKind::Char(char), token.span),
+            _ => unreachable!(),
+        }))?;
+        Ok(Self {
+            kind, span
+        })
+    }
+
+    fn span(&self) -> tokenizer::Span {
+        self.span
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Call {
     pub callable: Box<Expression>,
     pub type_arguments: Vec<crate::Type>,
     pub arguments: Vec<Expression>,
+    span: tokenizer::Span,
 }
 
 impl Parse for Call {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let callable = Expression::parse_nonpostfix_term(parser)?;
-
-        let type_arguments = if parser.take_token_if(&Token::LessThan).is_some() {
+        let type_arguments = if parser.take_token_if(TokenType::LessThan).is_some() {
             let type_arguments = parser.parse_csv();
-            parser.take_token_if(&Token::GreaterThan)?;
+            parser.take_token_if(TokenType::GreaterThan)?;
             type_arguments
         } else {
             Vec::new()
         };
-        parser.take_token_if(&Token::OpenParen)?;
+        parser.take_token_if(TokenType::OpenParen)?;
         let arguments = parser.parse_csv();
-        parser.take_token_if(&Token::CloseParen)?;
 
-        Some(Self {
+        let start = callable.span().start;
+        let end = parser.take_token_if(TokenType::CloseParen)?.span.end;
+
+        Ok(Self {
             callable: Box::new(callable),
             type_arguments,
             arguments,
+            span: start..end
         })
+    }
+    fn span(&self) -> tokenizer::Span {
+        self.span
     }
 }
 
@@ -155,16 +182,16 @@ pub enum IntrinsicCall {
 
 impl Parse for IntrinsicCall {
     fn parse(parser: &mut Parser) -> Option<Self> {
-        parser.take_token_if(&Token::At)?;
+        parser.take_token_if(TokenType::At)?;
         let Token::Ident(ident) = parser.take_token()? else {
             return None;
         };
 
-        parser.take_token_if(&Token::OpenParen)?;
+        parser.take_token_if(TokenType::OpenParen)?;
         let value = match ident.as_str() {
             "assert_type" => {
                 let expression = Box::new(parser.parse()?);
-                parser.take_token_if(&Token::Comma)?;
+                parser.take_token_if(TokenType::Comma)?;
                 Self::AssertType(expression, parser.parse()?)
             },
             "mutable_pointer" => {
@@ -176,7 +203,7 @@ impl Parse for IntrinsicCall {
             
             token if let Some(op) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
-                parser.take_token_if(&Token::Comma)?;
+                parser.take_token_if(TokenType::Comma)?;
                 let right = Box::new(parser.parse()?);
 
                 Self::Binary(left, right, op)
@@ -184,39 +211,45 @@ impl Parse for IntrinsicCall {
             _ => return None,
         };
 
-        parser.take_token_if(&Token::CloseParen)?;
+        parser.take_token_if(TokenType::CloseParen)?;
         Some(value)
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Constructor {
     pub r#type: Type,
     pub fields: Vec<(Ident, Box<Expression>)>,
+    pub span: tokenizer::Span
 }
 
 impl Parse for Constructor {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let r#type = parser.parse()?;
         let mut fields = Vec::new();
-
+        
         loop {
             let field = parser.parse::<Ident>()?;
-            parser.take_token_if(&Token::Assignment)?;
+            parser.take_token_if(TokenType::Assignment)?;
             fields.push((field, Box::new(parser.parse()?)));
-            if parser.take_token_if(&Token::Comma).is_none() {
-                parser.take_token_if(&Token::End)?;
+            if parser.take_token_if(TokenType::Comma).is_err() {
+                parser.peek_token_if(TokenType::End)?;
                 break;
-            } else if parser.take_token_if(&Token::End).is_some() {
+            } else if parser.peek_token_if(TokenType::End).is_ok() {
                 break;
             }
         }
+        let start = r#type.span().start;
+        let end = parser.take_token_if(TokenType::End)?.span.end;
+        Ok(Self { r#type, fields, span: start..end })
+    }
 
-        Some(Self { r#type, fields })
+    fn span(&self) -> tokenizer::Span {
+        self.span
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Ident(Ident),
     IntrinsicCall(IntrinsicCall),
@@ -240,9 +273,9 @@ pub enum Path {
 
 impl Expression {
     fn parse_term(parser: &mut Parser) -> Option<Self> {
-        if parser.take_token_if(&Token::OpenParen).is_some() {
+        if parser.take_token_if(TokenType::OpenParen).is_some() {
             let expression = parser.parse()?;
-            parser.take_token_if(&Token::CloseParen)?;
+            parser.take_token_if(TokenType::CloseParen)?;
             return Some(expression);
         }
         // TODO: parser.scope(|parser| {})
@@ -253,14 +286,14 @@ impl Expression {
                 parser.scope(|parser| {
                     // TODO: may not be ident
                     let expr = Box::new(parser.parse().map(Self::Ident)?);
-                    parser.take_token_if(&Token::Dot)?;
+                    parser.take_token_if(TokenType::Dot)?;
                     Some(Self::FieldAccess(expr, parser.parse()?))
                 })
             })
             .or_else(|| parser.parse().map(Self::Constructor))
             .or_else(|| {
                 parser.scope(|parser| {
-                    parser.take_token_if(&Token::Return)?;
+                    parser.take_token_if(TokenType::Return)?;
                     Some(Self::Return(Box::new(parser.parse()?)))
                 })
             })
@@ -269,9 +302,9 @@ impl Expression {
     }
 
     fn parse_nonpostfix_term(parser: &mut Parser) -> Option<Self> {
-        if parser.take_token_if(&Token::OpenParen).is_some() {
+        if parser.take_token_if(TokenType::OpenParen).is_some() {
             let expression = parser.parse()?;
-            parser.take_token_if(&Token::CloseParen)?;
+            parser.take_token_if(TokenType::CloseParen)?;
             return Some(expression);
         }
 
