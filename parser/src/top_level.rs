@@ -157,13 +157,13 @@ impl Parse for Function {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Primitive {
     pub kind: PrimitiveKind,
     pub scope: scope::Id,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum PrimitiveKind {
     U8,
     U16,
@@ -241,7 +241,7 @@ impl Parse for Primitive {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExternFunction {
     pub symbol: String,
     pub parameters: Vec<Type>,

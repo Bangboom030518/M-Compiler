@@ -8,6 +8,7 @@
 
 pub use expression::Expression;
 use internal::prelude::*;
+use macros::Spanned;
 use std::collections::HashSet;
 use std::fmt::Display;
 use tokenizer::{SpannedToken, TokenType};
@@ -24,12 +25,29 @@ pub struct Error<'a> {
     pub found: &'a SpannedToken,
 }
 
-pub trait Parse {
+pub trait Spanned {
+    fn span(&self) -> tokenizer::Span;
+    
+    fn start(&self) -> usize {
+        self.span().start
+    }
+
+    fn end(&self) -> usize {
+        self.span().end
+    }
+}
+
+impl Spanned for tokenizer::Span {
+    fn span(&self) -> tokenizer::Span {
+        *self
+    }
+}
+
+pub trait Parse: Spanned {
     fn parse(parser: &mut Parser) -> Result<Self, Error>
     where
         Self: Sized;
 
-    fn span(&self) -> tokenizer::Span;
 }
 
 #[must_use]
@@ -45,9 +63,10 @@ pub fn parse_file(input: &str) -> Result<scope::File, Error> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub struct Ident {
     pub ident: String,
+    #[span]
     pub span: tokenizer::Span,
 }
 
@@ -75,13 +94,9 @@ impl Parse for Ident {
                 _ => unreachable!(),
             })
     }
-
-    fn span(&self) -> tokenizer::Span {
-        self.span
-    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub enum Type {
     Ident(Ident),
 }
@@ -99,12 +114,6 @@ impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
         parser.parse().map(Self::Ident)
     }
-
-    fn span(&self) -> tokenizer::Span {
-        match self {
-            Self::Ident(ident) => ident.span(),
-        }
-    }
 }
 
 impl From<Type> for Ident {
@@ -115,10 +124,11 @@ impl From<Type> for Ident {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub struct Let {
     pub ident: Ident,
     pub expression: Expression,
+    #[span]
     span: tokenizer::Span,
 }
 
@@ -134,13 +144,9 @@ impl Parse for Let {
             span: start..expression.span().end,
         })
     }
-
-    fn span(&self) -> tokenizer::Span {
-        self.span
-    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub enum Statement {
     Expression(Expression),
     Let(Let),
@@ -148,7 +154,7 @@ pub enum Statement {
     Assignment(Assignment),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Assignment {
     pub left: Expression,
     pub right: Expression,
@@ -163,9 +169,11 @@ impl Parse for Assignment {
             right: parser.parse()?,
         })
     }
+}
 
+impl Spanned for Assignment {
     fn span(&self) -> tokenizer::Span {
-        self.left.span().start..self.right.span().end
+        self.left.start()..self.right.end()
     }
 }
 
@@ -176,14 +184,6 @@ impl Parse for Statement {
             .map(Self::Let)
             .or_else(|_| parser.parse().map(Self::Assignment))
             .or_else(|_| parser.parse().map(Self::Expression))
-    }
-
-    fn span(&self) -> tokenizer::Span {
-        match self {
-            Self::Assignment(assignment) => assignment.span(),
-            Self::Expression(expression) => expression.span(),
-            Self::Let(statement) => statement.span(),
-        }
     }
 }
 

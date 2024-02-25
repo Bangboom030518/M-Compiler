@@ -1,13 +1,15 @@
+use macros::Spanned;
 use tokenizer::TokenType;
 
 use crate::internal::prelude::*;
 use crate::{Error, Expression};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub struct If {
     pub condition: Box<Expression>,
     pub then_branch: Vec<Statement>,
     pub else_branch: Option<Vec<Statement>>,
+    #[span]
     span: tokenizer::Span,
 }
 
@@ -38,10 +40,6 @@ impl Parse for If {
             else_branch: false_branch,
             span: start..end,
         })
-    }
-
-    fn span(&self) -> tokenizer::Span {
-        self.span
     }
 }
 

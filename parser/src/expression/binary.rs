@@ -1,6 +1,9 @@
-use crate::internal::prelude::*;
+use macros::Spanned;
 
-#[derive(Debug, Clone, PartialEq)]
+use crate::internal::prelude::*;
+use crate::{Error};
+
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub left: Box<super::Expression>,
     pub right: Box<super::Expression>,
@@ -19,7 +22,7 @@ impl Expression {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operator {
+pub enum OperatorKind {
     Multiply,
     Plus,
     Minus,
@@ -34,24 +37,35 @@ pub enum Operator {
     LessThanOrEqual,
 }
 
+#[derive(Spanned)]
+pub struct Operator {
+    kind: OperatorKind,
+    #[span]
+    span: tokenizer::Span,
+}
+
 impl Parse for Operator {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        let operator = match parser.take_token()? {
-            Token::Multiply => Self::Multiply,
-            Token::Plus => Self::Plus,
-            Token::Minus => Self::Minus,
-            Token::Divide => Self::Divide,
-            Token::Remainder => Self::Remainder,
-            Token::Exponent => Self::Exponent,
-            Token::Equal => Self::Equal,
-            Token::NotEqual => Self::NotEqual,
-            Token::GreaterThan => Self::GreaterThan,
-            Token::LessThan => Self::LessThan,
-            Token::GreaterThanOrEqual => Self::GreaterThanOrEqual,
-            Token::LessThanOrEqual => Self::LessThanOrEqual,
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        let token = parser.take_token()?;
+        let kind = match token.token {
+            Token::Multiply => OperatorKind::Multiply,
+            Token::Plus => OperatorKind::Plus,
+            Token::Minus => OperatorKind::Minus,
+            Token::Divide => OperatorKind::Divide,
+            Token::Remainder => OperatorKind::Remainder,
+            Token::Exponent => OperatorKind::Exponent,
+            Token::Equal => OperatorKind::Equal,
+            Token::NotEqual => OperatorKind::NotEqual,
+            Token::GreaterThan => OperatorKind::GreaterThan,
+            Token::LessThan => OperatorKind::LessThan,
+            Token::GreaterThanOrEqual => OperatorKind::GreaterThanOrEqual,
+            Token::LessThanOrEqual => OperatorKind::LessThanOrEqual,
             _ => return None,
         };
-        Some(operator)
+        Ok(Self {
+            kind,
+            span: token.span,
+        })
     }
 }
 
@@ -72,26 +86,37 @@ impl Operator {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Spanned)]
 pub struct Terms {
-    // The first term in a sequence of binary expressions (e.g. `1` in `1 + 2 * 3`)
+    /// The first term in a sequence of binary expressions (e.g. `1` in `1 + 2 * 3`)
     left_term: super::Expression,
     /// The operators and expressions to the right of `left_term`. stored in the reverse order to that which they appear in the expression
     right_terms: Vec<Term>,
+    #[span]
+    span: tokenizer::Span,
 }
 
 impl Parse for Terms {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let left_term = super::Expression::parse_term(parser)?;
+        let start = left_term.start();
         let mut right_terms = Vec::new();
         while let Some(term) = parser.parse() {
             right_terms.push(term);
         }
+
+        let end = if let Some(term) = right_terms.last() {
+            term.end()
+        } else {
+            left_term.end()
+        };
+
         right_terms.reverse();
 
         Some(Self {
             left_term,
             right_terms,
+            span: start..end,
         })
     }
 }
@@ -102,6 +127,7 @@ impl From<Terms> for super::Expression {
         let Terms {
             mut left_term,
             mut right_terms,
+            ..
         } = value;
 
         while let Some(Term {
@@ -115,9 +141,16 @@ impl From<Terms> for super::Expression {
                 .map_or(255, |Term { operator, .. }| operator.binding_powers().1);
 
             if left_binding_power < right_binding_power {
+                let start = expression.start();
+                let end = if let Some(term) = right_terms.last() {
+                    term.end()
+                } else {
+                    left_term.end()
+                };
                 let right_term = Terms {
                     left_term: expression,
                     right_terms,
+                    span: start..end,
                 }
                 .into();
                 return Self::Binary(Expression::new(left_term, right_term, operator));
@@ -129,18 +162,24 @@ impl From<Terms> for super::Expression {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Term {
     pub operator: Operator,
     pub expression: super::Expression,
 }
 
 impl Parse for Term {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         Some(Self {
             operator: parser.parse()?,
             expression: super::Expression::parse_term(parser)?,
         })
+    }
+}
+
+impl crate::Spanned for Term {
+    fn span(&self) -> tokenizer::Span {
+        self.operator.start()..self.expression.end()
     }
 }
 

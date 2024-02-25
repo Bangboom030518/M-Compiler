@@ -1,3 +1,4 @@
+use macros::Spanned;
 use tokenizer::{Span, TokenType};
 
 use crate::{internal::prelude::*, Error};
@@ -13,7 +14,7 @@ pub enum UnaryOperator {
 }
 
 impl Parse for UnaryOperator {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         match parser.take_token()? {
             Token::Minus => Some(Self::Minus),
             Token::Bang => Some(Self::Bang),
@@ -31,9 +32,10 @@ pub enum LiteralKind {
     Char(char),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Spanned)]
 pub struct Literal {
-    kind: LiteralKind,
+    pub kind: LiteralKind,
+    #[span]
     span: tokenizer::Span,
 }
 
@@ -56,17 +58,14 @@ impl Parse for Literal {
             kind, span
         })
     }
-
-    fn span(&self) -> tokenizer::Span {
-        self.span
-    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub struct Call {
     pub callable: Box<Expression>,
     pub type_arguments: Vec<crate::Type>,
     pub arguments: Vec<Expression>,
+    #[span]
     span: tokenizer::Span,
 }
 
@@ -92,9 +91,6 @@ impl Parse for Call {
             arguments,
             span: start..end
         })
-    }
-    fn span(&self) -> tokenizer::Span {
-        self.span
     }
 }
 
@@ -156,7 +152,7 @@ pub enum IntrinsicOperator {
 }
 
 impl IntrinsicOperator {
-    fn from_str(string: &str) -> Option<Self> {
+    fn from_str(string: &str) -> Result<Self, Error> {
         let operator = match string {
             "add" => Self::Add,
             "sub" => Self::Sub,
@@ -172,7 +168,7 @@ impl IntrinsicOperator {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum IntrinsicCall {
     AssertType(Box<Expression>, Type),
     MutablePointer(Box<Expression>),
@@ -181,11 +177,12 @@ pub enum IntrinsicCall {
 }
 
 impl Parse for IntrinsicCall {
-    fn parse(parser: &mut Parser) -> Option<Self> {
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
         parser.take_token_if(TokenType::At)?;
-        let Token::Ident(ident) = parser.take_token()? else {
-            return None;
-        };
+        let ident = parser.take_token_if(TokenType::Ident).map(|token| match token.token {
+            Token::Ident(ident) => ident,
+            _ => unreachable!(),
+        })?;
 
         parser.take_token_if(TokenType::OpenParen)?;
         let value = match ident.as_str() {
@@ -201,7 +198,7 @@ impl Parse for IntrinsicCall {
                 Self::Deref(Box::new(parser.parse()?))
             },
             
-            token if let Some(op) = IntrinsicOperator::from_str(token) => {
+            token if let Ok(op) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 let right = Box::new(parser.parse()?);
@@ -212,15 +209,16 @@ impl Parse for IntrinsicCall {
         };
 
         parser.take_token_if(TokenType::CloseParen)?;
-        Some(value)
+        Ok(value)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub struct Constructor {
     pub r#type: Type,
     pub fields: Vec<(Ident, Box<Expression>)>,
-    pub span: tokenizer::Span
+    #[span]
+    span: tokenizer::Span
 }
 
 impl Parse for Constructor {
@@ -243,13 +241,9 @@ impl Parse for Constructor {
         let end = parser.take_token_if(TokenType::End)?.span.end;
         Ok(Self { r#type, fields, span: start..end })
     }
-
-    fn span(&self) -> tokenizer::Span {
-        self.span
-    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned)]
 pub enum Expression {
     Ident(Ident),
     IntrinsicCall(IntrinsicCall),
@@ -272,7 +266,7 @@ pub enum Path {
 }
 
 impl Expression {
-    fn parse_term(parser: &mut Parser) -> Option<Self> {
+    fn parse_term(parser: &mut Parser) -> Result<Self, Error> {
         if parser.take_token_if(TokenType::OpenParen).is_some() {
             let expression = parser.parse()?;
             parser.take_token_if(TokenType::CloseParen)?;
@@ -282,7 +276,7 @@ impl Expression {
         parser
             .parse::<Call>()
             .map(Self::Call)
-            .or_else(|| {
+            .or_else(|_| {
                 parser.scope(|parser| {
                     // TODO: may not be ident
                     let expr = Box::new(parser.parse().map(Self::Ident)?);
@@ -290,8 +284,8 @@ impl Expression {
                     Some(Self::FieldAccess(expr, parser.parse()?))
                 })
             })
-            .or_else(|| parser.parse().map(Self::Constructor))
-            .or_else(|| {
+            .or_else(|_| parser.parse().map(Self::Constructor))
+            .or_else(|_| {
                 parser.scope(|parser| {
                     parser.take_token_if(TokenType::Return)?;
                     Some(Self::Return(Box::new(parser.parse()?)))
@@ -301,7 +295,7 @@ impl Expression {
             .or_else(|| Self::parse_nonpostfix_term(parser))
     }
 
-    fn parse_nonpostfix_term(parser: &mut Parser) -> Option<Self> {
+    fn parse_nonpostfix_term(parser: &mut Parser) -> Result<Self, Error> {
         if parser.take_token_if(TokenType::OpenParen).is_some() {
             let expression = parser.parse()?;
             parser.take_token_if(TokenType::CloseParen)?;
@@ -323,8 +317,8 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse(parser: &mut Parser) -> Option<Self> {
-        Some(parser.parse::<binary::Terms>()?.into())
+    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+        Ok(parser.parse::<binary::Terms>()?.into())
     }
 }
 
