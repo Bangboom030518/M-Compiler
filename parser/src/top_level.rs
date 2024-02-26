@@ -1,7 +1,7 @@
-use tokenizer::TokenType;
-
-use crate::{internal::prelude::*, Error};
+use crate::internal::prelude::*;
+use crate::Error;
 use std::iter;
+use tokenizer::{SpannedToken, TokenType};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct TypeBinding {
@@ -13,7 +13,7 @@ impl TypeBinding {
     fn parse(parser: &mut Parser, peek: impl Fn(&mut Parser) -> bool) -> Result<Self, Error> {
         let r#type = parser.parse()?;
         if peek(parser) {
-            Some(Self {
+            Ok(Self {
                 name: match r#type {
                     Type::Ident(ident) => ident,
                     // _ => return None,
@@ -21,7 +21,7 @@ impl TypeBinding {
                 r#type: None,
             })
         } else {
-            Some(Self {
+            Ok(Self {
                 r#type: Some(r#type),
                 name: parser.parse()?,
             })
@@ -29,8 +29,16 @@ impl TypeBinding {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Variant(TypeBinding);
+impl Spanned for TypeBinding {
+    fn span(&self) -> tokenizer::Span {
+        self.r#type
+            .map(|ty| ty.start())
+            .unwrap_or_else(|| self.name.start())..self.name.end()
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Spanned)]
+pub struct Variant(#[span] TypeBinding);
 
 impl Parse for Variant {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
@@ -53,8 +61,14 @@ impl Parse for Field {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Parameter(pub TypeBinding);
+impl Spanned for Field {
+    fn span(&self) -> tokenizer::Span {
+        self.r#type.start()..self.name.end()
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Spanned)]
+pub struct Parameter(#[span] pub TypeBinding);
 
 impl Parse for Parameter {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
@@ -65,105 +79,113 @@ impl Parse for Parameter {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Spanned)]
 pub struct Struct {
     pub fields: Vec<Field>,
-    // pub declarations: Vec<Declaration>,
     pub scope: scope::Id,
+    #[span]
+    span: tokenizer::Span,
+    // pub declarations: Vec<Declaration>,
 }
 
 impl Parse for Struct {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        parser.take_token_if(TokenType::Struct)?;
-        parser.take_newline()?;
+        let span_start = parser.take_token_if(TokenType::Struct)?.span.start;
         let scope_id = parser.create_scope();
 
-        let fields = iter::from_fn(|| parser.parse_line()).collect();
+        let fields = iter::from_fn(|| parser.parse().ok()).collect();
 
-        while let Some(declaration) = parser.parse_line::<Declaration>() {
+        while let Ok(declaration) = parser.parse::<Declaration>() {
             parser
                 .get_scope(scope_id)
                 .declarations
-                .insert(declaration.name, declaration.kind);
+                .insert(declaration.name.to_string(), declaration.kind);
         }
-        parser.take_token_if(TokenType::End)?;
+        let span_end = parser.take_token_if(TokenType::End)?.span.end;
         parser.exit_scope();
 
-        Some(Self {
+        Ok(Self {
             fields,
             scope: scope_id,
+            span: span_start..span_end,
         })
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Spanned)]
 pub struct Union {
     pub variants: Vec<Variant>,
     pub scope: scope::Id,
+    #[span]
+    span: tokenizer::Span,
 }
 
 impl Parse for Union {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        parser.take_token_if(TokenType::Union)?;
-        parser.take_newline()?;
+        let span_start = parser.take_token_if(TokenType::Union)?.span.start;
         let scope_id = parser.create_scope();
-        let variants = iter::from_fn(|| parser.parse_line()).collect_vec();
+        let variants = iter::from_fn(|| parser.parse().ok()).collect_vec();
 
-        while let Some(declaration) = parser.parse_line::<Declaration>() {
+        while let Ok(declaration) = parser.parse::<Declaration>() {
             parser
                 .get_scope(scope_id)
                 .declarations
-                .insert(declaration.name, declaration.kind);
+                .insert(declaration.name.to_string(), declaration.kind);
         }
-        parser.take_token_if(TokenType::End)?;
+        let span_end = parser.take_token_if(TokenType::End)?.span.end;
         parser.exit_scope();
 
-        Some(Self {
+        Ok(Self {
             variants,
             scope: scope_id,
+            span: span_start..span_end,
         })
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned, PartialEq)]
 pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Option<Type>,
     pub body: Vec<Statement>,
+    #[span]
+    span: tokenizer::Span,
 }
 
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        parser.take_token_if(TokenType::OpenParen)?;
+        let span_start = parser.take_token_if(TokenType::OpenParen)?.span.start;
 
         let parameters = parser.parse_csv();
 
         parser.take_token_if(TokenType::CloseParen)?;
 
-        let return_type = parser.parse();
+        let return_type = parser.parse().ok();
         let mut body = Vec::new();
-        parser.take_newline()?;
 
-        while let Some(input) = parser.parse_line() {
+        while let Ok(input) = parser.parse() {
             body.push(input);
         }
-        parser.take_token_if(TokenType::End)?;
+        let span_end = parser.take_token_if(TokenType::End)?.span.end;
 
-        Some(Self {
+        Ok(Self {
             parameters,
             return_type,
             body,
+            span: span_start..span_end,
         })
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Spanned, PartialEq)]
 pub struct Primitive {
     pub kind: PrimitiveKind,
     pub scope: scope::Id,
+    #[span]
+    pub span: tokenizer::Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PrimitiveKind {
     U8,
     U16,
@@ -184,8 +206,12 @@ pub enum PrimitiveKind {
 
 impl Parse for PrimitiveKind {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        let Token::Ident(ident) = parser.take_token()? else {
-            return None;
+        let SpannedToken {
+            token: Token::Ident(ident),
+            span,
+        } = parser.take_token_if(TokenType::Ident)?
+        else {
+            unreachable!()
         };
         let kind = match ident.as_str() {
             "i8" => Self::I8,
@@ -213,30 +239,30 @@ impl Parse for PrimitiveKind {
                 parser.take_token_if(TokenType::CloseParen)?;
                 pointer
             }
-            _ => return None,
+            _ => return todo!("Invalid intrinsic error"),
         };
-        Some(kind)
+        Ok(kind)
     }
 }
 
 impl Parse for Primitive {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        parser.take_token_if(TokenType::At)?;
+        let span_start = parser.take_token_if(TokenType::At)?.span.start;
         let kind = parser.parse()?;
-        parser.take_newline()?;
         let scope_id = parser.create_scope();
-        while let Some(declaration) = parser.parse_line::<Declaration>() {
+        while let Ok(declaration) = parser.parse::<Declaration>() {
             parser
                 .get_scope(scope_id)
                 .declarations
-                .insert(declaration.name, declaration.kind);
+                .insert(declaration.name.to_string(), declaration.kind);
         }
-        parser.take_token_if(TokenType::End)?;
+        let span_end = parser.take_token_if(TokenType::End)?.span.end;
         parser.exit_scope();
 
-        Some(Self {
+        Ok(Self {
             scope: scope_id,
             kind,
+            span: span_start..span_end,
         })
     }
 }

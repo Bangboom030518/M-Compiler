@@ -27,7 +27,7 @@ pub struct Error<'a> {
 
 pub trait Spanned {
     fn span(&self) -> tokenizer::Span;
-    
+
     fn start(&self) -> usize {
         self.span().start
     }
@@ -43,11 +43,10 @@ impl Spanned for tokenizer::Span {
     }
 }
 
-pub trait Parse: Spanned {
+pub trait Parse {
     fn parse(parser: &mut Parser) -> Result<Self, Error>
     where
         Self: Sized;
-
 }
 
 #[must_use]
@@ -63,11 +62,11 @@ pub fn parse_file(input: &str) -> Result<scope::File, Error> {
     }
 }
 
-#[derive(Debug, Clone, Spanned)]
+#[derive(Debug, Clone, Spanned, PartialEq, Eq)]
 pub struct Ident {
     pub ident: String,
     #[span]
-    pub span: tokenizer::Span,
+    span: tokenizer::Span,
 }
 
 impl Display for Ident {
@@ -96,7 +95,7 @@ impl Parse for Ident {
     }
 }
 
-#[derive(Debug, Clone, Spanned)]
+#[derive(Debug, Clone, Spanned, PartialEq, Eq)]
 pub enum Type {
     Ident(Ident),
 }
@@ -124,7 +123,7 @@ impl From<Type> for Ident {
     }
 }
 
-#[derive(Debug, Clone, Spanned)]
+#[derive(Debug, Clone, Spanned, PartialEq)]
 pub struct Let {
     pub ident: Ident,
     pub expression: Expression,
@@ -146,7 +145,7 @@ impl Parse for Let {
     }
 }
 
-#[derive(Debug, Clone, Spanned)]
+#[derive(Debug, Clone, Spanned, PartialEq)]
 pub enum Statement {
     Expression(Expression),
     Let(Let),
@@ -205,11 +204,11 @@ fn test_let() {
 mod internal {
     pub mod prelude {
         pub use crate::prelude::*;
-        pub use itertools::{Itertools, PeekingNext};
+        pub use crate::Spanned;
+        pub use itertools::Itertools;
         #[cfg(test)]
         pub use std::assert_matches::assert_matches;
         pub use std::collections::HashMap;
-        pub use std::iter::Peekable;
         pub use tokenizer::{Token, Tokenizer};
     }
 }
