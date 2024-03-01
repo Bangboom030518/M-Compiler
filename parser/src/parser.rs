@@ -35,6 +35,31 @@ impl From<Parser> for scope::File {
     }
 }
 
+macro_rules! special {
+    ($take_name:ident, $peek_name:ident, $variant_name:ident, $return_type:ident) => {
+        pub fn $peek_name(&mut self) -> Result<(tokenizer::Span, $return_type), Error> {
+            let token = self.peek_token();
+
+            self.expected_tokens.insert(token.kind());
+            let Token::$variant_name(value) = token.token else {
+                return Err(Error {
+                    expected: &self.expected_tokens,
+                    found: &token,
+                });
+            };
+
+            Ok((token.span, value))
+        }
+
+        pub fn $take_name(&mut self) -> Result<(tokenizer::Span, $return_type), Error> {
+            let token = self.$peek_name()?;
+            self.position += 1;
+            self.expected_tokens.clear();
+            Ok(token)
+        }
+    };
+}
+
 impl Parser {
     pub fn create_scope(&mut self) -> scope::Id {
         let id = self.scope_cache.create_scope(self.scope);
@@ -124,4 +149,10 @@ impl Parser {
         self.expected_tokens.clear();
         Ok(token)
     }
+
+    special!(take_string, peek_string, String, String);
+    special!(take_ident, peek_ident, Ident, String);
+    special!(take_float, peek_float, Float, f64);
+    special!(take_integer, peek_integer, Integer, u128);
+    special!(take_char, peek_char, Char, char);
 }

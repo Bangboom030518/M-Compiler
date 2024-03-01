@@ -37,7 +37,7 @@ pub enum OperatorKind {
     LessThanOrEqual,
 }
 
-#[derive(Spanned)]
+#[derive(Clone, Debug, Spanned)]
 pub struct Operator {
     kind: OperatorKind,
     #[span]

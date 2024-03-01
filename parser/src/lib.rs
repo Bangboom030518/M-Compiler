@@ -43,7 +43,13 @@ impl Spanned for tokenizer::Span {
     }
 }
 
-pub trait Parse {
+impl Spanned for SpannedToken {
+    fn span(&self) -> tokenizer::Span {
+        self.span
+    }
+}
+
+pub trait Parse: Spanned {
     fn parse(parser: &mut Parser) -> Result<Self, Error>
     where
         Self: Sized;
@@ -55,7 +61,7 @@ pub fn parse_file(input: &str) -> Result<scope::File, Error> {
     let declarations = &mut parser.get_scope(parser.scope).declarations;
     loop {
         let declaration = parser.parse::<top_level::Declaration>()?;
-        declarations.insert(declaration.name.ident, declaration.kind);
+        declarations.insert(declaration.name().to_string(), declaration);
         if parser.peek_token_if(TokenType::Eoi).is_ok() {
             return Ok(parser.into());
         };
@@ -83,15 +89,8 @@ impl AsRef<str> for Ident {
 
 impl Parse for Ident {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        parser
-            .take_token_if(TokenType::Ident)
-            .map(|token| match token.token {
-                Token::Ident(ident) => Self {
-                    ident,
-                    span: token.span,
-                },
-                _ => unreachable!(),
-            })
+        let (span, ident) = parser.take_ident()?;
+        Ok(Self { ident, span })
     }
 }
 
@@ -153,9 +152,11 @@ pub enum Statement {
     Assignment(Assignment),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Spanned)]
 pub struct Assignment {
+    #[span(start)]
     pub left: Expression,
+    #[span(end)]
     pub right: Expression,
 }
 
@@ -167,12 +168,6 @@ impl Parse for Assignment {
             left,
             right: parser.parse()?,
         })
-    }
-}
-
-impl Spanned for Assignment {
-    fn span(&self) -> tokenizer::Span {
-        self.left.start()..self.right.end()
     }
 }
 

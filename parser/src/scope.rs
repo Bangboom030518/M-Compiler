@@ -3,7 +3,7 @@ use crate::internal::prelude::*;
 #[derive(Debug, Clone, Default)]
 pub struct Scope {
     pub parent: Option<Id>,
-    pub declarations: HashMap<String, top_level::DeclarationKind>,
+    pub declarations: HashMap<String, top_level::Declaration>,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -42,7 +42,7 @@ impl Cache {
         &self,
         scope: Id,
         ident: &str,
-    ) -> Option<&top_level::DeclarationKind> {
+    ) -> Option<&top_level::Declaration> {
         let scope = &self[scope];
         scope.declarations
             .get(ident)
