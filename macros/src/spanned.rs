@@ -109,7 +109,7 @@ pub fn spanned(input: TokenStream) -> TokenStream {
                     );
 
                     quote! {
-                        #name::#ident(value) => crate::Spanned::span(&value)
+                        #name::#ident(value) => crate::Spanned::span(value)
                     }
                 });
 

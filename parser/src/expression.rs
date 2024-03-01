@@ -78,7 +78,7 @@ impl Parse for Literal {
             .or_else(|_| {
                 parser
                     .take_char()
-                    .map(|(span, value)| (span, LiteralKind::Float(value)))
+                    .map(|(span, value)| (span, LiteralKind::Char(value)))
             })
             .map(|(span, kind)| Self { kind, span })
     }
@@ -210,7 +210,7 @@ pub struct IntrinsicCall {
 impl Parse for IntrinsicCall {
     fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let start = parser.take_token_if(TokenType::At)?.start();
-        let ident = parser.take_token_if(TokenType::Ident).map(|token| {
+        let (ident, _) = parser.take_token_if(TokenType::Ident).map(|token| {
             (
                 match token.token {
                     Token::Ident(ident) => ident,
@@ -230,14 +230,14 @@ impl Parse for IntrinsicCall {
             "mutable_pointer" => IntrinsicCallKind::MutablePointer(Box::new(parser.parse()?)),
             "deref" => IntrinsicCallKind::Deref(Box::new(parser.parse()?)),
 
-            token if let Ok(operator) = token.parse() => {
+            token if let Ok(operator) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 let right = Box::new(parser.parse()?);
 
                 IntrinsicCallKind::Binary(left, right, operator)
             }
-            _ => return None,
+            _ => todo!("nice error"),
         };
 
         let end = parser.take_token_if(TokenType::CloseParen)?.end();
