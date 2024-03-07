@@ -10,4 +10,3 @@ cranelift = "0.105"
 itertools = "0.12"
 thiserror = "1.0.51"
 tokenizer = { path = "../tokenizer" }
-macros = { path = "../macros" }

@@ -1,12 +1,12 @@
 use crate::internal::prelude::*;
 use crate::Error;
 use std::collections::HashSet;
-use tokenizer::{SpannedToken, TokenType};
+use tokenizer::{Spanned, Token, TokenType};
 
 #[derive(Debug)]
 pub struct Parser {
     tokenizer: Tokenizer,
-    tokens: Vec<SpannedToken>,
+    tokens: Vec<Spanned<Token>>,
     position: usize,
     scope_cache: scope::Cache,
     expected_tokens: HashSet<TokenType>,
@@ -37,21 +37,22 @@ impl From<Parser> for scope::File {
 
 macro_rules! special {
     ($take_name:ident, $peek_name:ident, $variant_name:ident, $return_type:ident) => {
-        pub fn $peek_name(&mut self) -> Result<(tokenizer::Span, $return_type), Error> {
+        pub fn $peek_name(&mut self) -> Result<tokenizer::Spanned<&$return_type>, Error> {
+            use tokenizer::AsSpanned;
             let token = self.peek_token();
 
-            self.expected_tokens.insert(token.kind());
-            let Token::$variant_name(value) = token.token else {
+            self.expected_tokens.insert(token.value.kind());
+            let Token::$variant_name(value) = token.value else {
                 return Err(Error {
                     expected: &self.expected_tokens,
-                    found: &token,
+                    found: token,
                 });
             };
 
-            Ok((token.span, value))
+            Ok(value.spanned(token.span))
         }
 
-        pub fn $take_name(&mut self) -> Result<(tokenizer::Span, $return_type), Error> {
+        pub fn $take_name(&mut self) -> Result<tokenizer::Spanned<&$return_type>, Error> {
             let token = self.$peek_name()?;
             self.position += 1;
             self.expected_tokens.clear();
@@ -76,28 +77,23 @@ impl Parser {
         self.scope = self.scope_cache[self.scope].parent.unwrap();
     }
 
-    fn peek_token(&mut self) -> &SpannedToken {
+    fn peek_token(&mut self) -> Spanned<&Token> {
         let token = self.tokens.get(self.position).unwrap_or_else(|| {
             self.tokens.push(self.tokenizer.take());
             self.tokens.last().unwrap()
         });
 
-        if matches!(token.token, Token::Comment(_)) {
-            self.position += 1;
-            self.peek_token()
-        } else {
-            token
-        }
+        token.as_ref()
     }
 
-    fn take_token(&mut self) -> &SpannedToken {
+    fn take_token(&mut self) -> Spanned<&Token> {
         let token = self.peek_token();
         self.position += 1;
         self.expected_tokens.clear();
         token
     }
 
-    pub fn parse<T>(&mut self) -> Result<T, Error>
+    pub fn parse<T>(&mut self) -> Result<Spanned<T>, Error>
     where
         T: Parse,
     {
@@ -114,7 +110,7 @@ impl Parser {
         result
     }
 
-    pub fn parse_csv<T>(&mut self) -> Vec<T>
+    pub fn parse_csv<T>(&mut self) -> Vec<Spanned<T>>
     where
         T: Parse,
     {
@@ -129,21 +125,21 @@ impl Parser {
         values
     }
 
-    pub fn peek_token_if<'b>(&mut self, kind: TokenType) -> Result<&SpannedToken, Error> {
+    pub fn peek_token_if<'b>(&mut self, kind: TokenType) -> Result<Spanned<&Token>, Error> {
         let token = self.peek_token();
-        self.expected_tokens.insert(token.kind());
-        if token.kind() == kind {
+        self.expected_tokens.insert(token.value.kind());
+        if token.value.kind() == kind {
             Ok(token)
         } else {
             Err(Error {
                 expected: &self.expected_tokens,
-                found: &token,
+                found: token,
             })
         }
     }
 
     #[must_use]
-    pub fn take_token_if<'b>(&mut self, token: TokenType) -> Result<&SpannedToken, Error> {
+    pub fn take_token_if<'b>(&mut self, token: TokenType) -> Result<Spanned<&Token>, Error> {
         let token = self.peek_token_if(token)?;
         self.position += 1;
         self.expected_tokens.clear();

@@ -10,7 +10,6 @@ macro_rules! define_token_enums {
             String(String),
             Char(char),
             Ident(String),
-            Comment(String),
             Integer(u128),
             Float(f64),
         }
@@ -28,9 +27,15 @@ macro_rules! define_token_enums {
                     Self::String(_) => TokenType::String,
                     Self::Char(_) => TokenType::Char,
                     Self::Ident(_) => TokenType::Ident,
-                    Self::Comment(_) => TokenType::Comment,
                     Self::Integer(_) => TokenType::Integer,
                     Self::Float(_) => TokenType::Float,
+                }
+            }
+
+            fn spanned(self, span: Span) -> Spanned<Self> {
+                Spanned {
+                    value: self,
+                    span,
                 }
             }
         }
@@ -84,17 +89,83 @@ define_token_enums!(
 
 pub type Span = std::ops::Range<usize>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct SpannedToken {
-    pub token: Token,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Spanned<T> {
+    pub value: T,
     pub span: Span,
 }
 
-impl SpannedToken {
-    pub fn kind(&self) -> TokenType {
-        self.token.kind()
+impl<T> Spanned<T> {
+    pub fn with<U>(&self, value: U) -> Spanned<U> {
+        Spanned {
+            value,
+            span: self.span.clone(),
+        }
+    }
+
+    pub fn map<U>(self, mapping: impl FnOnce(T) -> U) -> Spanned<U> {
+        Spanned {
+            value: mapping(self.value),
+            span: self.span,
+        }
+    }
+
+    pub fn as_ref(&self) -> Spanned<&T> {
+        Spanned {
+            value: &self.value,
+            span: self.span.clone(),
+        }
+    }
+
+    pub fn start(&self) -> usize {
+        self.span.start
+    }
+
+    pub fn end(&self) -> usize {
+        self.span.end
     }
 }
+
+impl Spanned<Token> {
+    pub fn kind(&self) -> TokenType {
+        self.value.kind()
+    }
+}
+
+pub trait SpannedResultExt<T, E> {
+    fn with_spanned<U>(self, value: U) -> Result<Spanned<U>, E>;
+    fn map_spanned<U>(self, mapping: impl FnOnce(T) -> U) -> Result<Spanned<U>, E>;
+    fn and_then_spanned<U>(self, mapping: impl FnOnce(T) -> Result<U, E>) -> Result<Spanned<U>, E>;
+}
+
+impl<T, E> SpannedResultExt<T, E> for Result<Spanned<T>, E> {
+    fn with_spanned<U>(self, value: U) -> Result<Spanned<U>, E> {
+        self.map(|token| token.with(value))
+    }
+
+    fn map_spanned<U>(self, mapping: impl FnOnce(T) -> U) -> Result<Spanned<U>, E> {
+        self.map(|spanned| spanned.map(mapping))
+    }
+
+    fn and_then_spanned<U>(self, mapping: impl FnOnce(T) -> Result<U, E>) -> Result<Spanned<U>, E> {
+        self.and_then(|spanned| mapping(spanned.value).map(|value| value.spanned(spanned.span)))
+    }
+}
+
+pub fn despan_vec<T>(list: Vec<Spanned<T>>) -> Vec<T> {
+    list.into_iter().map(|item| item.value).collect()
+}
+
+pub trait AsSpanned {
+    fn spanned(self, span: Span) -> Spanned<Self>
+    where
+        Self: Sized,
+    {
+        Spanned { value: self, span }
+    }
+}
+
+impl<T> AsSpanned for T {}
 
 #[derive(Debug)]
 pub struct Tokenizer(TokenizerCharsIter);
@@ -250,8 +321,10 @@ impl Tokenizer {
     fn take_comment_or_divide(&mut self) -> Token {
         match self.0.peek() {
             Some('/') => {
+                // TODO: span properly
                 self.0.next();
-                Token::Comment(self.0.peeking_take_while(|&ch| ch != '\n').collect())
+                self.0.peeking_take_while(|&ch| ch != '\n').for_each(drop);
+                self.take().value
             }
             Some('*') => {
                 self.0.next();
@@ -263,19 +336,16 @@ impl Tokenizer {
                     }
                     comment.push(ch)
                 }
-                Token::Comment(comment)
+                self.take().value
             }
             _ => Token::Divide,
         }
     }
 
-    pub fn take(&mut self) -> SpannedToken {
+    pub fn take(&mut self) -> Spanned<Token> {
         let start = self.0.index;
         let Some(ch) = self.0.next() else {
-            return SpannedToken {
-                token: Token::Eoi,
-                span: self.0.index..self.0.index,
-            };
+            return Token::Eoi.spanned(self.0.index..self.0.index);
         };
         let token = match ch {
             '+' => Token::Plus,
@@ -334,15 +404,12 @@ impl Tokenizer {
             _ => Token::Illegal,
         };
 
-        SpannedToken {
-            token,
-            span: start..self.0.index,
-        }
+        token.spanned(start..self.0.index)
     }
 
     // TODO: trait!
     #[cfg(test)]
-    fn into_iter(mut self) -> impl Iterator<Item = SpannedToken> {
+    fn into_iter(mut self) -> impl Iterator<Item = Spanned<Token>> {
         std::iter::from_fn(move || {
             let token = self.take();
             if token.kind() == TokenType::Eoi {
@@ -358,14 +425,13 @@ impl Tokenizer {
 fn tokenize_stuff() {
     let input = "+ / * /*Hello World*/ const identifier_test";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.value).collect_vec();
     assert_eq!(
         tokens,
         vec![
             Token::Plus,
             Token::Divide,
             Token::Multiply,
-            Token::Comment("Hello World".to_string()),
             Token::Const,
             Token::Ident("identifier_test".to_string())
         ]
@@ -376,7 +442,7 @@ fn tokenize_stuff() {
 fn tokenize_string() {
     let input = r#"+ "Hello World \r \u{001B}""#;
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.value).collect_vec();
     assert_eq!(
         tokens,
         vec![
@@ -390,7 +456,7 @@ fn tokenize_string() {
 fn tokenize_number() {
     let input = "0xf 1 0.5";
     let tokenizer: Tokenizer = input.into();
-    let tokens = tokenizer.into_iter().map(|token| token.token).collect_vec();
+    let tokens = tokenizer.into_iter().map(|token| token.value).collect_vec();
     assert_eq!(
         tokens,
         vec![Token::Integer(0xf), Token::Integer(1), Token::Float(0.5),]

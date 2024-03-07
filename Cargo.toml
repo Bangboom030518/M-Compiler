@@ -8,7 +8,6 @@ members = [
     "parser",
     "compiler",
     "tokenizer",
-    "macros"
 ]
 default-run = "compiler"
 resolver = "2"

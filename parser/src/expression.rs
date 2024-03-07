@@ -1,100 +1,61 @@
-use std::str::FromStr;
-
 use crate::internal::prelude::*;
 use crate::Error;
-use macros::Spanned;
-use tokenizer::TokenType;
+use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
 pub mod binary;
 pub mod control_flow;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum UnaryOperatorKind {
+pub enum UnaryOperator {
     Minus,
     Bang,
-    Return,
-}
-
-#[derive(PartialEq, Eq, Debug, Clone, Spanned)]
-pub struct UnaryOperator {
-    kind: UnaryOperatorKind,
-    #[span]
-    span: tokenizer::Span,
 }
 
 impl Parse for UnaryOperator {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser
             .take_token_if(TokenType::Minus)
-            .map(|token| Self {
-                kind: UnaryOperatorKind::Minus,
-                span: token.span,
-            })
+            .with_spanned(Self::Minus)
             .or_else(|_| {
-                parser.take_token_if(TokenType::Bang).map(|token| Self {
-                    kind: UnaryOperatorKind::Bang,
-                    span: token.span,
-                })
-            })
-            .or_else(|_| {
-                parser.take_token_if(TokenType::Return).map(|token| Self {
-                    kind: UnaryOperatorKind::Return,
-                    span: token.span,
-                })
+                parser
+                    .take_token_if(TokenType::Bang)
+                    .with_spanned(Self::Bang)
             })
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum LiteralKind {
+pub enum Literal {
     String(String),
     Integer(u128),
     Float(f64),
     Char(char),
 }
 
-#[derive(Clone, Debug, Spanned, PartialEq)]
-pub struct Literal {
-    pub kind: LiteralKind,
-    #[span]
-    span: tokenizer::Span,
-}
-
 impl Parse for Literal {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser
             .take_string()
-            .map(|(span, value)| (span, LiteralKind::String(value)))
+            .map_spanned(|string| Self::String(string.clone()))
             .or_else(|_| {
                 parser
                     .take_integer()
-                    .map(|(span, value)| (span, LiteralKind::Integer(value)))
+                    .map_spanned(|integer| Self::Integer(*integer))
             })
-            .or_else(|_| {
-                parser
-                    .take_float()
-                    .map(|(span, value)| (span, LiteralKind::Float(value)))
-            })
-            .or_else(|_| {
-                parser
-                    .take_char()
-                    .map(|(span, value)| (span, LiteralKind::Char(value)))
-            })
-            .map(|(span, kind)| Self { kind, span })
+            .or_else(|_| parser.take_float().map_spanned(|float| Self::Float(*float)))
+            .or_else(|_| parser.take_char().map_spanned(|ch| Self::Char(*ch)))
     }
 }
 
-#[derive(Debug, Clone, Spanned, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Call {
-    pub callable: Box<Expression>,
-    pub type_arguments: Vec<crate::Type>,
-    pub arguments: Vec<Expression>,
-    #[span]
-    span: tokenizer::Span,
+    pub callable: Box<Spanned<Expression>>,
+    pub type_arguments: Vec<Spanned<crate::Type>>,
+    pub arguments: Vec<Spanned<Expression>>,
 }
 
 impl Parse for Call {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let callable = Expression::parse_nonpostfix_term(parser)?;
         let type_arguments = if parser.take_token_if(TokenType::LessThan).is_ok() {
             let type_arguments = parser.parse_csv();
@@ -106,15 +67,15 @@ impl Parse for Call {
         parser.take_token_if(TokenType::OpenParen)?;
         let arguments = parser.parse_csv();
 
-        let start = callable.span().start;
+        let start = callable.start();
         let end = parser.take_token_if(TokenType::CloseParen)?.span.end;
 
         Ok(Self {
             callable: Box::new(callable),
             type_arguments,
             arguments,
-            span: start..end,
-        })
+        }
+        .spanned(start..end))
     }
 }
 
@@ -193,78 +154,68 @@ impl IntrinsicOperator {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum IntrinsicCallKind {
-    AssertType(Box<Expression>, Type),
-    MutablePointer(Box<Expression>),
-    Deref(Box<Expression>),
-    Binary(Box<Expression>, Box<Expression>, IntrinsicOperator),
-}
-
-#[derive(Debug, Clone, PartialEq, Spanned)]
-pub struct IntrinsicCall {
-    kind: IntrinsicCallKind,
-    #[span]
-    span: tokenizer::Span,
+pub enum IntrinsicCall {
+    AssertType(Box<Spanned<Expression>>, Spanned<Type>),
+    MutablePointer(Box<Spanned<Expression>>),
+    Deref(Box<Spanned<Expression>>),
+    Binary(
+        Box<Spanned<Expression>>,
+        Box<Spanned<Expression>>,
+        IntrinsicOperator,
+    ),
 }
 
 impl Parse for IntrinsicCall {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let start = parser.take_token_if(TokenType::At)?.start();
-        let (ident, _) = parser.take_token_if(TokenType::Ident).map(|token| {
-            (
-                match token.token {
-                    Token::Ident(ident) => ident,
-                    _ => unreachable!(),
-                },
-                token.span,
-            )
-        })?;
+        let ident = parser
+            .take_token_if(TokenType::Ident)
+            .map_spanned(|token| match token {
+                Token::Ident(ident) => ident,
+                _ => unreachable!(),
+            })?
+            .value;
 
         parser.take_token_if(TokenType::OpenParen)?;
         let kind = match ident.as_str() {
             "assert_type" => {
                 let expression = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
-                IntrinsicCallKind::AssertType(expression, parser.parse()?)
+                Self::AssertType(expression, parser.parse()?)
             }
-            "mutable_pointer" => IntrinsicCallKind::MutablePointer(Box::new(parser.parse()?)),
-            "deref" => IntrinsicCallKind::Deref(Box::new(parser.parse()?)),
+            "mutable_pointer" => Self::MutablePointer(Box::new(parser.parse()?)),
+            "deref" => Self::Deref(Box::new(parser.parse()?)),
 
             token if let Ok(operator) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 let right = Box::new(parser.parse()?);
 
-                IntrinsicCallKind::Binary(left, right, operator)
+                Self::Binary(left, right, operator)
             }
             _ => todo!("nice error"),
         };
 
         let end = parser.take_token_if(TokenType::CloseParen)?.end();
-        Ok(Self {
-            kind,
-            span: start..end,
-        })
+        Ok(kind.spanned(start..end))
     }
 }
 
-#[derive(Debug, Clone, Spanned)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Constructor {
-    pub r#type: Type,
-    pub fields: Vec<(Ident, Box<Expression>)>,
-    #[span]
-    span: tokenizer::Span,
+    pub r#type: Spanned<Type>,
+    pub fields: Vec<(Spanned<Ident>, Spanned<Expression>)>,
 }
 
 impl Parse for Constructor {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        let r#type = parser.parse()?;
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let r#type = parser.parse::<Type>()?;
         let mut fields = Vec::new();
 
         loop {
             let field = parser.parse::<Ident>()?;
             parser.take_token_if(TokenType::Assignment)?;
-            fields.push((field, Box::new(parser.parse()?)));
+            fields.push((field, parser.parse()?));
             if parser.take_token_if(TokenType::Comma).is_err() {
                 parser.peek_token_if(TokenType::End)?;
                 break;
@@ -272,75 +223,60 @@ impl Parse for Constructor {
                 break;
             }
         }
-        let start = r#type.span().start;
-        let end = parser.take_token_if(TokenType::End)?.span.end;
-        Ok(Self {
-            r#type,
-            fields,
-            span: start..end,
-        })
+        let start = r#type.start();
+        let end = parser.take_token_if(TokenType::End)?.end();
+        Ok(Self { r#type, fields }.spanned(start..end))
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnaryPrefix {
-    operator: UnaryOperator,
-    expression: Expression,
+    operator: Spanned<UnaryOperator>,
+    expression: Spanned<Expression>,
 }
 
 impl Parse for UnaryPrefix {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let operator = parser.parse()?;
+        let expression = parser.parse()?;
         Ok(Self {
-            operator: parser.parse()?,
-            expression: parser.parse()?,
-        })
+            operator,
+            expression,
+        }
+        .spanned(operator.start()..expression.end()))
     }
 }
 
-impl Spanned for UnaryPrefix {
-    fn span(&self) -> tokenizer::Span {
-        self.operator.start()..self.expression.end()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Spanned)]
+#[derive(Debug, Clone, PartialEq)]
 struct Return {
-    expression: Expression,
-    #[span]
-    span: tokenizer::Span,
+    expression: Spanned<Expression>,
 }
 
 impl Parse for Return {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        let start = parser.take_token_if(TokenType::Return)?.start;
-        let expression = Box::new(parser.parse()?);
-        Some(Self {
-            span: start..expression.end(),
-            expression,
-        })
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let start = parser.take_token_if(TokenType::Return)?.start();
+        let expression = parser.parse::<Expression>()?;
+        let end = expression.end();
+        Ok(Self { expression }.spanned(start..end))
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Spanned)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
-    #[span(start)]
-    expression: Expression,
-    #[span(end)]
-    ident: Ident,
+    expression: Spanned<Expression>,
+    ident: Spanned<Ident>,
 }
 
 impl Parse for FieldAccess {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        let expression = Box::new(parser.parse().map(Self::Ident)?);
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let expression = parser.parse()?;
         parser.take_token_if(TokenType::Dot)?;
-        Ok(Self {
-            expression,
-            ident: parser.parse()?,
-        })
+        let ident = parser.parse()?;
+        Ok(Self { expression, ident }.spanned(expression.start()..ident.end()))
     }
 }
 
-#[derive(Debug, Clone, Spanned, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Ident(Ident),
     IntrinsicCall(IntrinsicCall),
@@ -363,7 +299,7 @@ pub enum Path {
 }
 
 impl Expression {
-    fn parse_term(parser: &mut Parser) -> Result<Self, Error> {
+    fn parse_term(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         if parser.take_token_if(TokenType::OpenParen).is_ok() {
             let expression = parser.parse()?;
             parser.take_token_if(TokenType::CloseParen)?;
@@ -372,33 +308,48 @@ impl Expression {
         // TODO: parser.scope(|parser| {})
         parser
             .parse::<Call>()
-            .map(Self::Call)
-            .or_else(|_| parser.parse().map(Box::new).map(Self::FieldAccess))
-            .or_else(|_| parser.parse().map(Self::Constructor))
-            .or_else(|_| parser.parse().map(Box::new).map(Self::Return))
-            .or_else(|_| parser.parse().map(Self::IntrinsicCall))
+            .map_spanned(Self::Call)
+            .or_else(|_| {
+                parser
+                    .parse()
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::FieldAccess)
+            })
+            .or_else(|_| parser.parse().map_spanned(Self::Constructor))
+            .or_else(|_| {
+                parser
+                    .parse()
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::Return)
+            })
+            .or_else(|_| parser.parse().map_spanned(Self::IntrinsicCall))
             .or_else(|_| Self::parse_nonpostfix_term(parser))
     }
 
-    fn parse_nonpostfix_term(parser: &mut Parser) -> Result<Self, Error> {
-        if parser.take_token_if(TokenType::OpenParen).is_some() {
+    fn parse_nonpostfix_term(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        if parser.take_token_if(TokenType::OpenParen).is_ok() {
             let expression = parser.parse()?;
             parser.take_token_if(TokenType::CloseParen)?;
-            return Some(expression);
+            return Ok(expression);
         }
 
         parser
             .parse()
-            .map(Self::Literal)
-            .or_else(|| parser.parse().map(Self::If))
-            .or_else(|| parser.parse().map(Self::Ident))
-            .or_else(|| parser.parse().map(Self::UnaryPrefix))
+            .map_spanned(Self::Literal)
+            .or_else(|_| parser.parse().map_spanned(Self::If))
+            .or_else(|_| parser.parse().map_spanned(Self::Ident))
+            .or_else(|_| {
+                parser
+                    .parse()
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::UnaryPrefix)
+            })
     }
 }
 
 impl Parse for Expression {
-    fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        Ok(parser.parse::<binary::Terms>()?.into())
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        binary::Terms::parse(parser).map(Spanned::from)
     }
 }
 
