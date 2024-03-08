@@ -36,7 +36,7 @@ pub fn bit_fields(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let vis = input.vis;
 
     quote! {
-        #[derive(PartialEq, Eq, Clone, Copy, Debug, Default)]
+        #[derive(PartialEq, Eq, Clone, Copy, Default)]
         #[allow(non_snake_case)]
         #vis struct #struct_name {
             #(#variants: bool),*
@@ -68,6 +68,12 @@ pub fn bit_fields(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
         }
 
+        impl std::fmt::Debug for #struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{:?}", self.hash_set())
+            }
+        }
+        
         impl From<#struct_name> for std::collections::HashSet<#name> {
             fn from(value: #struct_name) -> Self {
                 value.hash_set()

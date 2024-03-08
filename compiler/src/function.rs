@@ -6,15 +6,15 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
-use parser::{scope, Ident};
+use parser::scope;
 use tokenizer::{AsSpanned, Spanned};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MSignature {
     pub parameters: Vec<declarations::Id>,
     pub return_type: declarations::Id,
     pub signature: Signature,
-    pub name: Spanned<Ident>,
+    pub name: Spanned<parser::Ident>,
 }
 
 impl MSignature {
@@ -22,20 +22,20 @@ impl MSignature {
         parameters: &[Spanned<parser::Type>],
         return_type: Spanned<parser::Type>,
         declarations: &Declarations,
-        name: Spanned<Ident>,
+        name: Spanned<parser::Ident>,
         scope_id: scope::Id,
         module: &impl Module,
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
         let parameters = parameters
             .iter()
-            .map(|path| {
-                let ident = match path.value {
-                    parser::Type::Ident(ident) => ident,
-                };
+            .map(|Spanned { value, span }| {
+                let parser::Type::Ident(ident) = value;
                 let type_id = declarations
                     .lookup(ident.as_ref(), scope_id)
-                    .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
+                    .ok_or_else(|| {
+                        SemanticError::DeclarationNotFound(ident.clone().spanned(span.clone()))
+                    })?;
 
                 Ok(type_id)
             })
@@ -58,7 +58,9 @@ impl MSignature {
             let ident = return_type.value.ident();
             declarations
                 .lookup(ident.as_ref(), scope_id)
-                .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?
+                .ok_or_else(|| {
+                    SemanticError::DeclarationNotFound(ident.spanned(return_type.span))
+                })?
         };
 
         signature.returns = vec![match declarations.get_layout(return_type) {
@@ -83,7 +85,7 @@ impl MSignature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct External {
     pub symbol_name: Spanned<String>,
     pub signature: MSignature,
@@ -127,7 +129,7 @@ pub struct Internal {
     pub body: Vec<Spanned<parser::Statement>>,
     pub scope_id: scope::Id,
     pub signature: MSignature,
-    pub parameter_names: Vec<Spanned<Ident>>,
+    pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: FuncId,
 }
 
@@ -152,11 +154,7 @@ impl Internal {
             &parameters
                 .1
                 .into_iter()
-                .map(|r#type| {
-                    r#type
-                        .ok_or(SemanticError::UntypedParameter)
-                        .map(|r#type| r#type)
-                })
+                .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
                 .collect::<Result<Vec<_>, _>>()?,
             function
                 .return_type
@@ -177,7 +175,7 @@ impl Internal {
             if !matches!(expr, parser::Expression::Return(_)) {
                 // TODO: `.clone()`
                 *expr = parser::Expression::Return(Box::new(parser::expression::Return {
-                    expression: expr.clone().spanned(*span),
+                    expression: expr.clone().spanned(span.clone()),
                 }));
             }
         }

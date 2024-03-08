@@ -225,7 +225,7 @@ where
         let struct_layout = match layout {
             Layout::Struct(struct_layout) => struct_layout,
             // Layout::Primitive(Primitive::MutablePointer(inner)) => {}
-            layout => return Err(SemanticError::InvalidFieldAccess(layout.clone())),
+            Layout::Primitive(_) => return Err(SemanticError::InvalidFieldAccess(layout.clone())),
         };
 
         let offset = struct_layout

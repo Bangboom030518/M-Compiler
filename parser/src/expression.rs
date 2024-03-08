@@ -38,14 +38,14 @@ impl Parse for Literal {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser
             .take_string()
-            .map_spanned(|string| Self::String(string.clone()))
+            .map_spanned(Self::String)
             .or_else(|_| {
                 parser
                     .take_integer()
-                    .map_spanned(|integer| Self::Integer(integer))
+                    .map_spanned(Self::Integer)
             })
-            .or_else(|_| parser.take_float().map_spanned(|float| Self::Float(float)))
-            .or_else(|_| parser.take_char().map_spanned(|ch| Self::Char(ch)))
+            .or_else(|_| parser.take_float().map_spanned(Self::Float))
+            .or_else(|_| parser.take_char().map_spanned(Self::Char))
     }
 }
 
@@ -149,7 +149,7 @@ impl IntrinsicOperator {
             "gte" => Self::Cmp(CmpOperator::Gte),
             "eq" => Self::Cmp(CmpOperator::Eq),
             "ne" => Self::Cmp(CmpOperator::Ne),
-            _ => todo!("nice error"),
+            _ => return Err(todo!("nice error")),
         };
         Ok(operator)
     }

@@ -95,7 +95,7 @@ pub struct Union {
 }
 
 impl Parse for Union {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+    fn parse(_: &mut Parser) -> Result<Spanned<Self>, Error> {
         todo!()
     }
 }
@@ -290,7 +290,6 @@ impl Parse for Declaration {
             .parse()
             .map_spanned(Self::Function)
             .or_else(|_| parser.parse().map_spanned(Self::ExternFunction))
-            .or_else(|_| parser.parse().map_spanned(Self::Union))
             .or_else(|_| parser.parse().map_spanned(Self::Struct))
             .or_else(|_| parser.parse().map_spanned(Self::Primitive))
     }
@@ -326,7 +325,7 @@ end";
 
     let declaration = Parser::from(Tokenizer::from(source))
         .parse::<Declaration>()
-        .unwrap();
+        .expect("parse error");
 
     let Spanned {
         value:

@@ -182,7 +182,12 @@ impl std::fmt::Display for TokenType {
 
 impl std::fmt::Display for TokenTypeBitFields {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let tokens = self.hash_set().into_iter().map(|token| token.to_string()).intersperse_with(|| ", ".to_string()).collect::<String>();
+        let tokens = self
+            .hash_set()
+            .into_iter()
+            .map(|token| token.to_string())
+            .intersperse_with(|| ", ".to_string())
+            .collect::<String>();
         write!(f, "{}", tokens)
     }
 }

@@ -44,7 +44,7 @@ pub enum SemanticError {
     UnknownType(hir::Expression),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
-    #[error("Declaration not found: '{0}'")]
+    #[error("Declaration not found: '{}'", 0.0)]
     DeclarationNotFound(Spanned<parser::Ident>),
     #[error("Expected a type, found a function")]
     FunctionUsedAsType,

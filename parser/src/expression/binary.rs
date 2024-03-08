@@ -52,52 +52,52 @@ impl Parse for Operator {
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Minus)
-                    .with_spanned(Operator::Minus)
+                    .with_spanned(Self::Minus)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Divide)
-                    .with_spanned(Operator::Divide)
+                    .with_spanned(Self::Divide)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Remainder)
-                    .with_spanned(Operator::Remainder)
+                    .with_spanned(Self::Remainder)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Exponent)
-                    .with_spanned(Operator::Exponent)
+                    .with_spanned(Self::Exponent)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Equal)
-                    .with_spanned(Operator::Exponent)
+                    .with_spanned(Self::Exponent)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::NotEqual)
-                    .with_spanned(Operator::NotEqual)
+                    .with_spanned(Self::NotEqual)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::GreaterThan)
-                    .with_spanned(Operator::GreaterThan)
+                    .with_spanned(Self::GreaterThan)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::LessThan)
-                    .with_spanned(Operator::LessThan)
+                    .with_spanned(Self::LessThan)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::GreaterThanOrEqual)
-                    .with_spanned(Operator::GreaterThanOrEqual)
+                    .with_spanned(Self::GreaterThanOrEqual)
             })
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::LessThanOrEqual)
-                    .with_spanned(Operator::LessThanOrEqual)
+                    .with_spanned(Self::LessThanOrEqual)
             })
     }
 }
@@ -128,7 +128,7 @@ pub struct Terms {
 }
 
 impl Terms {
-    pub fn parse(parser: &mut Parser) -> Result<Self, Error> {
+    pub(crate) fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let left_term = super::Expression::parse_term(parser)?;
         let mut right_terms = Vec::new();
         while let Ok(term) = parser.parse() {
@@ -161,11 +161,7 @@ impl From<Terms> for Spanned<super::Expression> {
 
             if left_binding_power < right_binding_power {
                 let start = term.value.expression.start();
-                let end = if let Some(term) = right_terms.last() {
-                    term.end()
-                } else {
-                    left_term.end()
-                };
+                let end = right_terms.last().map_or_else(|| left_term.end(), tokenizer::Spanned::end);
 
                 let right_term = Terms {
                     left_term: term.value.expression,

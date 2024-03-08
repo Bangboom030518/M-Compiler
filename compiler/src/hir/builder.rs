@@ -8,7 +8,7 @@ use itertools::Itertools;
 use parser::expression::control_flow::If;
 use parser::expression::IntrinsicCall;
 use std::collections::HashMap;
-use tokenizer::Spanned;
+use tokenizer::{AsSpanned, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct VariableId(usize);
@@ -47,14 +47,14 @@ impl<'a> Builder<'a> {
     pub fn new(
         declarations: &'a Declarations,
         function: &'a function::Internal,
-        parameters: Vec<(parser::Ident, Variable, declarations::Id)>,
+        parameters: Vec<(Spanned<parser::Ident>, Variable, declarations::Id)>,
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
         let new_variable_index = parameters.len() + crate::function::SPECIAL_VARIABLES.len();
         for (ident, variable, type_id) in parameters {
             variables.insert(variable.into(), Some(type_id));
-            scope.insert(ident.0, variable);
+            scope.insert(ident.value.0, variable);
         }
 
         Self {
@@ -72,7 +72,7 @@ impl<'a> Builder<'a> {
         let body = self
             .body
             .iter()
-            .map(|statement| self.statement(&statement.value))
+            .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<_, _>>()?;
 
         Ok(Function {
@@ -90,13 +90,13 @@ impl<'a> Builder<'a> {
 
     pub fn statement(
         &mut self,
-        statement: &parser::Statement,
+        statement: Spanned<&parser::Statement>,
     ) -> Result<hir::Statement, SemanticError> {
-        match statement {
+        match statement.value {
             parser::Statement::Assignment(parser::Assignment { left, right }) => {
                 Ok(hir::Statement::Assignment(hir::Assignment::new(
-                    self.expression(&left.value)?,
-                    self.expression(&right.value)?,
+                    self.expression(left.as_ref())?,
+                    self.expression(right.as_ref())?,
                 )))
             }
             parser::Statement::Let(statement) => {
@@ -104,21 +104,21 @@ impl<'a> Builder<'a> {
                 self.local_scopes
                     .last_mut()
                     .expect("Must always have a scope")
-                    .insert(statement.ident.value.0, variable);
+                    .insert(statement.ident.value.0.clone(), variable);
                 self.variables.insert(variable.into(), None);
 
                 Ok(hir::Statement::Let(
                     variable.into(),
-                    self.expression(&statement.expression.value)?,
+                    self.expression(statement.expression.as_ref())?,
                 ))
             }
             parser::Statement::Expression(expression) => {
-                Ok(hir::Statement::Expression(self.expression(expression)?))
+                Ok(hir::Statement::Expression(self.expression(expression.spanned(statement.span))?))
             }
         }
     }
 
-    fn lookup(&self, ident: &Spanned<parser::Ident>) -> Result<Expression, SemanticError> {
+    fn lookup(&self, ident: Spanned<&parser::Ident>) -> Result<Expression, SemanticError> {
         for scope in self.local_scopes.iter().rev() {
             if let Some(variable) = scope.get(ident.value.as_ref()) {
                 return Ok(Expression::LocalAccess((*variable).into()));
@@ -128,10 +128,10 @@ impl<'a> Builder<'a> {
         self.declarations
             .lookup(ident.value.as_ref(), self.top_level_scope)
             .map(Expression::GlobalAccess)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
+            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.map(Clone::clone)))
     }
 
-    fn block(&mut self, statements: &[parser::Statement]) -> Result<hir::Block, SemanticError> {
+    fn block(&mut self, statements: &[Spanned<parser::Statement>]) -> Result<hir::Block, SemanticError> {
         self.local_scopes.push(HashMap::new());
 
         let Some((last, statements)) = statements.split_last() else {
@@ -143,13 +143,13 @@ impl<'a> Builder<'a> {
 
         let mut statements = statements
             .iter()
-            .map(|statement| self.statement(statement))
+            .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<Vec<_>, SemanticError>>()?;
 
-        let expression = if let parser::Statement::Expression(expression) = last {
-            Some(self.expression(&expression)?)
+        let expression = if let parser::Statement::Expression(expression) = &last.value {
+            Some(self.expression(expression.spanned(last.span.clone()))?)
         } else {
-            statements.push(self.statement(&last)?);
+            statements.push(self.statement(last.as_ref())?);
             None
         };
 
@@ -165,7 +165,7 @@ impl<'a> Builder<'a> {
         &mut self,
         constructor: &parser::expression::Constructor,
     ) -> Result<TypedExpression, SemanticError> {
-        let type_id = self.lookup_type(&constructor.r#type.value)?;
+        let type_id = self.lookup_type(constructor.r#type.as_ref())?;
 
         let Layout::Struct(layout) = self.declarations.get_layout(type_id) else {
             return Err(SemanticError::InvalidConstructor);
@@ -183,7 +183,7 @@ impl<'a> Builder<'a> {
                             .get(ident.value.as_ref())
                             .ok_or(SemanticError::NonExistentField)
                             .and_then(|field| {
-                                self.expression(&expression.value).map(|expression| {
+                                self.expression(expression.as_ref()).map(|expression| {
                                     (field.offset, expression.with_type(field.type_id))
                                 })
                             })
@@ -200,7 +200,7 @@ impl<'a> Builder<'a> {
         };
         self.declarations
             .lookup(ident.as_ref(), self.top_level_scope)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
+            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(path.span)))
     }
 
     fn expression(
@@ -219,38 +219,37 @@ impl<'a> Builder<'a> {
             parser::Expression::IntrinsicCall(intrinsic) => match intrinsic {
                 IntrinsicCall::Binary(left, right, operator) => {
                     Ok(Expression::BinaryIntrinsic(Box::new(BinaryIntrinsic {
-                        left: self.expression(&left.value)?,
-                        right: self.expression(&right.value)?,
+                        left: self.expression(left.as_ref().as_ref())?,
+                        right: self.expression(right.as_ref().as_ref())?,
                         operator: *operator,
                     }))
                     .into())
                 }
                 IntrinsicCall::AssertType(expression, r#type) => {
-                    let type_id = self.lookup_type(&r#type.value)?;
+                    let type_id = self.lookup_type(r#type.as_ref())?;
 
-                    self.expression(&expression.value)
+                    self.expression(expression.as_ref().as_ref())
                         .map(|expression| expression.with_type(type_id))
                 }
-                IntrinsicCall::MutablePointer(expression) => Ok(Expression::MutablePointer(
-                    Box::new(self.expression(&expression.value)?),
-                )
-                .into()),
+                IntrinsicCall::MutablePointer(expression) => {
+                    Ok(Expression::MutablePointer(Box::new(self.expression(expression.as_ref().as_ref())?)).into())
+                }
                 IntrinsicCall::Deref(expression) => {
-                    Ok(Expression::Deref(Box::new(self.expression(&expression.value)?)).into())
+                    Ok(Expression::Deref(Box::new(self.expression(expression.as_ref().as_ref())?)).into())
                 }
             },
             parser::Expression::Return(expression) => Ok(hir::Expression::Return(Box::new(
-                self.expression(&expression.expression.value)?
+                self.expression(expression.expression.as_ref())?
                     .with_type(self.return_type),
             ))
             .into()),
-            parser::Expression::Ident(ident) => Ok(self.lookup(ident)?.into()),
+            parser::Expression::Ident(ident) => Ok(self.lookup(ident.spanned(expression.span))?.into()),
             parser::Expression::Call(call) => Ok(hir::Expression::Call(Box::new(hir::Call {
-                callable: self.expression(&call.callable.value)?,
+                callable: self.expression(call.callable.as_ref().as_ref())?,
                 arguments: call
                     .arguments
                     .iter()
-                    .map(|argument| self.expression(&argument.value))
+                    .map(|argument| self.expression(argument.as_ref()))
                     .map_ok(super::TypedExpression::from)
                     .collect::<Result<_, _>>()?,
             }))
@@ -260,28 +259,27 @@ impl<'a> Builder<'a> {
                 then_branch,
                 else_branch,
             }) => Ok(Expression::If(Box::new(hir::If {
-                condition: self.expression(&condition.value)?,
+                condition: self.expression(condition.as_ref().as_ref())?,
                 then_branch: self.block(
                     then_branch
                         .iter()
-                        .map(|value| value.value)
+                        .cloned()
                         .collect_vec()
                         .as_slice(),
                 )?,
-                else_branch: self.block(else_branch.as_ref().map_or(&[], |else_branch| {
+                else_branch: self.block(&else_branch.as_ref().map_or(Vec::new(), |else_branch| {
                     else_branch
                         .iter()
-                        .map(|value| value.value)
+                        .cloned()
                         .collect_vec()
-                        .as_slice()
                 }))?,
             }))
             .into()),
             parser::Expression::Constructor(constructor) => self.constructor(constructor),
             parser::Expression::FieldAccess(field_access) => {
                 Ok(Expression::FieldAccess(Box::new(hir::FieldAccess {
-                    expression: self.expression(&field_access.expression.value)?,
-                    field: field_access.ident.value,
+                    expression: self.expression(field_access.expression.as_ref())?,
+                    field: field_access.ident.value.clone(),
                 }))
                 .into())
             }

@@ -8,7 +8,7 @@ use parser::top_level::PrimitiveKind;
 use parser::{scope, Ident};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokenizer::Spanned;
+use tokenizer::{AsSpanned, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
@@ -102,7 +102,7 @@ impl Declarations {
                 let mut layout_fields = HashMap::new();
                 for (name, r#type) in &fields {
                     layout_fields.insert(
-                        name.value.0,
+                        name.value.0.clone(),
                         layout::Field {
                             type_id: *r#type,
                             offset: Offset32::new(
@@ -132,18 +132,18 @@ impl Declarations {
                 PrimitiveKind::I64 => layout::Primitive::I64,
                 PrimitiveKind::I128 => layout::Primitive::I128,
                 PrimitiveKind::USize => layout::Primitive::USize,
-                PrimitiveKind::MutablePointer(r#type) => {
-                    let ident = r#type.value.ident();
+                PrimitiveKind::MutablePointer(path) => {
+                    let ident = path.value.ident();
                     layout::Primitive::MutablePointer(
                         self.lookup(ident.as_ref(), scope)
-                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
+                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.spanned(path.span)))?,
                     )
                 }
-                PrimitiveKind::MutableSlice(r#type) => {
-                    let ident = r#type.value.ident();
+                PrimitiveKind::MutableSlice(path) => {
+                    let ident = path.value.ident();
                     layout::Primitive::MutableSlice(
                         self.lookup(ident.as_ref(), scope)
-                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
+                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.spanned(path.span)))?,
                     )
                 }
             }),
@@ -192,23 +192,20 @@ impl Declarations {
                     let fields = r#struct
                         .fields
                         .iter()
-                        .map(|field| field.value)
+                        .map(|field| field.value.clone())
                         .map(|parser::top_level::Field { r#type, name }| {
-                            let ident = match r#type.value {
-                                parser::Type::Ident(identifier) => identifier,
-                            };
+                            let parser::Type::Ident(ident) = r#type.value;
                             // TODO: will need to handle generics
                             let type_id = self
                                 .lookup(
                                     ident.as_ref(), // TODO: `r#struct.scope`
                                     scope_id,
                                 )
-                                .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
-                            Ok((name.clone(), type_id))
+                                .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(r#type.span)))?;
+                            Ok((name, type_id))
                         })
                         .collect::<Result<Vec<_>, SemanticError>>()?;
 
-                    let ident = name.clone();
                     self.initialise(id, Declaration::Type(Type::Struct { fields }));
                 }
                 parser::Declaration::Union(_) => todo!("unions"),

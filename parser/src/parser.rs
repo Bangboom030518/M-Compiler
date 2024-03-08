@@ -43,7 +43,7 @@ impl From<Parser> for scope::File {
 
 macro_rules! special {
     ($take_name:ident, $peek_name:ident, $variant_name:ident, $return_type:ident) => {
-        pub fn $peek_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
+        pub(crate) fn $peek_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
             use tokenizer::AsSpanned;
 
             let token = self.peek_token_if(TokenType::$variant_name)?;
@@ -55,7 +55,7 @@ macro_rules! special {
             Ok(value.clone().spanned(token.span))
         }
 
-        pub fn $take_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
+        pub(crate) fn $take_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
             let token = self.$peek_name()?;
             self.position += 1;
             self.expected_tokens.clear();
@@ -100,14 +100,6 @@ impl Parser {
                 self.tokens.push(self.tokenizer.take().map(Arc::new));
                 self.tokens.last().unwrap().as_ref().map(Arc::clone)
             })
-    }
-
-    fn take_token(&mut self) -> Spanned<Arc<Token>> {
-        let token = self.peek_token();
-        self.position += 1;
-        self.expected_tokens.clear();
-
-        token.as_ref().map(Arc::clone)
     }
 
     pub(crate) fn parse<T>(&mut self) -> Result<Spanned<T>, Error>
