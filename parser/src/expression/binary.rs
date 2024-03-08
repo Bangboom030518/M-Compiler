@@ -1,5 +1,4 @@
-use crate::internal::prelude::*;
-use crate::Error;
+use crate::{parser::Parser, Error, Parse};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,11 +43,11 @@ impl Parse for Operator {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser
             .take_token_if(TokenType::Multiply)
-            .with_spanned(Operator::Multiply)
+            .with_spanned(Self::Multiply)
             .or_else(|_| {
                 parser
                     .take_token_if(TokenType::Plus)
-                    .with_spanned(Operator::Plus)
+                    .with_spanned(Self::Plus)
             })
             .or_else(|_| {
                 parser
@@ -131,17 +130,10 @@ pub struct Terms {
 impl Terms {
     pub fn parse(parser: &mut Parser) -> Result<Self, Error> {
         let left_term = super::Expression::parse_term(parser)?;
-        let start = left_term.start();
         let mut right_terms = Vec::new();
         while let Ok(term) = parser.parse() {
             right_terms.push(term);
         }
-
-        let end = if let Some(term) = right_terms.last() {
-            term.end()
-        } else {
-            left_term.end()
-        };
 
         right_terms.reverse();
 
@@ -187,13 +179,13 @@ impl From<Terms> for Spanned<super::Expression> {
                 ))
                 .spanned(start..end);
             }
-
+            let span = left_term.start()..term.end();
             left_term = super::Expression::Binary(Expression::new(
                 left_term,
                 term.value.expression,
                 term.value.operator,
             ))
-            .spanned(left_term.start()..term.end());
+            .spanned(span);
         }
         left_term
     }
@@ -209,11 +201,12 @@ impl Parse for Term {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let operator = parser.parse()?;
         let expression = super::Expression::parse_term(parser)?;
+        let span = operator.start()..expression.end();
         Ok(Self {
             operator,
             expression,
         }
-        .spanned(operator.start()..expression.end()))
+        .spanned(span))
     }
 }
 

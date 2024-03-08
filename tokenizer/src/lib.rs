@@ -40,7 +40,7 @@ macro_rules! define_token_enums {
             }
         }
 
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, bitfields::BitFields)]
         pub enum TokenType {
             $($variants),*,
             String,
@@ -54,7 +54,6 @@ macro_rules! define_token_enums {
 }
 
 define_token_enums!(
-    Const,
     Function,
     Type,
     If,
@@ -132,6 +131,14 @@ impl Spanned<Token> {
     }
 }
 
+#[test]
+fn test_bit_fields() {
+    let mut fields = TokenTypeBitFields::default();
+    fields.insert(TokenType::Struct);
+    let set = fields.hash_set().into_iter().collect_vec();
+    assert_eq!(set, vec![TokenType::Struct]);
+}
+
 pub trait SpannedResultExt<T, E> {
     fn with_spanned<U>(self, value: U) -> Result<Spanned<U>, E>;
     fn map_spanned<U>(self, mapping: impl FnOnce(T) -> U) -> Result<Spanned<U>, E>;
@@ -166,6 +173,19 @@ pub trait AsSpanned {
 }
 
 impl<T> AsSpanned for T {}
+
+impl std::fmt::Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", format!("{self:?}").to_lowercase())
+    }
+}
+
+impl std::fmt::Display for TokenTypeBitFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let tokens = self.hash_set().into_iter().map(|token| token.to_string()).intersperse_with(|| ", ".to_string()).collect::<String>();
+        write!(f, "{}", tokens)
+    }
+}
 
 #[derive(Debug)]
 pub struct Tokenizer(TokenizerCharsIter);
@@ -227,7 +247,6 @@ impl Tokenizer {
             .collect();
 
         match ident.as_str() {
-            "const" => Token::Const,
             "struct" => Token::Struct,
             "union" => Token::Union,
             "fn" => Token::Function,
@@ -423,7 +442,7 @@ impl Tokenizer {
 
 #[test]
 fn tokenize_stuff() {
-    let input = "+ / * /*Hello World*/ const identifier_test";
+    let input = "+ / * /*Hello World*/ struct identifier_test";
     let tokenizer: Tokenizer = input.into();
     let tokens = tokenizer.into_iter().map(|token| token.value).collect_vec();
     assert_eq!(
@@ -432,7 +451,7 @@ fn tokenize_stuff() {
             Token::Plus,
             Token::Divide,
             Token::Multiply,
-            Token::Const,
+            Token::Struct,
             Token::Ident("identifier_test".to_string())
         ]
     );

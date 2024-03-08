@@ -154,7 +154,7 @@ impl<'a> Inferer<'a> {
                     Layout::Struct(layout) => {
                         let field = layout
                             .fields
-                            .get(&field_access.field)
+                            .get(field_access.field.as_ref())
                             .ok_or(SemanticError::NonExistentField)?;
 
                         if type_id2.is_none() {

@@ -1,15 +1,21 @@
-use crate::internal::prelude::*;
-use crate::Error;
-use std::collections::HashSet;
-use tokenizer::{Spanned, Token, TokenType};
+use crate::scope::{self, Scope};
+use crate::Parse;
+use std::sync::Arc;
+use tokenizer::{Spanned, Token, TokenType, TokenTypeBitFields, Tokenizer};
+
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[error("Parse error")]
+pub(crate) struct Error {
+    position: usize,
+}
 
 #[derive(Debug)]
 pub struct Parser {
     tokenizer: Tokenizer,
-    tokens: Vec<Spanned<Token>>,
+    tokens: Vec<Spanned<Arc<Token>>>,
     position: usize,
     scope_cache: scope::Cache,
-    expected_tokens: HashSet<TokenType>,
+    expected_tokens: TokenTypeBitFields,
     pub(crate) scope: scope::Id,
 }
 
@@ -18,7 +24,7 @@ impl From<Tokenizer> for Parser {
         Self {
             tokenizer,
             tokens: Vec::new(),
-            expected_tokens: HashSet::new(),
+            expected_tokens: TokenTypeBitFields::default(),
             position: 0,
             scope_cache: scope::Cache::new(),
             scope: scope::Cache::ROOT_SCOPE,
@@ -37,22 +43,19 @@ impl From<Parser> for scope::File {
 
 macro_rules! special {
     ($take_name:ident, $peek_name:ident, $variant_name:ident, $return_type:ident) => {
-        pub fn $peek_name(&mut self) -> Result<tokenizer::Spanned<&$return_type>, Error> {
+        pub fn $peek_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
             use tokenizer::AsSpanned;
-            let token = self.peek_token();
 
-            self.expected_tokens.insert(token.value.kind());
-            let Token::$variant_name(value) = token.value else {
-                return Err(Error {
-                    expected: &self.expected_tokens,
-                    found: token,
-                });
+            let token = self.peek_token_if(TokenType::$variant_name)?;
+            let Token::$variant_name(value) = token.value.as_ref() else {
+                unreachable!()
             };
 
-            Ok(value.spanned(token.span))
+            // TODO: clone
+            Ok(value.clone().spanned(token.span))
         }
 
-        pub fn $take_name(&mut self) -> Result<tokenizer::Spanned<&$return_type>, Error> {
+        pub fn $take_name(&mut self) -> Result<tokenizer::Spanned<$return_type>, Error> {
             let token = self.$peek_name()?;
             self.position += 1;
             self.expected_tokens.clear();
@@ -62,38 +65,52 @@ macro_rules! special {
 }
 
 impl Parser {
-    pub fn create_scope(&mut self) -> scope::Id {
+    pub(crate) fn parse_error(&self, error: Error) -> crate::ParseError {
+        crate::ParseError {
+            expected: self.expected_tokens,
+            found: self
+                .tokens
+                .get(error.position)
+                .expect("invalid error position")
+                .as_ref()
+                .map(|token| token.as_ref().clone()),
+        }
+    }
+
+    pub(crate) fn create_scope(&mut self) -> scope::Id {
         let id = self.scope_cache.create_scope(self.scope);
         self.scope = id;
         id
     }
 
-    pub fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
+    pub(crate) fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
         &mut self.scope_cache[id]
     }
 
     // TODO: scope guard
-    pub fn exit_scope(&mut self) {
+    pub(crate) fn exit_scope(&mut self) {
         self.scope = self.scope_cache[self.scope].parent.unwrap();
     }
 
-    fn peek_token(&mut self) -> Spanned<&Token> {
-        let token = self.tokens.get(self.position).unwrap_or_else(|| {
-            self.tokens.push(self.tokenizer.take());
-            self.tokens.last().unwrap()
-        });
-
-        token.as_ref()
+    fn peek_token(&mut self) -> Spanned<Arc<Token>> {
+        self.tokens
+            .get(self.position)
+            .map(|spanned| spanned.as_ref().map(Arc::clone))
+            .unwrap_or_else(|| {
+                self.tokens.push(self.tokenizer.take().map(Arc::new));
+                self.tokens.last().unwrap().as_ref().map(Arc::clone)
+            })
     }
 
-    fn take_token(&mut self) -> Spanned<&Token> {
+    fn take_token(&mut self) -> Spanned<Arc<Token>> {
         let token = self.peek_token();
         self.position += 1;
         self.expected_tokens.clear();
-        token
+
+        token.as_ref().map(Arc::clone)
     }
 
-    pub fn parse<T>(&mut self) -> Result<Spanned<T>, Error>
+    pub(crate) fn parse<T>(&mut self) -> Result<Spanned<T>, Error>
     where
         T: Parse,
     {
@@ -101,7 +118,10 @@ impl Parser {
     }
 
     // TODO: rename
-    pub fn scope<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, Error>) -> Result<T, Error> {
+    pub(crate) fn scope<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         let start = self.position;
         let result = f(self);
         if result.is_err() {
@@ -110,7 +130,7 @@ impl Parser {
         result
     }
 
-    pub fn parse_csv<T>(&mut self) -> Vec<Spanned<T>>
+    pub(crate) fn parse_csv<T>(&mut self) -> Vec<Spanned<T>>
     where
         T: Parse,
     {
@@ -125,21 +145,19 @@ impl Parser {
         values
     }
 
-    pub fn peek_token_if<'b>(&mut self, kind: TokenType) -> Result<Spanned<&Token>, Error> {
+    pub(crate) fn peek_token_if(&mut self, kind: TokenType) -> Result<Spanned<Arc<Token>>, Error> {
         let token = self.peek_token();
         self.expected_tokens.insert(token.value.kind());
         if token.value.kind() == kind {
             Ok(token)
         } else {
             Err(Error {
-                expected: &self.expected_tokens,
-                found: token,
+                position: self.position,
             })
         }
     }
 
-    #[must_use]
-    pub fn take_token_if<'b>(&mut self, token: TokenType) -> Result<Spanned<&Token>, Error> {
+    pub(crate) fn take_token_if(&mut self, token: TokenType) -> Result<Spanned<Arc<Token>>, Error> {
         let token = self.peek_token_if(token)?;
         self.position += 1;
         self.expected_tokens.clear();

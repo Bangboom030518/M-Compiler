@@ -1,4 +1,6 @@
-use crate::internal::prelude::*;
+use std::collections::HashMap;
+
+use crate::top_level;
 
 #[derive(Debug, Clone, Default)]
 pub struct Scope {

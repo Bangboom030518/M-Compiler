@@ -1,6 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hash;
-
 use crate::declarations::Declarations;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
@@ -233,7 +230,7 @@ where
 
         let offset = struct_layout
             .fields
-            .get(&access.field)
+            .get(access.field.as_ref())
             .ok_or(SemanticError::NonExistentField)?
             .offset;
 
@@ -433,7 +430,9 @@ where
                     .expect("Internal Module Error");
                 let mut desc = cranelift_module::DataDescription::new();
                 desc.define(string.as_bytes().to_vec().into_boxed_slice());
-                self.module.define_data(data, &desc).expect("Internal Module Error :(");
+                self.module
+                    .define_data(data, &desc)
+                    .expect("Internal Module Error :(");
                 let value = self.module.declare_data_in_func(data, self.builder.func);
 
                 BranchStatus::Continue(

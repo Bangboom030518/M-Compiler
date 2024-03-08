@@ -4,6 +4,7 @@
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use layout::Layout;
+use tokenizer::Spanned;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -44,7 +45,7 @@ pub enum SemanticError {
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
     #[error("Declaration not found: '{0}'")]
-    DeclarationNotFound(parser::Ident),
+    DeclarationNotFound(Spanned<parser::Ident>),
     #[error("Expected a type, found a function")]
     FunctionUsedAsType,
     #[error("Expected a function, found a type")]
@@ -112,7 +113,7 @@ fn main() {
             continue;
         };
 
-        let name = function.signature.name.to_string();
+        let name = function.signature.name.value.to_string();
         let id = function.compile(&declarations, &mut context).expect("TODO");
 
         functions.insert(name, id);
@@ -125,10 +126,4 @@ fn main() {
 
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
     unsafe { main() };
-}
-
-#[no_mangle]
-extern "C" fn sus(i: u64) -> u8 {
-    println!("{i}");
-    0
 }

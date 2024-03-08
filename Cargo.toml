@@ -1,13 +1,18 @@
-# [dependencies]
-# regex = "1"
-# lazy_static = "1.4.0"
-# rand = "0.8.5"
-
 [workspace]
 members = [
     "parser",
     "compiler",
     "tokenizer",
+    "bitfields"
 ]
 default-run = "compiler"
 resolver = "2"
+
+[workspace.dependencies]
+itertools = "0.12"
+thiserror = "1.0"
+cranelift = "0.105"
+cranelift-jit = "0.105"
+cranelift-module = "0.105"
+cranelift-native = "0.105"
+cranelift-reader = "0.105"

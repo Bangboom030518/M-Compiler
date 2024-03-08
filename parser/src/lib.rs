@@ -6,65 +6,70 @@
 )]
 #![feature(assert_matches, iter_collect_into, if_let_guard)]
 
-pub use expression::Expression;
-use internal::prelude::*;
-use std::collections::HashSet;
+pub use expression::{Expression, Literal};
+use parser::{Error, Parser};
+use std::collections::HashMap;
 use std::fmt::Display;
-use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
+use tokenizer::{
+    AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
+};
+pub use top_level::{Declaration, ExternFunction, Function, Struct, Union};
 
 pub mod expression;
 pub mod parser;
 pub mod scope;
 pub mod top_level;
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("Unexpected token '{found:?}'. Expected one of '{expected:?}'")]
-pub struct Error<'a> {
-    pub expected: &'a HashSet<TokenType>,
-    pub found: Spanned<&'a Token>,
-}
-
-pub trait Parse {
+trait Parse {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error>
     where
         Self: Sized;
 }
 
-#[must_use]
-pub fn parse_file(input: &str) -> Result<scope::File, Error> {
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("expected one of '{expected}', found '{:?}'", found.value)]
+pub struct ParseError {
+    expected: TokenTypeBitFields,
+    found: Spanned<Token>,
+}
+
+/// # Errors
+/// if the input is unparseable
+pub fn parse_file(input: &str) -> Result<scope::File, ParseError> {
     let mut parser = Parser::from(Tokenizer::from(input));
-    let declarations = &mut parser.get_scope(parser.scope).declarations;
+    let mut declarations = HashMap::new();
     loop {
-        let declaration = parser.parse::<top_level::Declaration>()?;
-        declarations.insert(declaration.value.name().to_string(), declaration.value);
-        if parser.peek_token_if(TokenType::Eoi).is_ok() {
-            return Ok(parser.into());
-        };
+        match parser.parse::<top_level::Declaration>() {
+            Ok(declaration) => {
+                declarations.insert(declaration.value.name().to_string(), declaration.value);
+                if parser.peek_token_if(TokenType::Eoi).is_ok() {
+                    parser.get_scope(parser.scope).declarations = declarations;
+                    return Ok(parser.into());
+                };
+            }
+            Err(error) => return Err(parser.parse_error(error)),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ident {
-    pub ident: String,
-}
+pub struct Ident(pub String);
 
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.ident)
+        write!(f, "{}", self.0)
     }
 }
 
 impl AsRef<str> for Ident {
     fn as_ref(&self) -> &str {
-        &self.ident
+        &self.0
     }
 }
 
 impl Parse for Ident {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        parser.take_ident().map_spanned(|ident| Self {
-            ident: ident.to_string(),
-        })
+        parser.take_ident().map_spanned(Ident)
     }
 }
 
@@ -108,7 +113,8 @@ impl Parse for Let {
         let ident = parser.parse()?;
         parser.take_token_if(TokenType::Assignment)?;
         let expression = parser.parse()?;
-        Ok(Self { ident, expression }.spanned(start..expression.end()))
+        let span = start..expression.end();
+        Ok(Self { ident, expression }.spanned(span))
     }
 }
 
@@ -131,7 +137,8 @@ impl Parse for Assignment {
         let left = parser.parse()?;
         parser.take_token_if(TokenType::Assignment)?;
         let right = parser.parse()?;
-        Ok(Self { left, right }.spanned(left.start()..right.end()))
+        let span = left.start()..right.end();
+        Ok(Self { left, right }.spanned(span))
     }
 }
 
@@ -159,25 +166,4 @@ fn test_let() {
             ..
          }) if ident == String::from("a") && int == 1
     );
-}
-
-mod internal {
-    pub mod prelude {
-        pub use crate::prelude::*;
-        pub use itertools::Itertools;
-        #[cfg(test)]
-        pub use std::assert_matches::assert_matches;
-        pub use std::collections::HashMap;
-        pub use tokenizer::{Token, Tokenizer};
-    }
-}
-
-pub mod prelude {
-    pub use crate::expression::prelude::*;
-    pub use crate::expression::{self};
-    pub use crate::parser::{self, Parser};
-    pub use crate::scope::{self, Scope};
-    pub use crate::top_level::prelude::*;
-    pub use crate::top_level::{self};
-    pub use crate::{parse_file, Expression, Ident, Parse, Statement, Type};
 }

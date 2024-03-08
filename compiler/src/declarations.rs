@@ -4,10 +4,11 @@ use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Module};
 use itertools::Itertools;
-use parser::top_level::{DeclarationKind, PrimitiveKind};
+use parser::top_level::PrimitiveKind;
 use parser::{scope, Ident};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokenizer::Spanned;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
@@ -15,8 +16,8 @@ pub struct Id(usize);
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Type {
     Struct {
-        fields: Vec<(Ident, Id)>,
-        ident: Ident,
+        fields: Vec<(Spanned<Ident>, Id)>,
+        // ident: String,
     },
     Primitive(PrimitiveKind),
 }
@@ -101,7 +102,7 @@ impl Declarations {
                 let mut layout_fields = HashMap::new();
                 for (name, r#type) in &fields {
                     layout_fields.insert(
-                        name.clone(),
+                        name.value.0,
                         layout::Field {
                             type_id: *r#type,
                             offset: Offset32::new(
@@ -132,16 +133,16 @@ impl Declarations {
                 PrimitiveKind::I128 => layout::Primitive::I128,
                 PrimitiveKind::USize => layout::Primitive::USize,
                 PrimitiveKind::MutablePointer(r#type) => {
-                    let ident = r#type.ident();
+                    let ident = r#type.value.ident();
                     layout::Primitive::MutablePointer(
-                        self.lookup(&ident, scope)
+                        self.lookup(ident.as_ref(), scope)
                             .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
                     )
-                },
+                }
                 PrimitiveKind::MutableSlice(r#type) => {
-                    let ident = r#type.ident();
+                    let ident = r#type.value.ident();
                     layout::Primitive::MutableSlice(
-                        self.lookup(&ident, scope)
+                        self.lookup(ident.as_ref(), scope)
                             .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?,
                     )
                 }
@@ -182,24 +183,24 @@ impl Declarations {
 
         let mut functions = Vec::new();
         let mut extern_functions = Vec::new();
-
         for (name, id) in self.scopes[&scope_id].declarations.clone() {
             match declarations.remove_entry(&name).expect("TODO").1 {
-                DeclarationKind::Struct(r#struct) => {
-                    // TODO: VV
+                parser::Declaration::Struct(r#struct) => {
+                    // TODO: ↓
                     // self.append_new(r#struct.scope, scope_cache, module)?;
 
                     let fields = r#struct
                         .fields
                         .iter()
+                        .map(|field| field.value)
                         .map(|parser::top_level::Field { r#type, name }| {
-                            let ident = match r#type {
-                                ::parser::Type::Ident(identifier) => identifier,
+                            let ident = match r#type.value {
+                                parser::Type::Ident(identifier) => identifier,
                             };
                             // TODO: will need to handle generics
                             let type_id = self
                                 .lookup(
-                                    ident, // TODO: `r#struct.scope`
+                                    ident.as_ref(), // TODO: `r#struct.scope`
                                     scope_id,
                                 )
                                 .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
@@ -208,16 +209,15 @@ impl Declarations {
                         .collect::<Result<Vec<_>, SemanticError>>()?;
 
                     let ident = name.clone();
-                    self.initialise(id, Declaration::Type(Type::Struct { ident, fields }));
+                    self.initialise(id, Declaration::Type(Type::Struct { fields }));
                 }
-                DeclarationKind::Union(_) => todo!("unions"),
-                DeclarationKind::Primitive(primitive) => {
-                    self.initialise(id, Declaration::Type(Type::Primitive(primitive.kind)));
+                parser::Declaration::Union(_) => todo!("unions"),
+                parser::Declaration::Primitive(primitive) => {
+                    self.initialise(id, Declaration::Type(Type::Primitive(primitive.kind.value)));
                 }
-                DeclarationKind::Function(function) => functions.push((function, id, name)),
-                DeclarationKind::Const(_) => todo!("consts"),
-                DeclarationKind::ExternFunction(function) => {
-                    extern_functions.push((function, id, name));
+                parser::Declaration::Function(function) => functions.push((function, id)),
+                parser::Declaration::ExternFunction(function) => {
+                    extern_functions.push((function, id));
                 }
             }
         }
@@ -240,20 +240,20 @@ impl Declarations {
             self.insert_layout(id, scope_id)?;
         }
 
-        for (function, id, name) in functions {
+        for (function, id) in functions {
             self.initialise(
                 id,
                 Declaration::Function(Function::Internal(function::Internal::new(
-                    function, self, scope_id, name, module,
+                    function, self, scope_id, module,
                 )?)),
             );
         }
 
-        for (function, id, name) in extern_functions {
+        for (function, id) in extern_functions {
             self.initialise(
                 id,
                 Declaration::Function(Function::External(function::External::new(
-                    function, self, scope_id, name, module,
+                    function, self, scope_id, module,
                 )?)),
             );
         }
@@ -283,7 +283,7 @@ impl Declarations {
         self.get(id).expect_function()
     }
 
-    pub fn lookup(&self, ident: &Ident, scope_id: scope::Id) -> Option<Id> {
+    pub fn lookup(&self, ident: &str, scope_id: scope::Id) -> Option<Id> {
         self.scopes[&scope_id]
             .get(ident)
             .or_else(|| self.lookup(ident, self.scopes[&scope_id].parent?))
@@ -292,12 +292,12 @@ impl Declarations {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TopLevelScope {
-    pub declarations: HashMap<Ident, Id>,
+    pub declarations: HashMap<String, Id>,
     pub parent: Option<scope::Id>,
 }
 
 impl TopLevelScope {
-    pub fn get(&self, ident: &Ident) -> Option<Id> {
+    pub fn get(&self, ident: &str) -> Option<Id> {
         self.declarations.get(ident).copied()
     }
 }

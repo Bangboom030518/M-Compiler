@@ -2,7 +2,6 @@ use crate::declarations;
 use crate::declarations::Declarations;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::Ident;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,7 +13,7 @@ pub struct Field {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Struct {
-    pub fields: HashMap<Ident, Field>,
+    pub fields: HashMap<String, Field>,
     pub size: u32,
 }
 

@@ -1,5 +1,5 @@
-use crate::internal::prelude::*;
-use crate::Error;
+use crate::parser::{Error, Parser};
+use crate::{scope, Ident, Parse, Statement, Type};
 use std::iter;
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
@@ -15,7 +15,6 @@ impl TypeBinding {
         peek: impl Fn(&mut Parser) -> bool,
     ) -> Result<Spanned<Self>, Error> {
         let r#type = parser.parse()?;
-        // let type_span = r#type.span.clone();
 
         if peek(parser) {
             let name = match r#type.value {
@@ -45,7 +44,8 @@ impl Parse for Field {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let r#type = parser.parse()?;
         let name = parser.parse()?;
-        Ok(Self { r#type, name }.spanned(r#type.start()..name.end()))
+        let span = r#type.start()..name.end();
+        Ok(Self { r#type, name }.spanned(span))
     }
 }
 
@@ -113,13 +113,15 @@ impl Parse for Function {
         let start = parser.take_token_if(TokenType::Function)?.start();
         let mut return_type = parser.parse().ok();
 
-        let name = parser.parse().or_else(|err| {
-            return_type = None;
-            match return_type {
+        let name = parser.parse().or_else({
+            |err| match return_type.clone() {
                 Some(Spanned {
                     value: Type::Ident(ident),
                     span,
-                }) => Ok(ident.spanned(span)),
+                }) => {
+                    return_type = None;
+                    Ok(ident.spanned(span))
+                }
                 _ => Err(err),
             }
         })?;
@@ -145,13 +147,13 @@ impl Parse for Function {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Primitive {
     pub kind: Spanned<PrimitiveKind>,
     pub name: Spanned<Ident>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrimitiveKind {
     U8,
     U16,
@@ -174,28 +176,28 @@ impl Parse for PrimitiveKind {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser.take_ident().and_then_spanned(|ident| {
             let kind = match ident.as_str() {
-                "i8" => PrimitiveKind::I8,
-                "i16" => PrimitiveKind::I16,
-                "i32" => PrimitiveKind::I32,
-                "i64" => PrimitiveKind::I64,
-                "i128" => PrimitiveKind::I128,
-                "u8" => PrimitiveKind::U8,
-                "u16" => PrimitiveKind::U16,
-                "u32" => PrimitiveKind::U32,
-                "u64" => PrimitiveKind::U64,
-                "u128" => PrimitiveKind::U128,
-                "f32" => PrimitiveKind::F32,
-                "f64" => PrimitiveKind::F64,
-                "usize" => PrimitiveKind::USize,
+                "i8" => Self::I8,
+                "i16" => Self::I16,
+                "i32" => Self::I32,
+                "i64" => Self::I64,
+                "i128" => Self::I128,
+                "u8" => Self::U8,
+                "u16" => Self::U16,
+                "u32" => Self::U32,
+                "u64" => Self::U64,
+                "u128" => Self::U128,
+                "f32" => Self::F32,
+                "f64" => Self::F64,
+                "usize" => Self::USize,
                 "mutable_pointer" => {
                     parser.take_token_if(TokenType::OpenParen)?;
-                    let pointer = parser.parse::<Type>().map(PrimitiveKind::MutablePointer)?;
+                    let pointer = parser.parse::<Type>().map(Self::MutablePointer)?;
                     parser.take_token_if(TokenType::CloseParen)?;
                     pointer
                 }
                 "mutable_slice" => {
                     parser.take_token_if(TokenType::OpenParen)?;
-                    let pointer = parser.parse::<Type>().map(PrimitiveKind::MutableSlice)?;
+                    let pointer = parser.parse::<Type>().map(Self::MutableSlice)?;
                     parser.take_token_if(TokenType::CloseParen)?;
                     pointer
                 }
@@ -214,7 +216,7 @@ impl Parse for Primitive {
         let kind = parser.parse()?;
         let end = parser.take_token_if(TokenType::End)?.end();
 
-        Ok(Self { name, kind }.spanned(start..end))
+        Ok(Self { kind, name }.spanned(start..end))
     }
 }
 
@@ -231,12 +233,12 @@ impl Parse for ExternFunction {
         let start = parser.take_token_if(TokenType::Function)?.start();
         let name = parser.parse()?;
         parser.take_token_if(TokenType::At)?;
-        if parser.parse::<Ident>()?.value.ident != "extern" {
+        if parser.parse::<Ident>()?.value.0 != "extern" {
             todo!()
         };
 
         parser.take_token_if(TokenType::OpenParen)?;
-        let symbol = parser.take_string()?.map(Clone::clone);
+        let symbol = parser.take_string()?;
 
         parser.take_token_if(TokenType::Comma)?;
         parser.take_token_if(TokenType::Function)?;
@@ -270,13 +272,14 @@ pub enum Declaration {
 }
 
 impl Declaration {
+    #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            Self::Function(value) => value.name.value.ident.as_str(),
-            Self::ExternFunction(value) => value.name.value.ident.as_str(),
-            Self::Struct(value) => value.name.value.ident.as_str(),
-            Self::Union(value) => value.name.value.ident.as_str(),
-            Self::Primitive(value) => value.name.value.ident.as_str(),
+            Self::Function(value) => value.name.value.0.as_str(),
+            Self::ExternFunction(value) => value.name.value.0.as_str(),
+            Self::Struct(value) => value.name.value.0.as_str(),
+            Self::Union(value) => value.name.value.0.as_str(),
+            Self::Primitive(value) => value.name.value.0.as_str(),
         }
     }
 }
@@ -295,18 +298,18 @@ impl Parse for Declaration {
 
 #[test]
 fn test_primitive() {
+    use tokenizer::Tokenizer;
+
     let source = r#"type U32 @u32 end"#;
     let primitive = Parser::from(Tokenizer::from(source))
         .parse::<Primitive>()
-        .unwrap();
+        .expect("didn't parse!");
+
     assert_eq!(
         primitive,
         Primitive {
             kind: PrimitiveKind::U32.spanned(9..11),
-            name: Ident {
-                ident: String::from("U32"),
-            }
-            .spanned(5..8),
+            name: Ident(String::from("U32")).spanned(5..8),
         }
         .spanned(0..source.len())
     );
@@ -314,6 +317,8 @@ fn test_primitive() {
 
 #[test]
 fn top_level_decl_parses() {
+    use tokenizer::Tokenizer;
+
     let source = r"type Point struct
     UInt8 x
     UInt8 y
@@ -327,11 +332,9 @@ end";
         value:
             Declaration::Struct(Struct {
                 fields,
-                name:
-                    Spanned {
-                        value: Ident { ident: name },
-                        ..
-                    },
+                name: Spanned {
+                    value: Ident(name), ..
+                },
                 scope: _,
             }),
         ..
@@ -347,12 +350,12 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type::Ident(Ident { ident: field_1_ty }),
+                        value: Type::Ident(Ident(field_1_ty)),
                         ..
                     },
                 name:
                     Spanned {
-                        value: Ident { ident: field_1 },
+                        value: Ident(field_1),
                         ..
                     },
             },
@@ -362,12 +365,12 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type::Ident(Ident { ident: field_2_ty }),
+                        value: Type::Ident(Ident(field_2_ty)),
                         ..
                     },
                 name:
                     Spanned {
-                        value: Ident { ident: field_2 },
+                        value: Ident(field_2),
                         ..
                     },
             },
@@ -379,13 +382,15 @@ end";
 
     assert_eq!(field_1, "x");
     assert_eq!(field_1_ty, "UInt8");
-    assert_eq!(field_1, "y");
-    assert_eq!(field_1_ty, "UInt8");
+    assert_eq!(field_2, "y");
+    assert_eq!(field_2_ty, "UInt8");
 }
 
 #[cfg(ignore)]
 #[test]
 fn function_parses() {
+    use tokenizer::Tokenizer;
+
     // TODO: fails!
     let source = r"fn a(String a, b) UInt32
     a

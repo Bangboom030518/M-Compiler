@@ -1,6 +1,8 @@
-use crate::internal::prelude::*;
-use crate::Error;
+use crate::parser::Parser;
+use crate::{Error, Ident, Parse, Type};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
+
+use self::control_flow::If;
 
 pub mod binary;
 pub mod control_flow;
@@ -40,10 +42,10 @@ impl Parse for Literal {
             .or_else(|_| {
                 parser
                     .take_integer()
-                    .map_spanned(|integer| Self::Integer(*integer))
+                    .map_spanned(|integer| Self::Integer(integer))
             })
-            .or_else(|_| parser.take_float().map_spanned(|float| Self::Float(*float)))
-            .or_else(|_| parser.take_char().map_spanned(|ch| Self::Char(*ch)))
+            .or_else(|_| parser.take_float().map_spanned(|float| Self::Float(float)))
+            .or_else(|_| parser.take_char().map_spanned(|ch| Self::Char(ch)))
     }
 }
 
@@ -168,13 +170,7 @@ pub enum IntrinsicCall {
 impl Parse for IntrinsicCall {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let start = parser.take_token_if(TokenType::At)?.start();
-        let ident = parser
-            .take_token_if(TokenType::Ident)
-            .map_spanned(|token| match token {
-                Token::Ident(ident) => ident,
-                _ => unreachable!(),
-            })?
-            .value;
+        let ident = parser.take_ident()?.value;
 
         parser.take_token_if(TokenType::OpenParen)?;
         let kind = match ident.as_str() {
@@ -239,17 +235,18 @@ impl Parse for UnaryPrefix {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let operator = parser.parse()?;
         let expression = parser.parse()?;
+        let span = operator.start()..expression.end();
         Ok(Self {
             operator,
             expression,
         }
-        .spanned(operator.start()..expression.end()))
+        .spanned(span))
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Return {
-    expression: Spanned<Expression>,
+pub struct Return {
+    pub expression: Spanned<Expression>,
 }
 
 impl Parse for Return {
@@ -263,8 +260,8 @@ impl Parse for Return {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
-    expression: Spanned<Expression>,
-    ident: Spanned<Ident>,
+    pub expression: Spanned<Expression>,
+    pub ident: Spanned<Ident>,
 }
 
 impl Parse for FieldAccess {
@@ -272,7 +269,8 @@ impl Parse for FieldAccess {
         let expression = parser.parse()?;
         parser.take_token_if(TokenType::Dot)?;
         let ident = parser.parse()?;
-        Ok(Self { expression, ident }.spanned(expression.start()..ident.end()))
+        let span = expression.start()..ident.end();
+        Ok(Self { expression, ident }.spanned(span))
     }
 }
 

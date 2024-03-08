@@ -6,23 +6,23 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
-use parser::top_level::TypeBinding;
 use parser::{scope, Ident};
+use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MSignature {
     pub parameters: Vec<declarations::Id>,
     pub return_type: declarations::Id,
     pub signature: Signature,
-    pub name: Ident,
+    pub name: Spanned<Ident>,
 }
 
 impl MSignature {
     fn new(
-        parameters: &[parser::Type],
-        return_type: parser::Type,
+        parameters: &[Spanned<parser::Type>],
+        return_type: Spanned<parser::Type>,
         declarations: &Declarations,
-        name: Ident,
+        name: Spanned<Ident>,
         scope_id: scope::Id,
         module: &impl Module,
     ) -> Result<Self, SemanticError> {
@@ -30,11 +30,11 @@ impl MSignature {
         let parameters = parameters
             .iter()
             .map(|path| {
-                let ident = match path {
+                let ident = match path.value {
                     parser::Type::Ident(ident) => ident,
                 };
                 let type_id = declarations
-                    .lookup(ident, scope_id)
+                    .lookup(ident.as_ref(), scope_id)
                     .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))?;
 
                 Ok(type_id)
@@ -54,11 +54,10 @@ impl MSignature {
             })
             .collect();
 
-        // TODO: yuck
         let return_type = {
-            let ident = return_type.ident();
+            let ident = return_type.value.ident();
             declarations
-                .lookup(&ident, scope_id)
+                .lookup(ident.as_ref(), scope_id)
                 .ok_or_else(|| SemanticError::DeclarationNotFound(ident))?
         };
 
@@ -86,7 +85,7 @@ impl MSignature {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct External {
-    pub symbol_name: String,
+    pub symbol_name: Spanned<String>,
     pub signature: MSignature,
     pub id: FuncId,
 }
@@ -96,20 +95,23 @@ impl External {
         function: parser::top_level::ExternFunction,
         declarations: &Declarations,
         scope_id: parser::scope::Id,
-        name: Ident,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let signature = MSignature::new(
             &function.parameters,
             function.return_type,
             declarations,
-            name,
+            function.name,
             scope_id,
             module,
         )?;
 
         let id = module
-            .declare_function(&function.symbol, Linkage::Import, &signature.signature)
+            .declare_function(
+                &function.symbol.value,
+                Linkage::Import,
+                &signature.signature,
+            )
             .expect("internal module error");
 
         Ok(Self {
@@ -122,10 +124,10 @@ impl External {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Internal {
-    pub body: Vec<parser::Statement>,
+    pub body: Vec<Spanned<parser::Statement>>,
     pub scope_id: scope::Id,
     pub signature: MSignature,
-    pub parameter_names: Vec<Ident>,
+    pub parameter_names: Vec<Spanned<Ident>>,
     pub id: FuncId,
 }
 
@@ -138,41 +140,51 @@ impl Internal {
         function: parser::top_level::Function,
         declarations: &Declarations,
         scope_id: parser::scope::Id,
-        name: Ident,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let parameters: (Vec<_>, Vec<_>) = function
             .parameters
             .into_iter()
-            .map(|parser::top_level::Parameter(TypeBinding { r#type, name })| (name, r#type))
+            .map(|parameter| (parameter.value.0.name, parameter.value.0.r#type))
             .unzip();
+
         let signature = MSignature::new(
             &parameters
                 .1
                 .into_iter()
-                .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
+                .map(|r#type| {
+                    r#type
+                        .ok_or(SemanticError::UntypedParameter)
+                        .map(|r#type| r#type)
+                })
                 .collect::<Result<Vec<_>, _>>()?,
             function
                 .return_type
                 .ok_or(SemanticError::MissingReturnType)?,
             declarations,
-            name,
+            function.name,
             scope_id,
             module,
         )?;
 
         let mut body = function.body;
 
-        if let Some(parser::Statement::Expression(expr)) = body.last_mut() {
+        if let Some(Spanned {
+            value: parser::Statement::Expression(expr),
+            span,
+        }) = body.last_mut()
+        {
             if !matches!(expr, parser::Expression::Return(_)) {
                 // TODO: `.clone()`
-                *expr = parser::Expression::Return(Box::new(expr.clone()));
+                *expr = parser::Expression::Return(Box::new(parser::expression::Return {
+                    expression: expr.clone().spanned(*span),
+                }));
             }
         }
 
         let id = module
             .declare_function(
-                signature.name.as_ref(),
+                signature.name.value.as_ref(),
                 cranelift_module::Linkage::Export,
                 &signature.signature,
             )
