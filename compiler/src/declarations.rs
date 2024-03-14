@@ -132,20 +132,6 @@ impl Declarations {
                 PrimitiveKind::I64 => layout::Primitive::I64,
                 PrimitiveKind::I128 => layout::Primitive::I128,
                 PrimitiveKind::USize => layout::Primitive::USize,
-                PrimitiveKind::MutablePointer(path) => {
-                    let ident = path.value.ident();
-                    layout::Primitive::MutablePointer(
-                        self.lookup(ident.as_ref(), scope)
-                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.spanned(path.span)))?,
-                    )
-                }
-                PrimitiveKind::MutableSlice(path) => {
-                    let ident = path.value.ident();
-                    layout::Primitive::MutableSlice(
-                        self.lookup(ident.as_ref(), scope)
-                            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.spanned(path.span)))?,
-                    )
-                }
             }),
         };
 

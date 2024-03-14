@@ -1,5 +1,4 @@
 use crate::declarations;
-use crate::declarations::Declarations;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
@@ -36,25 +35,13 @@ impl Layout {
     }
 
     pub const fn should_load(&self) -> bool {
-        match self {
-            Self::Struct(_) => false,
-            Self::Primitive(primitive) => !primitive.is_pointer(),
-        }
+        !matches!(self, Self::Struct(_))
     }
 
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
             Self::Struct(_) => isa.pointer_type(),
-        }
-    }
-
-    pub fn deref_pointers<'a>(&'a self, declarations: &'a Declarations) -> &'a Self {
-        match self {
-            Self::Primitive(Primitive::MutablePointer(inner_type)) => declarations
-                .get_layout(*inner_type)
-                .deref_pointers(declarations),
-            _ => self,
         }
     }
 }
@@ -74,8 +61,6 @@ pub enum Primitive {
     F32,
     F64,
     USize,
-    MutablePointer(declarations::Id),
-    MutableSlice(declarations::Id),
 }
 
 impl Primitive {
@@ -93,13 +78,8 @@ impl Primitive {
             Self::F64 => types::F64,
             Self::U64 | Self::I64 => types::I64,
             Self::U128 | Self::I128 => types::I128,
-            Self::MutablePointer(_) | Self::MutableSlice(_) | Self::USize => pointer,
+            Self::USize => pointer,
         }
-    }
-
-    #[must_use]
-    pub const fn is_pointer(&self) -> bool {
-        matches!(self, Self::MutablePointer(_) | Self::MutableSlice(_))
     }
 
     #[must_use]
@@ -136,7 +116,7 @@ impl Primitive {
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
             Self::U128 | Self::I128 => 16,
-            Self::MutablePointer(_) | Self::MutableSlice(_) | Self::USize => pointer_size,
+            Self::USize => pointer_size,
         }
     }
 }

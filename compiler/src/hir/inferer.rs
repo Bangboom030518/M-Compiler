@@ -146,11 +146,7 @@ impl<'a> Inferer<'a> {
         match type_id {
             None => Ok(environment_state),
             Some(type_id) => {
-                match self
-                    .declarations
-                    .get_layout(type_id)
-                    .deref_pointers(self.declarations)
-                {
+                match self.declarations.get_layout(type_id) {
                     Layout::Struct(layout) => {
                         let field = layout
                             .fields
@@ -178,7 +174,9 @@ impl<'a> Inferer<'a> {
         expression.type_id = expression.type_id.or(expected_type);
 
         let environment_state = match &mut expression.expression {
-            hir::Expression::FloatConst(_) | hir::Expression::IntegerConst(_) | hir::Expression::StringConst(_) => {
+            hir::Expression::FloatConst(_)
+            | hir::Expression::IntegerConst(_)
+            | hir::Expression::StringConst(_) => {
                 // TODO: assert type here
                 EnvironmentState::NonMutated
             }
@@ -249,32 +247,22 @@ impl<'a> Inferer<'a> {
             )?,
             hir::Expression::MutablePointer(pointer) => {
                 if let Some(type_id) = expression.type_id {
-                    let Layout::Primitive(layout::Primitive::MutablePointer(inner)) =
-                        self.declarations.get_layout(type_id)
-                    else {
-                        return Err(SemanticError::InvalidMutRef);
-                    };
-                    self.expression(pointer, Some(*inner))?
+                    let layout = self.declarations.get_layout(type_id);
+                    if layout == &Layout::Primitive(layout::Primitive::USize) {
+                        self.expression(pointer, None)?
+                    } else {
+                        return Err(SemanticError::InvalidAddr {
+                            found: layout.clone(),
+                            expression: expression.expression.clone(),
+                        });
+                    }
                 } else {
                     EnvironmentState::default()
                 }
             }
             hir::Expression::GlobalAccess(_) => todo!("global access!"),
             hir::Expression::Deref(inner) => {
-                let environment_state = self.expression(inner, None)?;
-                expression.type_id = expression.type_id.or_else(|| {
-                    inner
-                        .type_id
-                        .map(|id| self.declarations.get_layout(id))
-                        .and_then(|layout| match layout {
-                            layout::Layout::Primitive(layout::Primitive::MutablePointer(inner)) => {
-                                Some(*inner)
-                            }
-                            _ => None,
-                        })
-                });
-
-                environment_state
+                self.expression(inner, None)?
             }
         };
 

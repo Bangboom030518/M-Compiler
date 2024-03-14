@@ -71,7 +71,10 @@ pub enum SemanticError {
     #[error("Tried to access a non-existent struct field")]
     NonExistentField,
     #[error("Tried to initialise non-reference type as a reference")]
-    InvalidMutRef,
+    InvalidAddr {
+        found: Layout,
+        expression: hir::Expression,
+    },
     #[error(
         "Actions have consequences! You used an intrinsic wrong and now you're on your own :)"
     )]
@@ -79,6 +82,7 @@ pub enum SemanticError {
 }
 
 fn main() {
+
     #[cfg(debug_assertions)]
     {
         std::fs::write("function-ir.clif", "").unwrap();
@@ -123,7 +127,6 @@ fn main() {
     let function = *functions.get("main").unwrap();
 
     let code = context.module.get_finalized_function(function);
-
-    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u64>(code) };
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u8>(code) };
     unsafe { main() };
 }

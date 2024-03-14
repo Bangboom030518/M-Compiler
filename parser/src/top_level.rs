@@ -74,9 +74,18 @@ impl Parse for Struct {
         let name = parser.parse()?;
         parser.take_token_if(TokenType::Struct)?;
         let scope_id = parser.create_scope();
+        
+        let mut fields = Vec::new();
+        loop {
+            dbg!();
 
-        let fields = iter::from_fn(|| parser.parse().ok()).collect();
-
+            let Ok(field) = parser.parse() else { break };
+            fields.push(field);
+            if parser.take_token_if(TokenType::Comma).is_err() {
+                break;
+            }
+        }
+        
         let span_end = parser.take_token_if(TokenType::End)?.end();
         parser.exit_scope();
 
@@ -168,8 +177,6 @@ pub enum PrimitiveKind {
     F32,
     F64,
     USize,
-    MutablePointer(Spanned<Type>),
-    MutableSlice(Spanned<Type>),
 }
 
 impl Parse for PrimitiveKind {
@@ -189,18 +196,6 @@ impl Parse for PrimitiveKind {
                 "f32" => Self::F32,
                 "f64" => Self::F64,
                 "usize" => Self::USize,
-                "mutable_pointer" => {
-                    parser.take_token_if(TokenType::OpenParen)?;
-                    let pointer = parser.parse::<Type>().map(Self::MutablePointer)?;
-                    parser.take_token_if(TokenType::CloseParen)?;
-                    pointer
-                }
-                "mutable_slice" => {
-                    parser.take_token_if(TokenType::OpenParen)?;
-                    let pointer = parser.parse::<Type>().map(Self::MutableSlice)?;
-                    parser.take_token_if(TokenType::CloseParen)?;
-                    pointer
-                }
                 _ => todo!("Invalid intrinsic error"),
             };
             Ok(kind)

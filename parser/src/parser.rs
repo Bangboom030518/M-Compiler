@@ -138,8 +138,8 @@ impl Parser {
     }
 
     pub(crate) fn peek_token_if(&mut self, kind: TokenType) -> Result<Spanned<Arc<Token>>, Error> {
+        self.expected_tokens.insert(kind);
         let token = self.peek_token();
-        self.expected_tokens.insert(token.value.kind());
         if token.value.kind() == kind {
             Ok(token)
         } else {

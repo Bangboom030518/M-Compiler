@@ -1,0 +1,25 @@
+function u0:0() -> i8 windows_fastcall {
+    ss0 = explicit_slot 1
+    ss1 = explicit_slot 1
+    ss2 = explicit_slot 1
+    sig0 = (i8, i8) -> i8 windows_fastcall
+    fn0 = colocated u0:0 sig0
+
+block0:
+    v0 = iconst.i8 2
+    v9 = stack_addr.i64 ss0
+    store notrap v0, v9  ; v0 = 2
+    v1 = stack_addr.i64 ss0
+    v2 = load.i8 v1
+    v3 = iconst.i8 2
+    v10 = stack_addr.i64 ss1
+    store notrap v3, v10  ; v3 = 2
+    v4 = stack_addr.i64 ss1
+    v5 = load.i8 v4
+    v6 = call fn0(v2, v5)
+    v11 = stack_addr.i64 ss2
+    store notrap v6, v11
+    v7 = stack_addr.i64 ss2
+    v8 = load.i8 v7
+    return v8
+}

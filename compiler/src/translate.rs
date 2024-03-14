@@ -215,8 +215,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .get_layout(access.expression.expect_type()?)
-            .deref_pointers(self.declarations);
+            .get_layout(access.expression.expect_type()?);
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);

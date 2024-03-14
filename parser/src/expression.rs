@@ -1,8 +1,7 @@
 use crate::parser::Parser;
 use crate::{Error, Ident, Parse, Type};
+use control_flow::If;
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
-
-use self::control_flow::If;
 
 pub mod binary;
 pub mod control_flow;
@@ -39,11 +38,7 @@ impl Parse for Literal {
         parser
             .take_string()
             .map_spanned(Self::String)
-            .or_else(|_| {
-                parser
-                    .take_integer()
-                    .map_spanned(Self::Integer)
-            })
+            .or_else(|_| parser.take_integer().map_spanned(Self::Integer))
             .or_else(|_| parser.take_float().map_spanned(Self::Float))
             .or_else(|_| parser.take_char().map_spanned(Self::Char))
     }
@@ -66,7 +61,9 @@ impl Parse for Call {
         } else {
             Vec::new()
         };
+
         parser.take_token_if(TokenType::OpenParen)?;
+
         let arguments = parser.parse_csv();
 
         let start = callable.start();
@@ -158,7 +155,7 @@ impl IntrinsicOperator {
 #[derive(Debug, Clone, PartialEq)]
 pub enum IntrinsicCall {
     AssertType(Box<Spanned<Expression>>, Spanned<Type>),
-    MutablePointer(Box<Spanned<Expression>>),
+    Addr(Box<Spanned<Expression>>),
     Deref(Box<Spanned<Expression>>),
     Binary(
         Box<Spanned<Expression>>,
@@ -179,9 +176,13 @@ impl Parse for IntrinsicCall {
                 parser.take_token_if(TokenType::Comma)?;
                 Self::AssertType(expression, parser.parse()?)
             }
-            "mutable_pointer" => Self::MutablePointer(Box::new(parser.parse()?)),
-            "deref" => Self::Deref(Box::new(parser.parse()?)),
-
+            "addr" => Self::Addr(Box::new(parser.parse()?)),
+            "deref" => {
+                let expr = parser.parse()?;
+                let span = expr.span.clone();
+                parser.take_token_if(TokenType::Comma)?;
+                Self::AssertType(Box::new(Expression::IntrinsicCall(Self::Deref(Box::new(expr))).spanned(span)), parser.parse()?)
+            },
             token if let Ok(operator) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
@@ -266,7 +267,7 @@ pub struct FieldAccess {
 
 impl Parse for FieldAccess {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let expression = parser.parse()?;
+        let expression = Expression::parse_nonpostfix_term(parser)?;
         parser.take_token_if(TokenType::Dot)?;
         let ident = parser.parse()?;
         let span = expression.start()..ident.end();
@@ -347,7 +348,7 @@ impl Expression {
 
 impl Parse for Expression {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        binary::Terms::parse(parser).map(Spanned::from)
+        binary::Terms::parse(parser).map(Spanned::<Self>::from)
     }
 }
 

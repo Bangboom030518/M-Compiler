@@ -196,14 +196,47 @@ end
 
 fn<I: Iterator> map Map<I> ()
 
-type Point = struct
+type Point struct
     UInt8 x,
     UInt8 y,
 
-    fn to_string(Self self)
-        sprintf("%u %u", self.x, self.y)
+    implement ToString
+        fn to_string(Self self)
+            sprintf("%u %u", self.x, self.y)
+        end
     end
 end
 
-type MyPoint = distinct Point
+type UInt64 @u64
+end
+
+type ByteList @mutable_slice(UInt8)
+end
+
+fn puts @extern("puts", fn(USize) UInt8)
+
+fn m_puts(ByteList data)
+    puts(@addrof(ByteList) + Math.Log(2, USize.MAX))
+end
+
+type Str10 @array(UInt8, 10)
+end
+
+type Str @mutable_slice(UInt64)
+end
+    
+fn deref = (self) T
+    @deref(self.ptr, T)
+end
+
+fn UInt8 str_test(mut Ptr<Point> point)
+    @deref(point).x = 2
+    // TODO: this is wrong - where's the length?????
+    let mut string = "money money money!!!"
+    string = "12"
+    
+    let a = 32
+    @array(USize, a)
+    puts_byte_list(@slice_pointer(string))
+    0
 end
