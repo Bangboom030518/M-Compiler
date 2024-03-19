@@ -62,6 +62,12 @@ pub struct FieldAccess {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Store {
+    pub pointer: TypedExpression,
+    pub expression: TypedExpression,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     IntegerConst(u128),
     FloatConst(f64),
@@ -70,10 +76,11 @@ pub enum Expression {
     If(Box<If>),
     FieldAccess(Box<FieldAccess>),
     Constructor(Constructor),
-    MutablePointer(Box<TypedExpression>),
+    Addr(Box<TypedExpression>),
     Call(Box<Call>),
     Return(Box<TypedExpression>),
-    Deref(Box<TypedExpression>),
+    Load(Box<TypedExpression>),
+    Store(Box<Store>),
     LocalAccess(VariableId),
     GlobalAccess(declarations::Id),
 }

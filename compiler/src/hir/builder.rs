@@ -1,4 +1,4 @@
-use super::TypedExpression;
+use super::{Store, TypedExpression};
 use crate::declarations::Declarations;
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
@@ -234,13 +234,21 @@ impl<'a> Builder<'a> {
                     self.expression(expression.as_ref().as_ref())
                         .map(|expression| expression.with_type(type_id))
                 }
-                IntrinsicCall::Addr(expression) => Ok(Expression::MutablePointer(Box::new(
+                IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
                     self.expression(expression.as_ref().as_ref())?,
                 ))
                 .into()),
-                IntrinsicCall::Deref(expression) => Ok(Expression::Deref(Box::new(
+                IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
                     self.expression(expression.as_ref().as_ref())?,
                 ))
+                .into()),
+                IntrinsicCall::Store {
+                    pointer,
+                    expression,
+                } => Ok(Expression::Store(Box::new(Store {
+                    pointer: self.expression(pointer.as_ref().as_ref())?,
+                    expression: self.expression(expression.as_ref().as_ref())?,
+                }))
                 .into()),
             },
             parser::Expression::Return(expression) => Ok(hir::Expression::Return(Box::new(

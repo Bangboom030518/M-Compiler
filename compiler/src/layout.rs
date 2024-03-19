@@ -17,9 +17,17 @@ pub struct Struct {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Array {
+    pub length: u128,
+    pub size: u32,
+    pub item: declarations::Id,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Layout {
     Struct(Struct),
     Primitive(Primitive),
+    Array(Array),
 }
 
 impl Layout {
@@ -27,21 +35,23 @@ impl Layout {
         match self {
             Self::Primitive(primitive) => primitive.size(u32::from(isa.pointer_bytes())),
             Self::Struct(Struct { size, .. }) => *size,
+            Self::Array(array) => array.size,
         }
     }
 
     pub const fn is_aggregate(&self) -> bool {
-        matches!(self, Self::Struct(_))
+        matches!(self, Self::Struct(_) | Self::Array(_))
     }
 
     pub const fn should_load(&self) -> bool {
-        !matches!(self, Self::Struct(_))
+        !self.is_aggregate()
     }
 
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
             Self::Struct(_) => isa.pointer_type(),
+            Self::Array(_) => isa.pointer_type(),
         }
     }
 }

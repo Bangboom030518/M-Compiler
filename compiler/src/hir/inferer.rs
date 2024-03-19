@@ -245,7 +245,8 @@ impl<'a> Inferer<'a> {
                         .map(|new_environment_state| environment_state.merge(new_environment_state))
                 },
             )?,
-            hir::Expression::MutablePointer(pointer) => {
+            hir::Expression::Addr(pointer) => {
+                // TODO: move to translate
                 if let Some(type_id) = expression.type_id {
                     let layout = self.declarations.get_layout(type_id);
                     if layout == &Layout::Primitive(layout::Primitive::USize) {
@@ -261,9 +262,10 @@ impl<'a> Inferer<'a> {
                 }
             }
             hir::Expression::GlobalAccess(_) => todo!("global access!"),
-            hir::Expression::Deref(inner) => {
-                self.expression(inner, None)?
-            }
+            hir::Expression::Load(inner) => self.expression(inner, None)?,
+            hir::Expression::Store(store) => EnvironmentState::default()
+                .merge(self.expression(&mut store.expression, None)?)
+                .merge(self.expression(&mut store.pointer, None)?),
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {

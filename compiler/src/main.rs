@@ -1,12 +1,14 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
 
+// TODO: voidz
+
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use layout::Layout;
-use tokenizer::Spanned;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokenizer::Spanned;
 
 mod declarations;
 mod function;
@@ -82,7 +84,6 @@ pub enum SemanticError {
 }
 
 fn main() {
-
     #[cfg(debug_assertions)]
     {
         std::fs::write("function-ir.clif", "").unwrap();
@@ -127,6 +128,6 @@ fn main() {
     let function = *functions.get("main").unwrap();
 
     let code = context.module.get_finalized_function(function);
-    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u8>(code) };
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
     unsafe { main() };
 }

@@ -128,7 +128,8 @@ where
                     Layout::Primitive(primitive) => {
                         primitive.cranelift_type(self.declarations.isa.pointer_type())
                     }
-                    Layout::Struct { .. } => todo!("structs in ifs!"),
+                    Layout::Struct(_) => todo!("structs in ifs!"),
+                    Layout::Array(_) => todo!("arrays in ifs!"),
                 },
             );
         } else {
@@ -223,8 +224,9 @@ where
 
         let struct_layout = match layout {
             Layout::Struct(struct_layout) => struct_layout,
-            // Layout::Primitive(Primitive::MutablePointer(inner)) => {}
-            Layout::Primitive(_) => return Err(SemanticError::InvalidFieldAccess(layout.clone())),
+            Layout::Primitive(_) | Layout::Array(_) => {
+                return Err(SemanticError::InvalidFieldAccess(layout.clone()))
+            }
         };
 
         let offset = struct_layout
@@ -356,7 +358,7 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let value = if layout.should_load() {
+        let value = if !layout.is_aggregate() {
             self.builder.ins().load(
                 layout.cranelift_type(&self.declarations.isa),
                 MemFlags::new(),
@@ -368,6 +370,35 @@ where
         };
 
         Ok(BranchStatus::Continue(value))
+    }
+
+    fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
+        let layout = self.declarations.get_layout(store.pointer.expect_type()?);
+        if layout != &Layout::Primitive(crate::layout::Primitive::USize) {
+            return Err(SemanticError::InvalidAddr {
+                found: layout.clone(),
+                expression: store.pointer.expression,
+            });
+        }
+
+        let layout = self
+            .declarations
+            .get_layout(store.expression.expect_type()?);
+
+        if layout.is_aggregate() {
+            todo!()
+        } else {
+            let BranchStatus::Continue(pointer) = self.load_primitive(store.pointer)? else {
+                return Ok(BranchStatus::Finished);
+            };
+            let BranchStatus::Continue(expression) = self.load_primitive(store.expression)? else {
+                return Ok(BranchStatus::Finished);
+            };
+            self.builder
+                .ins()
+                .store(MemFlags::new(), expression, pointer, Offset32::new(0));
+            Ok(BranchStatus::Continue(self.iconst(0)))
+        }
     }
 
     fn expression(
@@ -393,6 +424,7 @@ where
                     Primitive::I32 | Primitive::U32 => types::I32,
                     Primitive::I64 | Primitive::U64 => types::I64,
                     Primitive::I128 | Primitive::U128 => todo!("chonky intz"),
+                    Primitive::USize => self.declarations.isa.pointer_type(),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
 
@@ -433,17 +465,32 @@ where
                     .define_data(data, &desc)
                     .expect("Internal Module Error :(");
                 let value = self.module.declare_data_in_func(data, self.builder.func);
+                
+                let value = self
+                    .builder
+                    .ins()
+                    .global_value(self.declarations.isa.pointer_type(), value);
 
                 BranchStatus::Continue(
-                    self.builder
-                        .ins()
-                        .global_value(self.declarations.isa.pointer_type(), value),
+                    // self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
+                    value
                 )
             }
-            hir::Expression::MutablePointer(inner) | hir::Expression::Deref(inner) => {
+            hir::Expression::Addr(inner) => {
                 layout?;
-                self.expression(*inner)?
+                let BranchStatus::Continue(value) = self.expression(*inner)? else {
+                    return Ok(BranchStatus::Finished);
+                };
+                BranchStatus::Continue(self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()))
             }
+            hir::Expression::Load(inner) => {
+                if layout?.is_aggregate() {
+                    todo!("loading structs")
+                } else {
+                    self.load_primitive(*inner)?
+                }
+            }
+            hir::Expression::Store(store) => self.store(*store)?,
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
             hir::Expression::FieldAccess(access) => self.field_access(*access)?,

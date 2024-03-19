@@ -77,8 +77,6 @@ impl Parse for Struct {
         
         let mut fields = Vec::new();
         loop {
-            dbg!();
-
             let Ok(field) = parser.parse() else { break };
             fields.push(field);
             if parser.take_token_if(TokenType::Comma).is_err() {
@@ -177,6 +175,7 @@ pub enum PrimitiveKind {
     F32,
     F64,
     USize,
+    Array(Spanned<u128>, Spanned<Type>),
 }
 
 impl Parse for PrimitiveKind {
@@ -196,6 +195,14 @@ impl Parse for PrimitiveKind {
                 "f32" => Self::F32,
                 "f64" => Self::F64,
                 "usize" => Self::USize,
+                "array" => {
+                    parser.take_token_if(TokenType::OpenParen)?;
+                    let size = parser.take_integer()?;
+                    parser.take_token_if(TokenType::Comma)?;
+                    let ty = parser.parse()?;
+                    parser.take_token_if(TokenType::CloseParen)?;
+                    Self::Array(size, ty)
+                }
                 _ => todo!("Invalid intrinsic error"),
             };
             Ok(kind)

@@ -156,7 +156,11 @@ impl IntrinsicOperator {
 pub enum IntrinsicCall {
     AssertType(Box<Spanned<Expression>>, Spanned<Type>),
     Addr(Box<Spanned<Expression>>),
-    Deref(Box<Spanned<Expression>>),
+    Load(Box<Spanned<Expression>>),
+    Store {
+        pointer: Box<Spanned<Expression>>,
+        expression: Box<Spanned<Expression>>,
+    },
     Binary(
         Box<Spanned<Expression>>,
         Box<Spanned<Expression>>,
@@ -177,12 +181,18 @@ impl Parse for IntrinsicCall {
                 Self::AssertType(expression, parser.parse()?)
             }
             "addr" => Self::Addr(Box::new(parser.parse()?)),
-            "deref" => {
+            "load" => {
                 let expr = parser.parse()?;
                 let span = expr.span.clone();
                 parser.take_token_if(TokenType::Comma)?;
-                Self::AssertType(Box::new(Expression::IntrinsicCall(Self::Deref(Box::new(expr))).spanned(span)), parser.parse()?)
+                Self::AssertType(Box::new(Expression::IntrinsicCall(Self::Load(Box::new(expr))).spanned(span)), parser.parse()?)
             },
+            "store" => {
+                let pointer = Box::new(parser.parse()?);
+                parser.take_token_if(TokenType::Comma)?;
+                let expression = Box::new(parser.parse()?);
+                Self::Store { pointer, expression }
+            }
             token if let Ok(operator) = IntrinsicOperator::from_str(token) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;

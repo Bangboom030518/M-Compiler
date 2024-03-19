@@ -1,4 +1,4 @@
-use crate::layout::{self, Layout};
+use crate::layout::{self, Array, Layout};
 use crate::{function, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
@@ -118,21 +118,29 @@ impl Declarations {
                     size: offset,
                 })
             }
-            Type::Primitive(primitive) => Layout::Primitive(match primitive {
-                PrimitiveKind::F32 => layout::Primitive::F32,
-                PrimitiveKind::F64 => layout::Primitive::F64,
-                PrimitiveKind::U8 => layout::Primitive::U8,
-                PrimitiveKind::U16 => layout::Primitive::U16,
-                PrimitiveKind::U32 => layout::Primitive::U32,
-                PrimitiveKind::U64 => layout::Primitive::U64,
-                PrimitiveKind::U128 => layout::Primitive::U128,
-                PrimitiveKind::I8 => layout::Primitive::I8,
-                PrimitiveKind::I16 => layout::Primitive::I16,
-                PrimitiveKind::I32 => layout::Primitive::I32,
-                PrimitiveKind::I64 => layout::Primitive::I64,
-                PrimitiveKind::I128 => layout::Primitive::I128,
-                PrimitiveKind::USize => layout::Primitive::USize,
-            }),
+            Type::Primitive(primitive) => match primitive {
+                PrimitiveKind::F32 => Layout::Primitive(layout::Primitive::F32),
+                PrimitiveKind::F64 => Layout::Primitive(layout::Primitive::F64),
+                PrimitiveKind::U8 => Layout::Primitive(layout::Primitive::U8),
+                PrimitiveKind::U16 => Layout::Primitive(layout::Primitive::U16),
+                PrimitiveKind::U32 => Layout::Primitive(layout::Primitive::U32),
+                PrimitiveKind::U64 => Layout::Primitive(layout::Primitive::U64),
+                PrimitiveKind::U128 => Layout::Primitive(layout::Primitive::U128),
+                PrimitiveKind::I8 => Layout::Primitive(layout::Primitive::I8),
+                PrimitiveKind::I16 => Layout::Primitive(layout::Primitive::I16),
+                PrimitiveKind::I32 => Layout::Primitive(layout::Primitive::I32),
+                PrimitiveKind::I64 => Layout::Primitive(layout::Primitive::I64),
+                PrimitiveKind::I128 => Layout::Primitive(layout::Primitive::I128),
+                PrimitiveKind::USize => Layout::Primitive(layout::Primitive::USize),
+                PrimitiveKind::Array(length, item) => {
+                    let item = item.value.ident().spanned(item.span);
+                    let item = self
+                        .lookup(&item.value.0, scope)
+                        .ok_or(SemanticError::DeclarationNotFound(item))?;
+                    let size = self.insert_layout(item, scope)?.size(&self.isa);
+                    Layout::Array(Array { length: length.value, size, item })
+                }
+            },
         };
 
         self.layouts.insert(id, layout);
@@ -187,7 +195,11 @@ impl Declarations {
                                     ident.as_ref(), // TODO: `r#struct.scope`
                                     scope_id,
                                 )
-                                .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(r#type.span)))?;
+                                .ok_or_else(|| {
+                                    SemanticError::DeclarationNotFound(
+                                        ident.clone().spanned(r#type.span),
+                                    )
+                                })?;
                             Ok((name, type_id))
                         })
                         .collect::<Result<Vec<_>, SemanticError>>()?;

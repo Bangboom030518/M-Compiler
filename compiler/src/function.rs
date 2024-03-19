@@ -49,7 +49,9 @@ impl MSignature {
                     Layout::Primitive(primitive) => {
                         AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
                     }
-                    Layout::Struct(_) => AbiParam::new(declarations.isa.pointer_type()),
+                    Layout::Struct(_) | Layout::Array(_) => {
+                        AbiParam::new(declarations.isa.pointer_type())
+                    }
                 }
             })
             .collect();
@@ -67,7 +69,7 @@ impl MSignature {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
-            Layout::Struct(_) => {
+            Layout::Struct(_) | Layout::Array(_) => {
                 signature
                     .params
                     .push(AbiParam::new(declarations.isa.pointer_type()));
@@ -241,11 +243,8 @@ impl Internal {
                 // TODO: get type again?
                 let layout = declarations.get_layout(*type_id);
                 let size = layout.size(&declarations.isa);
-                let cranelift_type = declarations
-                    .get_layout(*type_id)
-                    .cranelift_type(&declarations.isa);
 
-                let value = if layout.should_load() {
+                let value = if !layout.is_aggregate() {
                     let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                         kind: StackSlotKind::ExplicitSlot,
                         size,
@@ -264,7 +263,7 @@ impl Internal {
                     value
                 };
 
-                builder.declare_var(variable, cranelift_type);
+                builder.declare_var(variable, declarations.isa.pointer_type());
                 builder.def_var(variable, value);
 
                 Ok((name.clone(), variable, *type_id))
