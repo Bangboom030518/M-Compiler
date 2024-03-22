@@ -138,31 +138,39 @@ impl<'a> Inferer<'a> {
 
     fn field_access(
         &mut self,
-        type_id2: &mut Option<declarations::Id>,
+        type_id: &mut Option<declarations::Id>,
         field_access: &mut hir::FieldAccess,
     ) -> Result<EnvironmentState, SemanticError> {
         let environment_state = self.expression(&mut field_access.expression, None)?;
-        let type_id = field_access.expression.type_id;
-        match type_id {
+        let struct_type_id = field_access.expression.type_id;
+        match struct_type_id {
             None => Ok(environment_state),
-            Some(type_id) => {
-                match self.declarations.get_layout(type_id) {
-                    Layout::Struct(layout) => {
-                        let field = layout
-                            .fields
-                            .get(field_access.field.as_ref())
-                            .ok_or(SemanticError::NonExistentField)?;
+            Some(struct_type_id) => match self.declarations.get_layout(struct_type_id) {
+                Layout::Struct(layout) => {
+                    let field = layout
+                        .fields
+                        .get(field_access.field.as_ref())
+                        .ok_or(SemanticError::NonExistentField)?;
 
-                        if type_id2.is_none() {
-                            *type_id2 = Some(field.type_id);
-                        } else {
-                            // TODO: assert same
-                        };
-                        Ok(environment_state)
-                    }
-                    layout => Err(SemanticError::InvalidFieldAccess(layout.clone())),
+                    if let Some(type_id) = type_id {
+                        if *type_id != field.type_id {
+                            let expected = self.declarations.get_layout(*type_id).clone();
+                            let found = self.declarations.get_layout(field.type_id).clone();
+                            return Err(SemanticError::MismatchedTypes {
+                                expected,
+                                found,
+                                expression: hir::Expression::FieldAccess(Box::new(
+                                    field_access.clone(),
+                                )),
+                            });
+                        }
+                    } else {
+                        *type_id = Some(field.type_id);
+                    };
+                    Ok(environment_state)
                 }
-            }
+                layout => Err(SemanticError::InvalidFieldAccess(layout.clone())),
+            },
         }
     }
 
@@ -226,7 +234,6 @@ impl<'a> Inferer<'a> {
                     .copied()
                     .zip(call.arguments.iter_mut())
                 {
-                    argument.type_id = Some(type_id);
                     environment_state.merge_mut(self.expression(argument, Some(type_id))?);
                 }
 

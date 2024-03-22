@@ -213,8 +213,9 @@ where
     fn field_access(
         &mut self,
         access: hir::FieldAccess,
+        layout: &Layout,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = self
+        let struct_layout = self
             .declarations
             .get_layout(access.expression.expect_type()?);
 
@@ -222,10 +223,10 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let struct_layout = match layout {
+        let struct_layout = match struct_layout {
             Layout::Struct(struct_layout) => struct_layout,
             Layout::Primitive(_) | Layout::Array(_) => {
-                return Err(SemanticError::InvalidFieldAccess(layout.clone()))
+                return Err(SemanticError::InvalidFieldAccess(struct_layout.clone()))
             }
         };
 
@@ -292,6 +293,7 @@ where
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
+            expression.expect_type()?;
             let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
                 return Ok(BranchStatus::Finished);
             };
@@ -358,15 +360,15 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let value = if !layout.is_aggregate() {
+        let value = if layout.is_aggregate() {
+            value
+        } else {
             self.builder.ins().load(
                 layout.cranelift_type(&self.declarations.isa),
                 MemFlags::new(),
                 value,
                 Offset32::new(0),
             )
-        } else {
-            value
         };
 
         Ok(BranchStatus::Continue(value))
@@ -399,6 +401,52 @@ where
                 .store(MemFlags::new(), expression, pointer, Offset32::new(0));
             Ok(BranchStatus::Continue(self.iconst(0)))
         }
+    }
+
+    fn string_const(
+        &mut self,
+        string: &str,
+        layout: &Layout,
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        let data = self
+            .module
+            .declare_anonymous_data(false, false)
+            .expect("Internal Module Error");
+
+        let Layout::Array(array) = layout else {
+            return Err(SemanticError::InvalidStringConst {
+                expected: layout.clone(),
+            });
+        };
+        let bytes = string.as_bytes().to_vec();
+
+        if array.length != bytes.len() as u128
+            || !matches!(
+                self.declarations.get_layout(array.item),
+                Layout::Primitive(Primitive::U8)
+            )
+        {
+            return Err(SemanticError::InvalidStringConst {
+                expected: layout.clone(),
+            });
+        }
+
+        let mut desc = cranelift_module::DataDescription::new();
+        desc.define(bytes.into_boxed_slice());
+        self.module
+            .define_data(data, &desc)
+            .expect("Internal Module Error :(");
+        let value = self.module.declare_data_in_func(data, self.builder.func);
+
+        let value = self
+            .builder
+            .ins()
+            .global_value(self.declarations.isa.pointer_type(), value);
+
+        Ok(BranchStatus::Continue(
+            // self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
+            value,
+        ))
     }
 
     fn expression(
@@ -454,34 +502,15 @@ where
 
                 BranchStatus::Continue(value)
             }
-            hir::Expression::StringConst(string) => {
-                let data = self
-                    .module
-                    .declare_anonymous_data(false, false)
-                    .expect("Internal Module Error");
-                let mut desc = cranelift_module::DataDescription::new();
-                desc.define(string.as_bytes().to_vec().into_boxed_slice());
-                self.module
-                    .define_data(data, &desc)
-                    .expect("Internal Module Error :(");
-                let value = self.module.declare_data_in_func(data, self.builder.func);
-                
-                let value = self
-                    .builder
-                    .ins()
-                    .global_value(self.declarations.isa.pointer_type(), value);
-
-                BranchStatus::Continue(
-                    // self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
-                    value
-                )
-            }
+            hir::Expression::StringConst(string) => self.string_const(&string, layout?)?,
             hir::Expression::Addr(inner) => {
                 layout?;
                 let BranchStatus::Continue(value) = self.expression(*inner)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                BranchStatus::Continue(self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()))
+                BranchStatus::Continue(
+                    self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
+                )
             }
             hir::Expression::Load(inner) => {
                 if layout?.is_aggregate() {
@@ -493,7 +522,10 @@ where
             hir::Expression::Store(store) => self.store(*store)?,
             hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
-            hir::Expression::FieldAccess(access) => self.field_access(*access)?,
+            hir::Expression::FieldAccess(access) => {
+                // layout?;
+                self.field_access(*access, layout?)?
+            }
             hir::Expression::Constructor(constructor) => self.constructor(constructor, layout?)?,
             hir::Expression::Return(expression) => {
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {

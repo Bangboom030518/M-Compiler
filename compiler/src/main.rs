@@ -81,6 +81,8 @@ pub enum SemanticError {
         "Actions have consequences! You used an intrinsic wrong and now you're on your own :)"
     )]
     InvalidIntrinsic,
+    #[error("Used a string where a byte array wasn't expected (javascript developer 🤨)")]
+    InvalidStringConst { expected: Layout },
 }
 
 fn main() {

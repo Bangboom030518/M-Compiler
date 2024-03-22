@@ -62,8 +62,52 @@ impl Parse for Parameter {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
+enum Generic {
+    Type { name: Spanned<Ident> },
+    Length { name: Spanned<Ident> },
+}
+
+impl Parse for Generic {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let value = if let Ok(at) = parser.take_token_if(TokenType::At) {
+            if parser.take_ident()?.value != "length" {
+                todo!("nice error")
+            }
+            let name = parser.parse()?;
+            let end = name.end();
+            Self::Length { name }.spanned(at.start()..end)
+        } else {
+            let name = parser.parse()?;
+            let span = name.span.clone();
+            Self::Type { name }.spanned(span)
+        };
+        Ok(value)
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Default, Clone)]
+pub struct Generics {
+    generics: Vec<Spanned<Generic>>,
+}
+
+impl Parse for Generics {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) else {
+            return Ok(Self {
+                generics: Vec::new(),
+            }
+            .spanned(parser.empty_span()));
+        };
+        let generics = parser.parse_csv();
+        Ok(Self { generics }
+            .spanned(open.start()..parser.take_token_if(TokenType::CloseSquareParen)?.end()))
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Struct {
     pub name: Spanned<Ident>,
+    pub generics: Spanned<Generics>,
     pub fields: Vec<Spanned<Field>>,
     pub scope: scope::Id,
 }
@@ -71,10 +115,12 @@ pub struct Struct {
 impl Parse for Struct {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let span_start = parser.take_token_if(TokenType::Type)?.start();
+        let generics = parser.parse()?;
         let name = parser.parse()?;
         parser.take_token_if(TokenType::Struct)?;
+
         let scope_id = parser.create_scope();
-        
+
         let mut fields = Vec::new();
         loop {
             let Ok(field) = parser.parse() else { break };
@@ -83,12 +129,13 @@ impl Parse for Struct {
                 break;
             }
         }
-        
+
         let span_end = parser.take_token_if(TokenType::End)?.end();
         parser.exit_scope();
 
         Ok(Self {
             name,
+            generics,
             fields,
             scope: scope_id,
         }
@@ -110,6 +157,7 @@ impl Parse for Union {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: Spanned<Ident>,
+    pub generics: Spanned<Generics>,
     pub parameters: Vec<Spanned<Parameter>>,
     pub return_type: Option<Spanned<Type>>,
     pub body: Vec<Spanned<Statement>>,
@@ -118,6 +166,7 @@ pub struct Function {
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let start = parser.take_token_if(TokenType::Function)?.start();
+        let generics = parser.parse()?;
         let mut return_type = parser.parse().ok();
 
         let name = parser.parse().or_else({
@@ -146,6 +195,7 @@ impl Parse for Function {
 
         Ok(Self {
             name,
+            generics,
             parameters,
             return_type,
             body,
@@ -157,6 +207,7 @@ impl Parse for Function {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Primitive {
     pub kind: Spanned<PrimitiveKind>,
+    pub generics: Spanned<Generics>,
     pub name: Spanned<Ident>,
 }
 
@@ -213,12 +264,13 @@ impl Parse for PrimitiveKind {
 impl Parse for Primitive {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let start = parser.take_token_if(TokenType::Type)?.start();
+        let generics = parser.parse()?;
         let name = parser.parse()?;
         parser.take_token_if(TokenType::At)?;
         let kind = parser.parse()?;
         let end = parser.take_token_if(TokenType::End)?.end();
 
-        Ok(Self { kind, name }.spanned(start..end))
+        Ok(Self { kind, generics, name }.spanned(start..end))
     }
 }
 
@@ -310,6 +362,7 @@ fn test_primitive() {
         primitive,
         Primitive {
             kind: PrimitiveKind::U32.spanned(9..11),
+            generics: Generics::default().spanned(4..4),
             name: Ident(String::from("U32")).spanned(5..8),
         }
         .spanned(0..source.len())
@@ -336,6 +389,9 @@ end";
                 name: Spanned {
                     value: Ident(name), ..
                 },
+                generics: Spanned {
+                    value: generics, ..
+                },
                 scope: _,
             }),
         ..
@@ -345,6 +401,7 @@ end";
     };
 
     assert_eq!(name, "Point");
+    assert_eq!(generics, Generics::default());
 
     let [Spanned {
         value:

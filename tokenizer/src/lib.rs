@@ -81,6 +81,8 @@ define_token_enums!(
     Bang,
     OpenParen,
     CloseParen,
+    OpenSquareParen,
+    CloseSquareParen,
     Comma,
     Illegal,
     Eoi
@@ -372,6 +374,10 @@ impl Tokenizer {
             return Token::Eoi.spanned(self.0.index..self.0.index);
         };
         let token = match ch {
+            '(' => Token::OpenParen,
+            ')' => Token::CloseParen,
+            '[' => Token::OpenSquareParen,
+            ']' => Token::CloseSquareParen,
             '+' => Token::Plus,
             '-' => Token::Minus,
             '%' => Token::Remainder,
@@ -402,8 +408,6 @@ impl Tokenizer {
                     Token::LessThan
                 }
             }
-            '(' => Token::OpenParen,
-            ')' => Token::CloseParen,
             '"' => self.take_string(),
             '*' => {
                 if self.0.peek() == Some('*') {

@@ -92,6 +92,7 @@ impl Parser {
         self.scope = self.scope_cache[self.scope].parent.unwrap();
     }
 
+
     fn peek_token(&mut self) -> Spanned<Arc<Token>> {
         self.tokens
             .get(self.position)
@@ -154,6 +155,10 @@ impl Parser {
         self.position += 1;
         self.expected_tokens.clear();
         Ok(token)
+    }
+
+    pub(crate) fn empty_span(&self) -> tokenizer::Span {
+        self.position..self.position
     }
 
     special!(take_string, peek_string, String, String);

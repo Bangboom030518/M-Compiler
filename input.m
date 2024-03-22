@@ -5,28 +5,48 @@ type USize @usize
 end
 
 type Slice struct
-    USize ptr,
     USize length,
+    USize ptr,
 end
 
-type ByteArray @array(4, UInt8)
+type[T, @length L] Array @array(L, T)
 end
+
+// type[T, @length L] Array @array(L, T)
+// end
+
+// fn[T, @length L] Slice[T] as_slice(Array[T, L] arr)
+//     Slice
+//         ptr = @addr(arr),
+//         length = L, 
+//     end
+// end
 
 fn puts @extern("puts", fn(USize) UInt8)
 fn malloc @extern("malloc", fn(USize) USize)
 fn free @extern("free", fn(USize) UInt8)
+fn memcpy @extern("memcpy", fn(USize, USize, USize) UInt8)
 
 fn UInt8 add(UInt8 a, UInt8 b)
     @add(a, b)
 end
 
-fn UInt8 puts_s(Slice data)
-    puts(data.ptr)
+// fn [@add T] T add(T a, T b)
+//     add[T](1, 2)
+//     a + b
+// end
+
+fn UInt8 print(Slice data)
+    let ptr = malloc(@add(data.length, 1))
+    memcpy(ptr, data.ptr, data.length)
+    @store(@assert_type(@add(ptr, data.length), USize), @assert_type(0, UInt8))
+    puts(ptr)
+    free(ptr)
     0
 end
 
 fn Slice hi()
-    let str = @assert_type("Hi!\0", ByteArray)
+    let str = @assert_type("Hi!", ByteArray)
     Slice
         ptr = @addr(str),
         length = 4,
@@ -40,6 +60,6 @@ fn UInt8 main()
     // @store(ptr_add(ptr, 2), @assert_type(0x21, UInt8)) // '!'
     // @store(ptr_add(ptr, 3), @assert_type(0x00, UInt8)) // '\0'
     let a = hi()
-    puts_s(a.ptr)
+    print(a)
     0
 end
