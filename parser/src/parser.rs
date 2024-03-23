@@ -157,7 +157,7 @@ impl Parser {
         Ok(token)
     }
 
-    pub(crate) fn empty_span(&self) -> tokenizer::Span {
+    pub(crate) const fn empty_span(&self) -> tokenizer::Span {
         self.position..self.position
     }
 

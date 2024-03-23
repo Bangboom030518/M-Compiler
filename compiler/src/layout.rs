@@ -50,8 +50,7 @@ impl Layout {
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
-            Self::Struct(_) => isa.pointer_type(),
-            Self::Array(_) => isa.pointer_type(),
+            Self::Struct(_) | Self::Array(_) => isa.pointer_type(),
         }
     }
 }

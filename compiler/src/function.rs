@@ -244,7 +244,9 @@ impl Internal {
                 let layout = declarations.get_layout(*type_id);
                 let size = layout.size(&declarations.isa);
 
-                let value = if !layout.is_aggregate() {
+                let value = if layout.is_aggregate() {
+                    value
+                } else {
                     let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                         kind: StackSlotKind::ExplicitSlot,
                         size,
@@ -259,8 +261,6 @@ impl Internal {
                         stack_slot,
                         Offset32::new(0),
                     )
-                } else {
-                    value
                 };
 
                 builder.declare_var(variable, declarations.isa.pointer_type());

@@ -1,3 +1,5 @@
+use parser::expression::IntrinsicOperator;
+
 use super::builder::{self, VariableId};
 use crate::declarations::{self, Declarations};
 use crate::layout::{self, Layout};
@@ -241,10 +243,21 @@ impl<'a> Inferer<'a> {
 
                 environment_state
             }
-            hir::Expression::BinaryIntrinsic(binary) => EnvironmentState::default()
-                .merge(self.expression(&mut binary.left, binary.right.type_id)?)
-                .merge(self.expression(&mut binary.right, binary.left.type_id)?)
-                .merge(self.expression(&mut binary.left, binary.right.type_id)?),
+            hir::Expression::BinaryIntrinsic(binary) => {
+                let mut environment_state = self
+                    .expression(&mut binary.left, binary.right.type_id)?
+                    .merge(self.expression(&mut binary.right, binary.left.type_id)?)
+                    .merge(self.expression(&mut binary.left, binary.right.type_id)?);
+                if !matches!(binary.operator, IntrinsicOperator::Cmp(_))
+                    && expression.type_id.is_none()
+                    && binary.left.type_id.is_some()
+                {
+                    let type_id = binary.left.type_id;
+                    environment_state =
+                        environment_state.merge(self.expression(expression, type_id)?);
+                }
+                environment_state
+            }
             hir::Expression::Constructor(constructor) => constructor.0.iter_mut().try_fold(
                 EnvironmentState::default(),
                 |environment_state, (_, field)| {
