@@ -17,7 +17,7 @@ fn UInt8 add(UInt8 a, UInt8 b)
 end
 
 fn[T, @length L] Slice[T] slice(Array[T, L] array)
-    Slice
+    Slice[T]
         ptr = @addr(str),
         length = L,
     end

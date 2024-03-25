@@ -74,30 +74,40 @@ impl Parse for Ident {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
-    Ident(Ident),
+pub enum GenericArgument {
+    Type(Type),
+    Literal(u128),
 }
 
-impl Type {
-    #[must_use]
-    pub fn ident(self) -> Ident {
-        match self {
-            Self::Ident(ident) => ident,
-        }
+impl Parse for GenericArgument {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        parser
+            .parse()
+            .map_spanned(Self::Type)
+            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Type {
+    pub name: Spanned<Ident>,
+    pub generics: Vec<Spanned<GenericArgument>>,
 }
 
 impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        parser.parse().map_spanned(Self::Ident)
-    }
-}
+        let name = parser.parse()?;
+        let (generics, span) = if parser.take_token_if(TokenType::OpenSquareParen).is_ok() {
+            let generics = parser.parse_csv();
+            (
+                generics,
+                name.start()..parser.take_token_if(TokenType::CloseSquareParen)?.end(),
+            )
+        } else {
+            (Vec::new(), name.span.clone())
+        };
 
-impl From<Type> for Ident {
-    fn from(value: Type) -> Self {
-        match value {
-            Type::Ident(ident) => ident,
-        }
+        Ok(Self { name, generics }.spanned(span))
     }
 }
 

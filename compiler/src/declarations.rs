@@ -8,7 +8,7 @@ use parser::top_level::PrimitiveKind;
 use parser::{scope, Ident};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokenizer::{AsSpanned, Spanned};
+use tokenizer::Spanned;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
@@ -60,11 +60,17 @@ impl Declaration {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum GenericArgument {
+    Type(Id),
+    Length(u128),
+}
+
 pub struct Declarations {
     pub declarations: Vec<Option<Declaration>>,
     pub scopes: HashMap<scope::Id, TopLevelScope>,
     pub isa: Arc<dyn TargetIsa>,
-    pub layouts: HashMap<Id, Layout>,
+    pub layouts: HashMap<(Id, Vec<GenericArgument>), Layout>,
 }
 
 impl Declarations {
@@ -85,7 +91,16 @@ impl Declarations {
         Ok(declarations)
     }
 
-    fn insert_layout(&mut self, id: Id, scope: scope::Id) -> Result<Layout, SemanticError> {
+    fn resolve_generics(&mut self, generics: Vec<parser::GenericArgument>, scope: scope::Id) -> Vec<GenericArguments> {
+        generics.into_iter().map(|generic| match generic {
+            parser::GenericArgument::Literal(length) => GenericArgument::Length(length),
+            parser::GenericArgument::Type(r#type) => {
+                let 
+            }
+        })
+    }
+    
+    fn insert_layout(&mut self, id: Id, generics: Vec<GenericArgument>, scope: scope::Id) -> Result<Layout, SemanticError> {
         // TODO: clones
         if let Some(layout) = self.layouts.get(&id) {
             return Ok(layout.clone());
@@ -133,12 +148,19 @@ impl Declarations {
                 PrimitiveKind::I128 => Layout::Primitive(layout::Primitive::I128),
                 PrimitiveKind::USize => Layout::Primitive(layout::Primitive::USize),
                 PrimitiveKind::Array(length, item) => {
-                    let item = item.value.ident().spanned(item.span);
+                    let item = item.value.name;
                     let item = self
                         .lookup(&item.value.0, scope)
                         .ok_or(SemanticError::DeclarationNotFound(item))?;
-                    let size = self.insert_layout(item, scope)?.size(&self.isa);
-                    Layout::Array(Array { length: length.value, size, item })
+
+                    // todo!("generics...");
+
+                    let size = self.insert_layout(item, scope, item.value.generics)?.size(&self.isa);
+                    Layout::Array(Array {
+                        length: length.value,
+                        size,
+                        item,
+                    })
                 }
             },
         };

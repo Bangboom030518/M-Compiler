@@ -1,6 +1,5 @@
 use crate::parser::{Error, Parser};
 use crate::{scope, Ident, Parse, Statement, Type};
-use std::iter;
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -14,12 +13,10 @@ impl TypeBinding {
         parser: &mut Parser,
         peek: impl Fn(&mut Parser) -> bool,
     ) -> Result<Spanned<Self>, Error> {
-        let r#type = parser.parse()?;
+        let r#type = parser.parse::<Type>()?;
 
-        if peek(parser) {
-            let name = match r#type.value {
-                Type::Ident(ident) => ident.spanned(r#type.span),
-            };
+        if peek(parser) && r#type.value.generics.is_empty() {
+            let name = r#type.value.name;
             let span = name.span.clone();
             Ok(Self { name, r#type: None }.spanned(span))
         } else {
@@ -172,11 +169,11 @@ impl Parse for Function {
         let name = parser.parse().or_else({
             |err| match return_type.clone() {
                 Some(Spanned {
-                    value: Type::Ident(ident),
-                    span,
-                }) => {
+                    value: Type { name, generics },
+                    ..
+                }) if generics.is_empty() => {
                     return_type = None;
-                    Ok(ident.spanned(span))
+                    Ok(name)
                 }
                 _ => Err(err),
             }
@@ -270,7 +267,12 @@ impl Parse for Primitive {
         let kind = parser.parse()?;
         let end = parser.take_token_if(TokenType::End)?.end();
 
-        Ok(Self { kind, generics, name }.spanned(start..end))
+        Ok(Self {
+            kind,
+            generics,
+            name,
+        }
+        .spanned(start..end))
     }
 }
 
@@ -408,7 +410,7 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type::Ident(Ident(field_1_ty)),
+                        value: Type { name: Spanned { value: Ident(field_1_ty), .. } , generics: field_1_generics },
                         ..
                     },
                 name:
@@ -423,7 +425,7 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type::Ident(Ident(field_2_ty)),
+                        value: Type { name: Spanned { value: Ident(field_2_ty), .. }, generics: field_2_generics},
                         ..
                     },
                 name:
@@ -437,7 +439,8 @@ end";
     else {
         panic!()
     };
-
+    assert!(field_1_generics.is_empty());
+    assert!(field_2_generics.is_empty());
     assert_eq!(field_1, "x");
     assert_eq!(field_1_ty, "UInt8");
     assert_eq!(field_2, "y");
