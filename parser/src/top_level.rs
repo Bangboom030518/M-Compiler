@@ -15,7 +15,7 @@ impl TypeBinding {
     ) -> Result<Spanned<Self>, Error> {
         let r#type = parser.parse::<Type>()?;
 
-        if peek(parser) && r#type.value.generics.is_empty() {
+        if peek(parser) && r#type.value.generics.value.is_empty() {
             let name = r#type.value.name;
             let span = name.span.clone();
             Ok(Self { name, r#type: None }.spanned(span))
@@ -171,7 +171,7 @@ impl Parse for Function {
                 Some(Spanned {
                     value: Type { name, generics },
                     ..
-                }) if generics.is_empty() => {
+                }) if generics.value.is_empty() => {
                     return_type = None;
                     Ok(name)
                 }
@@ -223,7 +223,22 @@ pub enum PrimitiveKind {
     F32,
     F64,
     USize,
-    Array(Spanned<u128>, Spanned<Type>),
+    Array(Spanned<Length>, Spanned<Type>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Length {
+    Literal(u128),
+    Ident(Ident),
+}
+
+impl Parse for Length {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        parser
+            .parse()
+            .map_spanned(Self::Ident)
+            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
+    }
 }
 
 impl Parse for PrimitiveKind {
@@ -245,11 +260,11 @@ impl Parse for PrimitiveKind {
                 "usize" => Self::USize,
                 "array" => {
                     parser.take_token_if(TokenType::OpenParen)?;
-                    let size = parser.take_integer()?;
+                    let length = parser.parse()?;
                     parser.take_token_if(TokenType::Comma)?;
-                    let ty = parser.parse()?;
+                    let inner = parser.parse()?;
                     parser.take_token_if(TokenType::CloseParen)?;
-                    Self::Array(size, ty)
+                    Self::Array(length, inner)
                 }
                 _ => todo!("Invalid intrinsic error"),
             };
@@ -410,7 +425,15 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type { name: Spanned { value: Ident(field_1_ty), .. } , generics: field_1_generics },
+                        value:
+                            Type {
+                                name:
+                                    Spanned {
+                                        value: Ident(field_1_ty),
+                                        ..
+                                    },
+                                generics: field_1_generics,
+                            },
                         ..
                     },
                 name:
@@ -425,7 +448,15 @@ end";
             Field {
                 r#type:
                     Spanned {
-                        value: Type { name: Spanned { value: Ident(field_2_ty), .. }, generics: field_2_generics},
+                        value:
+                            Type {
+                                name:
+                                    Spanned {
+                                        value: Ident(field_2_ty),
+                                        ..
+                                    },
+                                generics: field_2_generics,
+                            },
                         ..
                     },
                 name:
@@ -439,8 +470,8 @@ end";
     else {
         panic!()
     };
-    assert!(field_1_generics.is_empty());
-    assert!(field_2_generics.is_empty());
+    assert!(field_1_generics.value.is_empty());
+    assert!(field_2_generics.value.is_empty());
     assert_eq!(field_1, "x");
     assert_eq!(field_1_ty, "UInt8");
     assert_eq!(field_2, "y");

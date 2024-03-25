@@ -91,21 +91,23 @@ impl Parse for GenericArgument {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
     pub name: Spanned<Ident>,
-    pub generics: Vec<Spanned<GenericArgument>>,
+    pub generics: Spanned<Vec<Spanned<GenericArgument>>>,
 }
 
 impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let name = parser.parse()?;
-        let (generics, span) = if parser.take_token_if(TokenType::OpenSquareParen).is_ok() {
-            let generics = parser.parse_csv();
-            (
-                generics,
-                name.start()..parser.take_token_if(TokenType::CloseSquareParen)?.end(),
-            )
-        } else {
-            (Vec::new(), name.span.clone())
-        };
+        let (generics, span) =
+            if let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) {
+                let generics = parser.parse_csv();
+                let close = parser.take_token_if(TokenType::CloseSquareParen)?;
+                (
+                    generics.spanned(open.start()..close.end()),
+                    name.start()..close.end(),
+                )
+            } else {
+                (Vec::new().spanned(parser.empty_span()), name.span.clone())
+            };
 
         Ok(Self { name, generics }.spanned(span))
     }

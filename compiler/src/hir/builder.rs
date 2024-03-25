@@ -27,7 +27,7 @@ impl From<VariableId> for Variable {
 
 #[derive(Clone)]
 pub struct Function {
-    pub return_type: declarations::Id,
+    pub return_type: declarations::TypeReference,
     pub variables: HashMap<VariableId, Option<declarations::Id>>,
     pub body: Vec<hir::Statement>,
 }

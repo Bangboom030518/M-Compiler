@@ -241,7 +241,7 @@ impl Internal {
             .map(|(index, ((type_id, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.get_layout(*type_id);
+                let layout = declarations.insert_layout(*type_id);
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {

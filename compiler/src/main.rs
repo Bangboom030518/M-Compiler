@@ -49,9 +49,9 @@ pub enum SemanticError {
     #[error("Declaration not found: '{}'", 0.0)]
     DeclarationNotFound(Spanned<parser::Ident>),
     #[error("Expected a type, found a function")]
-    FunctionUsedAsType,
-    #[error("Expected a function, found a type")]
-    TypeUsedAsFunction,
+    InvalidType,
+    #[error("Expected a function, found a type or generic")]
+    InvalidFunction,
     #[error("Couldn't infer type of parameter")]
     UntypedParameter,
     #[error("Couldn't infer type of return")]

@@ -4,9 +4,9 @@ use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
-    pub type_id: declarations::Id,
+    pub type_id: declarations::TypeReference,
     pub offset: Offset32,
 }
 
@@ -20,7 +20,7 @@ pub struct Struct {
 pub struct Array {
     pub length: u128,
     pub size: u32,
-    pub item: declarations::Id,
+    pub item: declarations::TypeReference,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
