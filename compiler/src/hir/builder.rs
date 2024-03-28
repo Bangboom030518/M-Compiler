@@ -1,5 +1,5 @@
 use super::{Store, TypedExpression};
-use crate::declarations::{Declarations, TypeReference};
+use crate::declarations::{Declarations, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
@@ -34,7 +34,7 @@ pub struct Function {
 
 pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
-    top_level_scope: parser::scope::Id,
+    top_level_scope: ScopeId,
     return_type: TypeReference,
     variables: HashMap<VariableId, Option<TypeReference>>,
     local_scopes: Vec<HashMap<String, Variable>>,

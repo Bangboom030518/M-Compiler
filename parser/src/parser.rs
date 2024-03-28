@@ -1,4 +1,3 @@
-use crate::scope::{self, Scope};
 use crate::Parse;
 use std::sync::Arc;
 use tokenizer::{Spanned, Token, TokenType, TokenTypeBitFields, Tokenizer};
@@ -14,9 +13,7 @@ pub struct Parser {
     tokenizer: Tokenizer,
     tokens: Vec<Spanned<Arc<Token>>>,
     position: usize,
-    scope_cache: scope::Cache,
     expected_tokens: TokenTypeBitFields,
-    pub(crate) scope: scope::Id,
 }
 
 impl From<Tokenizer> for Parser {
@@ -26,17 +23,6 @@ impl From<Tokenizer> for Parser {
             tokens: Vec::new(),
             expected_tokens: TokenTypeBitFields::default(),
             position: 0,
-            scope_cache: scope::Cache::new(),
-            scope: scope::Cache::ROOT_SCOPE,
-        }
-    }
-}
-
-impl From<Parser> for scope::File {
-    fn from(value: Parser) -> Self {
-        Self {
-            root: value.scope,
-            cache: value.scope_cache,
         }
     }
 }
@@ -76,22 +62,6 @@ impl Parser {
                 .map(|token| token.as_ref().clone()),
         }
     }
-
-    pub(crate) fn create_scope(&mut self) -> scope::Id {
-        let id = self.scope_cache.create_scope(self.scope);
-        self.scope = id;
-        id
-    }
-
-    pub(crate) fn get_scope(&mut self, id: scope::Id) -> &mut Scope {
-        &mut self.scope_cache[id]
-    }
-
-    // TODO: scope guard
-    pub(crate) fn exit_scope(&mut self) {
-        self.scope = self.scope_cache[self.scope].parent.unwrap();
-    }
-
 
     fn peek_token(&mut self) -> Spanned<Arc<Token>> {
         self.tokens

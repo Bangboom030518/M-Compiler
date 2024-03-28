@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, TypeReference};
+use crate::declarations::{Declarations, ScopeId, TypeReference};
 use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -6,7 +6,6 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
-use parser::scope;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +22,7 @@ impl MSignature {
         return_type: Spanned<parser::Type>,
         declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
-        scope: scope::Id,
+        scope: ScopeId,
         module: &impl Module,
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
@@ -82,7 +81,7 @@ impl External {
     pub fn new(
         function: parser::top_level::ExternFunction,
         declarations: &mut Declarations,
-        scope_id: parser::scope::Id,
+        scope_id: ScopeId,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let signature = MSignature::new(
@@ -113,7 +112,7 @@ impl External {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Internal {
     pub body: Vec<Spanned<parser::Statement>>,
-    pub scope_id: scope::Id,
+    pub scope_id: ScopeId,
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: FuncId,
@@ -127,7 +126,7 @@ impl Internal {
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
-        scope_id: parser::scope::Id,
+        scope_id: ScopeId,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let parameters: (Vec<_>, Vec<_>) = function

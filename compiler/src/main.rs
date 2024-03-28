@@ -83,6 +83,10 @@ pub enum SemanticError {
     InvalidIntrinsic,
     #[error("Used a string where a byte array wasn't expected (javascript developer 🤨)")]
     InvalidStringConst { expected: Layout },
+    #[error("Invalid length generic")]
+    InvalidLengthGeneric,
+    #[error("Invalid type generic")]
+    InvalidTypeGeneric,
 }
 
 fn main() {
@@ -90,7 +94,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let file = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
+    let declarations = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
 
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -108,7 +112,8 @@ fn main() {
     );
 
     let mut module = cranelift_jit::JITModule::new(builder);
-    let mut declarations = declarations::Declarations::new(&file, &isa, &mut module).unwrap();
+    let mut declarations =
+        declarations::Declarations::new(declarations, &isa, &mut module).unwrap();
 
     let mut context = CraneliftContext::new(module);
 

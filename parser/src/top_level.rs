@@ -1,5 +1,5 @@
 use crate::parser::{Error, Parser};
-use crate::{scope, Ident, Parse, Statement, Type};
+use crate::{Ident, Parse, Statement, Type};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -59,7 +59,7 @@ impl Parse for Parameter {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-enum Generic {
+pub enum Generic {
     Type { name: Spanned<Ident> },
     Length { name: Spanned<Ident> },
 }
@@ -84,7 +84,7 @@ impl Parse for Generic {
 
 #[derive(PartialEq, Eq, Debug, Default, Clone)]
 pub struct Generics {
-    generics: Vec<Spanned<Generic>>,
+    pub generics: Vec<Spanned<Generic>>,
 }
 
 impl Parse for Generics {
@@ -106,17 +106,14 @@ pub struct Struct {
     pub name: Spanned<Ident>,
     pub generics: Spanned<Generics>,
     pub fields: Vec<Spanned<Field>>,
-    pub scope: scope::Id,
 }
 
 impl Parse for Struct {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let scope = parser.create_scope();
         let span_start = parser.take_token_if(TokenType::Type)?.start();
         let generics = parser.parse()?;
         let name = parser.parse()?;
         parser.take_token_if(TokenType::Struct)?;
-
 
         let mut fields = Vec::new();
         loop {
@@ -128,13 +125,11 @@ impl Parse for Struct {
         }
 
         let span_end = parser.take_token_if(TokenType::End)?.end();
-        parser.exit_scope();
 
         Ok(Self {
             name,
             generics,
             fields,
-            scope,
         }
         .spanned(span_start..span_end))
     }
@@ -155,7 +150,6 @@ impl Parse for Union {
 pub struct Function {
     pub name: Spanned<Ident>,
     pub generics: Spanned<Generics>,
-    pub scope: scope::Id,
     pub parameters: Vec<Spanned<Parameter>>,
     pub return_type: Option<Spanned<Type>>,
     pub body: Vec<Spanned<Statement>>,
@@ -163,7 +157,6 @@ pub struct Function {
 
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let scope = parser.create_scope();
         let start = parser.take_token_if(TokenType::Function)?.start();
         let generics = parser.parse()?;
         let mut return_type = parser.parse().ok();
@@ -191,14 +184,12 @@ impl Parse for Function {
         }
 
         let end = parser.take_token_if(TokenType::End)?.end();
-        parser.exit_scope();
-        
+
         Ok(Self {
             name,
             generics,
             parameters,
             return_type,
-            scope,
             body,
         }
         .spanned(start..end))
@@ -209,7 +200,6 @@ impl Parse for Function {
 pub struct Primitive {
     pub kind: Spanned<PrimitiveKind>,
     pub generics: Spanned<Generics>,
-    pub scope: scope::Id,
     pub name: Spanned<Ident>,
 }
 
@@ -280,18 +270,15 @@ impl Parse for PrimitiveKind {
 
 impl Parse for Primitive {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let scope = parser.create_scope();
         let start = parser.take_token_if(TokenType::Type)?.start();
         let generics = parser.parse()?;
         let name = parser.parse()?;
         parser.take_token_if(TokenType::At)?;
         let kind = parser.parse()?;
         let end = parser.take_token_if(TokenType::End)?.end();
-        parser.exit_scope();
         Ok(Self {
             kind,
             generics,
-            scope,
             name,
         }
         .spanned(start..end))
@@ -388,7 +375,6 @@ fn test_primitive() {
             kind: PrimitiveKind::U32.spanned(9..11),
             generics: Generics::default().spanned(4..4),
             name: Ident(String::from("U32")).spanned(5..8),
-            scope: todo!(),
         }
         .spanned(0..source.len())
     );
@@ -417,7 +403,6 @@ end";
                 generics: Spanned {
                     value: generics, ..
                 },
-                scope: _,
             }),
         ..
     } = declaration

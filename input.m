@@ -1,7 +1,7 @@
 type UInt8 @u8 end
 type USize @usize end
 
-type[T, @length L] Array @array(3, T) end
+type[T, @length L] Array @array(L, T) end
 
 type[T] Slice struct
     USize length,
@@ -34,7 +34,6 @@ fn UInt8 print(Slice[UInt8] data)
 end
 
 fn UInt8 main()
-    // let a = slice[UInt8, 3]("Hi!")
     let data = @assert_type("Hi!", Array[UInt8, 3])
     let slice = Slice[UInt8]
         ptr = @addr(data),

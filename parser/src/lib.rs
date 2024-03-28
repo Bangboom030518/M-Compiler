@@ -17,7 +17,6 @@ pub use top_level::{Declaration, ExternFunction, Function, Struct, Union};
 
 pub mod expression;
 pub mod parser;
-pub mod scope;
 pub mod top_level;
 
 trait Parse {
@@ -35,7 +34,7 @@ pub struct ParseError {
 
 /// # Errors
 /// if the input is unparseable
-pub fn parse_file(input: &str) -> Result<scope::File, ParseError> {
+pub fn parse_file(input: &str) -> Result<HashMap<String, Declaration>, ParseError> {
     let mut parser = Parser::from(Tokenizer::from(input));
     let mut declarations = HashMap::new();
     loop {
@@ -43,8 +42,7 @@ pub fn parse_file(input: &str) -> Result<scope::File, ParseError> {
             Ok(declaration) => {
                 declarations.insert(declaration.value.name().to_string(), declaration.value);
                 if parser.peek_token_if(TokenType::Eoi).is_ok() {
-                    parser.get_scope(parser.scope).declarations = declarations;
-                    return Ok(parser.into());
+                    return Ok(declarations);
                 };
             }
             Err(error) => return Err(parser.parse_error(error)),

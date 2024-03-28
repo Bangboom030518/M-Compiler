@@ -1,4 +1,4 @@
-use crate::declarations;
+use crate::declarations::{self};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
