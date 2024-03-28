@@ -1,4 +1,4 @@
-use crate::declarations::{self, Declarations};
+use crate::declarations::{Declarations, TypeReference};
 use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -11,8 +11,8 @@ use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MSignature {
-    pub parameters: Vec<declarations::Id>,
-    pub return_type: declarations::Id,
+    pub parameters: Vec<TypeReference>,
+    pub return_type: TypeReference,
     pub signature: Signature,
     pub name: Spanned<parser::Ident>,
 }
@@ -21,51 +21,35 @@ impl MSignature {
     fn new(
         parameters: &[Spanned<parser::Type>],
         return_type: Spanned<parser::Type>,
-        declarations: &Declarations,
+        declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
-        scope_id: scope::Id,
+        scope: scope::Id,
         module: &impl Module,
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
         let parameters = parameters
             .iter()
-            .map(|Spanned { value, span }| {
-                let parser::Type::Ident(ident) = value;
-                let type_id = declarations
-                    .lookup(ident.as_ref(), scope_id)
-                    .ok_or_else(|| {
-                        SemanticError::DeclarationNotFound(ident.clone().spanned(span.clone()))
-                    })?;
-
-                Ok(type_id)
-            })
+            .map(|r#type| declarations.lookup_type(&r#type.value, scope))
             .collect::<Result<Vec<_>, SemanticError>>()?;
 
         signature.params = parameters
             .iter()
-            .map(|type_id| {
-                let layout = declarations.get_layout(*type_id);
+            .map(|type_ref| -> Result<_, SemanticError> {
+                let layout = declarations.insert_layout(type_ref)?;
                 match layout {
-                    Layout::Primitive(primitive) => {
-                        AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
-                    }
+                    Layout::Primitive(primitive) => Ok(AbiParam::new(
+                        primitive.cranelift_type(declarations.isa.pointer_type()),
+                    )),
                     Layout::Struct(_) | Layout::Array(_) => {
-                        AbiParam::new(declarations.isa.pointer_type())
+                        Ok(AbiParam::new(declarations.isa.pointer_type()))
                     }
                 }
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
-        let return_type = {
-            let ident = return_type.value.ident();
-            declarations
-                .lookup(ident.as_ref(), scope_id)
-                .ok_or_else(|| {
-                    SemanticError::DeclarationNotFound(ident.spanned(return_type.span))
-                })?
-        };
+        let return_type = declarations.lookup_type(&return_type.value, scope)?;
 
-        signature.returns = vec![match declarations.get_layout(return_type) {
+        signature.returns = vec![match declarations.insert_layout(&return_type)? {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
@@ -97,7 +81,7 @@ pub struct External {
 impl External {
     pub fn new(
         function: parser::top_level::ExternFunction,
-        declarations: &Declarations,
+        declarations: &mut Declarations,
         scope_id: parser::scope::Id,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
@@ -142,7 +126,7 @@ impl Internal {
     // TODO: memcpy for structs
     pub fn new(
         function: parser::top_level::Function,
-        declarations: &Declarations,
+        declarations: &mut Declarations,
         scope_id: parser::scope::Id,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
@@ -201,7 +185,7 @@ impl Internal {
 
     pub fn compile(
         &self,
-        declarations: &Declarations,
+        declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
     ) -> Result<FuncId, SemanticError> {
         let mut builder = cranelift::prelude::FunctionBuilder::new(
@@ -220,7 +204,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .get_layout(self.signature.return_type)
+            .insert_layout(&self.signature.return_type)?
             .is_aggregate()
         {
             let param = block_params
@@ -238,10 +222,10 @@ impl Internal {
             .zip(&self.parameter_names)
             .zip(block_params)
             .enumerate()
-            .map(|(index, ((type_id, name), value))| {
+            .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout(*type_id);
+                let layout = declarations.insert_layout(type_ref)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -266,7 +250,7 @@ impl Internal {
                 builder.declare_var(variable, declarations.isa.pointer_type());
                 builder.def_var(variable, value);
 
-                Ok((name.clone(), variable, *type_id))
+                Ok((name.clone(), variable, type_ref.clone()))
             })
             .collect::<Result<_, SemanticError>>()?;
 

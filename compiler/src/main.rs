@@ -108,12 +108,12 @@ fn main() {
     );
 
     let mut module = cranelift_jit::JITModule::new(builder);
-    let declarations = declarations::Declarations::new(&file, &isa, &mut module).unwrap();
+    let mut declarations = declarations::Declarations::new(&file, &isa, &mut module).unwrap();
 
     let mut context = CraneliftContext::new(module);
 
     let mut functions = HashMap::new();
-    for declaration in declarations.declarations.iter().flatten() {
+    for declaration in declarations.declarations.clone().into_iter().flatten() {
         let declarations::Declaration::Function(declarations::Function::Internal(function)) =
             declaration
         else {
@@ -121,7 +121,9 @@ fn main() {
         };
 
         let name = function.signature.name.value.to_string();
-        let id = function.compile(&declarations, &mut context).expect("TODO");
+        let id = function
+            .compile(&mut declarations, &mut context)
+            .expect("TODO");
 
         functions.insert(name, id);
     }

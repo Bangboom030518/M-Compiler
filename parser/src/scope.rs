@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
 use crate::top_level;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct Scope {
@@ -37,18 +36,6 @@ impl Cache {
         Self {
             scopes: vec![Scope::default()],
         }
-    }
-
-    #[must_use]
-    pub fn lookup(
-        &self,
-        scope: Id,
-        ident: &str,
-    ) -> Option<&top_level::Declaration> {
-        let scope = &self[scope];
-        scope.declarations
-            .get(ident)
-            .or_else(|| self.lookup(scope.parent?, ident))
     }
 
     pub fn create_scope(&mut self, parent: Id) -> Id {

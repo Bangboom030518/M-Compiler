@@ -1,4 +1,5 @@
-use crate::{declarations, SemanticError};
+use crate::declarations::{self, TypeReference};
+use crate::SemanticError;
 pub use builder::Builder;
 use builder::VariableId;
 use cranelift::codegen::ir::immediates::Offset32;
@@ -85,29 +86,32 @@ pub enum Expression {
     GlobalAccess(declarations::Id),
 }
 
+impl Expression {
+    pub fn with_type(self, type_ref: TypeReference) -> TypedExpression {
+        TypedExpression {
+            expression: self,
+            type_ref: Some(type_ref),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedExpression {
     pub expression: Expression,
-    pub type_id: Option<declarations::Id>,
+    pub type_ref: Option<TypeReference>,
 }
 
 impl TypedExpression {
-    pub const fn new(expression: Expression, type_id: Option<declarations::Id>) -> Self {
+    pub fn with_type(self, type_ref: TypeReference) -> Self {
         Self {
-            expression,
-            type_id,
-        }
-    }
-
-    pub fn with_type(self, type_id: declarations::Id) -> Self {
-        Self {
-            type_id: Some(type_id),
+            type_ref: Some(type_ref),
             ..self
         }
     }
 
-    pub fn expect_type(&self) -> Result<declarations::Id, SemanticError> {
-        self.type_id
+    pub fn expect_type(&self) -> Result<&TypeReference, SemanticError> {
+        self.type_ref
+            .as_ref()
             .ok_or_else(|| SemanticError::UnknownType(self.expression.clone()))
     }
 }
@@ -116,7 +120,7 @@ impl From<Expression> for TypedExpression {
     fn from(expression: Expression) -> Self {
         Self {
             expression,
-            type_id: None,
+            type_ref: None,
         }
     }
 }

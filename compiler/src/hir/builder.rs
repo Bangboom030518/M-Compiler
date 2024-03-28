@@ -1,5 +1,5 @@
 use super::{Store, TypedExpression};
-use crate::declarations::Declarations;
+use crate::declarations::{Declarations, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
@@ -28,16 +28,15 @@ impl From<VariableId> for Variable {
 #[derive(Clone)]
 pub struct Function {
     pub return_type: declarations::TypeReference,
-    pub variables: HashMap<VariableId, Option<declarations::Id>>,
+    pub variables: HashMap<VariableId, Option<TypeReference>>,
     pub body: Vec<hir::Statement>,
 }
 
-#[derive(Clone)]
 pub struct Builder<'a> {
-    declarations: &'a declarations::Declarations,
+    declarations: &'a mut declarations::Declarations,
     top_level_scope: parser::scope::Id,
-    return_type: declarations::Id,
-    variables: HashMap<VariableId, Option<declarations::Id>>,
+    return_type: TypeReference,
+    variables: HashMap<VariableId, Option<TypeReference>>,
     local_scopes: Vec<HashMap<String, Variable>>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
@@ -45,9 +44,9 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     pub fn new(
-        declarations: &'a Declarations,
+        declarations: &'a mut Declarations,
         function: &'a function::Internal,
-        parameters: Vec<(Spanned<parser::Ident>, Variable, declarations::Id)>,
+        parameters: Vec<(Spanned<parser::Ident>, Variable, TypeReference)>,
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
@@ -62,7 +61,7 @@ impl<'a> Builder<'a> {
             top_level_scope: function.scope_id,
             variables,
             new_variable_index,
-            return_type: function.signature.return_type,
+            return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
         }
@@ -168,43 +167,43 @@ impl<'a> Builder<'a> {
         &mut self,
         constructor: &parser::expression::Constructor,
     ) -> Result<TypedExpression, SemanticError> {
-        let type_id = self.lookup_type(constructor.r#type.as_ref())?;
+        let type_ref = self
+            .declarations
+            .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self.declarations.get_layout(type_id) else {
+        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref)? else {
             return Err(SemanticError::InvalidConstructor);
         };
 
         // TODO: Make sure all fields are present
-        Ok(TypedExpression::new(
-            Expression::Constructor(hir::Constructor(
-                constructor
-                    .fields
-                    .iter()
-                    .map(|(ident, expression)| {
-                        layout
-                            .fields
-                            .get(ident.value.as_ref())
-                            .ok_or(SemanticError::NonExistentField)
-                            .and_then(|field| {
-                                self.expression(expression.as_ref()).map(|expression| {
-                                    (field.offset, expression.with_type(field.type_id))
-                                })
+        Ok(Expression::Constructor(hir::Constructor(
+            constructor
+                .fields
+                .iter()
+                .map(|(ident, expression)| {
+                    layout
+                        .fields
+                        .get(ident.value.as_ref())
+                        .ok_or(SemanticError::NonExistentField)
+                        .and_then(|field| {
+                            self.expression(expression.as_ref()).map(|expression| {
+                                (field.offset, expression.with_type(field.type_id.clone()))
                             })
-                    })
-                    .collect::<Result<_, SemanticError>>()?,
-            )),
-            Some(type_id),
+                        })
+                })
+                .collect::<Result<_, SemanticError>>()?,
         ))
+        .with_type(type_ref))
     }
 
-    fn lookup_type(&self, path: Spanned<&parser::Type>) -> Result<declarations::Id, SemanticError> {
-        let ident = match path.value {
-            parser::Type::Ident(ident) => ident,
-        };
-        self.declarations
-            .lookup(ident.as_ref(), self.top_level_scope)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(path.span)))
-    }
+    // fn lookup_type(&self, path: Spanned<&parser::Type>) -> Result<declarations::Id, SemanticError> {
+    //     let ident = match path.value {
+    //         parser::Type::Ident(ident) => ident,
+    //     };
+    //     self.declarations
+    //         .lookup(ident.as_ref(), self.top_level_scope)
+    //         .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(path.span)))
+    // }
 
     fn expression(
         &mut self,
@@ -229,7 +228,9 @@ impl<'a> Builder<'a> {
                     .into())
                 }
                 IntrinsicCall::AssertType(expression, r#type) => {
-                    let type_id = self.lookup_type(r#type.as_ref())?;
+                    let type_id = self
+                        .declarations
+                        .lookup_type(&r#type.value, self.top_level_scope)?;
 
                     self.expression(expression.as_ref().as_ref())
                         .map(|expression| expression.with_type(type_id))
@@ -253,7 +254,7 @@ impl<'a> Builder<'a> {
             },
             parser::Expression::Return(expression) => Ok(hir::Expression::Return(Box::new(
                 self.expression(expression.expression.as_ref())?
-                    .with_type(self.return_type),
+                    .with_type(self.return_type.clone()),
             ))
             .into()),
             parser::Expression::Ident(ident) => {

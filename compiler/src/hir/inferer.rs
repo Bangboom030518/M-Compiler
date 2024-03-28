@@ -1,9 +1,9 @@
-use parser::expression::IntrinsicOperator;
-
 use super::builder::{self, VariableId};
 use crate::declarations::{self, Declarations};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
+use declarations::TypeReference;
+use parser::expression::IntrinsicOperator;
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -30,19 +30,19 @@ impl EnvironmentState {
 }
 
 pub struct Inferer<'a> {
-    variables: &'a mut HashMap<VariableId, Option<declarations::Id>>,
-    return_type: declarations::Id,
-    declarations: &'a Declarations,
+    variables: &'a mut HashMap<VariableId, Option<TypeReference>>,
+    return_type: TypeReference,
+    declarations: &'a mut Declarations,
 }
 
 impl<'a> Inferer<'a> {
     pub fn function(
         function: &mut builder::Function,
-        declarations: &declarations::Declarations,
+        declarations: &mut declarations::Declarations,
     ) -> Result<(), SemanticError> {
         let mut inferer = Inferer {
             variables: &mut function.variables,
-            return_type: function.return_type,
+            return_type: function.return_type.clone(),
             declarations,
         };
 
@@ -63,9 +63,9 @@ impl<'a> Inferer<'a> {
         match statement {
             hir::Statement::Assignment(hir::Assignment { left, right }) => {
                 let environment_state = EnvironmentState::default()
-                    .merge(self.expression(right, left.type_id)?)
-                    .merge(self.expression(left, right.type_id)?)
-                    .merge(self.expression(right, left.type_id)?);
+                    .merge(self.expression(right, left.type_ref.clone())?)
+                    .merge(self.expression(left, right.type_ref.clone())?)
+                    .merge(self.expression(right, left.type_ref.clone())?);
 
                 Ok(environment_state)
             }
@@ -75,10 +75,10 @@ impl<'a> Inferer<'a> {
                     .get(variable)
                     .expect("variable doesn't exist!");
 
-                let environment_state = self.expression(expression, *variable_type)?;
+                let environment_state = self.expression(expression, variable_type.clone())?;
 
                 self.variables
-                    .insert(*variable, expression.type_id)
+                    .insert(*variable, expression.type_ref.clone())
                     .expect("variable doesn't exist!");
 
                 Ok(environment_state)
@@ -90,7 +90,7 @@ impl<'a> Inferer<'a> {
     fn block(
         &mut self,
         block: &mut hir::Block,
-        expected_type: Option<declarations::Id>,
+        expected_type: Option<TypeReference>,
     ) -> Result<EnvironmentState, SemanticError> {
         let mut environment_state = EnvironmentState::default();
 
@@ -108,7 +108,7 @@ impl<'a> Inferer<'a> {
     fn if_expression(
         &mut self,
         expression: &mut hir::If,
-        expected_type: Option<declarations::Id>,
+        expected_type: Option<TypeReference>,
     ) -> Result<EnvironmentState, SemanticError> {
         let hir::If {
             condition,
@@ -117,20 +117,20 @@ impl<'a> Inferer<'a> {
         } = expression;
         let mut environment_state = self.expression(condition, None)?;
 
-        environment_state.merge_mut(self.block(then_branch, expected_type)?);
+        environment_state.merge_mut(self.block(then_branch, expected_type.clone())?);
         let mut expected_type = expected_type.or_else(|| {
             then_branch
                 .expression
                 .as_ref()
-                .and_then(|expression| expression.type_id)
+                .and_then(|expression| expression.type_ref.clone())
         });
 
-        environment_state.merge_mut(self.block(else_branch, expected_type)?);
+        environment_state.merge_mut(self.block(else_branch, expected_type.clone())?);
 
         if let Some(expression) = &else_branch.expression {
-            if let Some(type_id) = expression.type_id {
+            if let Some(type_ref) = expression.type_ref.clone() {
                 if expected_type.is_none() {
-                    expected_type = Some(type_id);
+                    expected_type = Some(type_ref);
                     environment_state.merge_mut(self.block(then_branch, expected_type)?);
                 }
             }
@@ -140,24 +140,24 @@ impl<'a> Inferer<'a> {
 
     fn field_access(
         &mut self,
-        type_id: &mut Option<declarations::Id>,
+        type_ref: &mut Option<TypeReference>,
         field_access: &mut hir::FieldAccess,
     ) -> Result<EnvironmentState, SemanticError> {
         let environment_state = self.expression(&mut field_access.expression, None)?;
-        let struct_type_id = field_access.expression.type_id;
+        let struct_type_id = field_access.expression.type_ref.clone();
         match struct_type_id {
             None => Ok(environment_state),
-            Some(struct_type_id) => match self.declarations.get_layout(struct_type_id) {
+            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id)? {
                 Layout::Struct(layout) => {
-                    let field = layout
-                        .fields
+                    let fields = layout.fields;
+                    let field = fields
                         .get(field_access.field.as_ref())
                         .ok_or(SemanticError::NonExistentField)?;
 
-                    if let Some(type_id) = type_id {
-                        if *type_id != field.type_id {
-                            let expected = self.declarations.get_layout(*type_id).clone();
-                            let found = self.declarations.get_layout(field.type_id).clone();
+                    if let Some(type_ref) = type_ref {
+                        if *type_ref != field.type_id {
+                            let expected = self.declarations.insert_layout(type_ref)?.clone();
+                            let found = self.declarations.insert_layout(&field.type_id)?.clone();
                             return Err(SemanticError::MismatchedTypes {
                                 expected,
                                 found,
@@ -167,11 +167,11 @@ impl<'a> Inferer<'a> {
                             });
                         }
                     } else {
-                        *type_id = Some(field.type_id);
+                        *type_ref = Some(field.type_id.clone());
                     };
                     Ok(environment_state)
                 }
-                layout => Err(SemanticError::InvalidFieldAccess(layout.clone())),
+                layout => Err(SemanticError::InvalidFieldAccess(layout)),
             },
         }
     }
@@ -179,9 +179,13 @@ impl<'a> Inferer<'a> {
     fn expression(
         &mut self,
         expression: &mut hir::TypedExpression,
-        expected_type: Option<declarations::Id>,
+        expected_type: Option<TypeReference>,
     ) -> Result<EnvironmentState, SemanticError> {
-        expression.type_id = expression.type_id.or(expected_type);
+        expression.type_ref = expression
+            .type_ref
+            .as_ref()
+            .or(expected_type.as_ref())
+            .cloned();
 
         let environment_state = match &mut expression.expression {
             hir::Expression::FloatConst(_)
@@ -197,33 +201,33 @@ impl<'a> Inferer<'a> {
                     .expect("variable doesn't exist!");
 
                 if variable_type.is_none() {
-                    if let expected_type @ Some(_) = expected_type {
-                        expression.type_id = expected_type;
+                    if let expected_type @ Some(_) = expected_type.clone() {
+                        expression.type_ref = expected_type.clone();
                         *variable_type = expected_type;
                         EnvironmentState::Mutated
                     } else {
                         EnvironmentState::NonMutated
                     }
                 } else {
-                    expression.type_id = *variable_type;
+                    expression.type_ref = variable_type.clone();
                     EnvironmentState::NonMutated
                 }
             }
             hir::Expression::FieldAccess(field_access) => {
-                self.field_access(&mut expression.type_id, field_access)?
+                self.field_access(&mut expression.type_ref, field_access)?
             }
             hir::Expression::Return(inner) => {
-                inner.type_id = Some(self.return_type);
-                self.expression(inner, Some(self.return_type))?
+                inner.type_ref = Some(self.return_type.clone());
+                self.expression(inner, Some(self.return_type.clone()))?
             }
             hir::Expression::If(if_expression) => {
-                self.if_expression(if_expression, expected_type)?
+                self.if_expression(if_expression, expected_type.clone())?
             }
             hir::Expression::Call(call) => {
                 let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
                     todo!("closures!")
                 };
-                let signature = self.declarations.get_function(declaration)?.signature();
+                let signature = self.declarations.get_function(declaration)?.signature().clone();
 
                 if signature.parameters.len() != call.arguments.len() {
                     return Err(SemanticError::InvalidNumberOfArguments);
@@ -232,30 +236,31 @@ impl<'a> Inferer<'a> {
 
                 for (type_id, argument) in signature
                     .parameters
-                    .iter()
-                    .copied()
+                    .into_iter()
                     .zip(call.arguments.iter_mut())
                 {
                     environment_state.merge_mut(self.expression(argument, Some(type_id))?);
                 }
 
-                expression.type_id = Some(signature.return_type);
+                expression.type_ref = Some(signature.return_type);
 
                 environment_state
             }
             hir::Expression::BinaryIntrinsic(binary) => {
                 let mut environment_state = self
-                    .expression(&mut binary.left, binary.right.type_id)?
-                    .merge(self.expression(&mut binary.right, binary.left.type_id)?)
-                    .merge(self.expression(&mut binary.left, binary.right.type_id)?);
+                    .expression(&mut binary.left, binary.right.type_ref.clone())?
+                    .merge(self.expression(&mut binary.right, binary.left.type_ref.clone())?)
+                    .merge(self.expression(&mut binary.left, binary.right.type_ref.clone())?);
+
                 if !matches!(binary.operator, IntrinsicOperator::Cmp(_))
-                    && expression.type_id.is_none()
-                    && binary.left.type_id.is_some()
+                    && expression.type_ref.is_none()
+                    && binary.left.type_ref.is_some()
                 {
-                    let type_id = binary.left.type_id;
+                    let type_ref = binary.left.type_ref.clone();
                     environment_state =
-                        environment_state.merge(self.expression(expression, type_id)?);
+                        environment_state.merge(self.expression(expression, type_ref)?);
                 }
+
                 environment_state
             }
             hir::Expression::Constructor(constructor) => constructor.0.iter_mut().try_fold(
@@ -267,9 +272,9 @@ impl<'a> Inferer<'a> {
             )?,
             hir::Expression::Addr(pointer) => {
                 // TODO: move to translate
-                if let Some(type_id) = expression.type_id {
-                    let layout = self.declarations.get_layout(type_id);
-                    if layout == &Layout::Primitive(layout::Primitive::USize) {
+                if let Some(type_ref) = expression.type_ref.clone() {
+                    let layout = self.declarations.insert_layout(&type_ref)?;
+                    if layout == Layout::Primitive(layout::Primitive::USize) {
                         self.expression(pointer, None)?
                     } else {
                         return Err(SemanticError::InvalidAddr {
@@ -288,11 +293,11 @@ impl<'a> Inferer<'a> {
                 .merge(self.expression(&mut store.pointer, None)?),
         };
 
-        if let (Some(expected), Some(found)) = (expected_type, expression.type_id) {
+        if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
             if expected != found {
                 return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.get_layout(expected).clone(),
-                    found: self.declarations.get_layout(found).clone(),
+                    expected: self.declarations.insert_layout(&expected)?.clone(),
+                    found: self.declarations.insert_layout(&found)?.clone(),
                     expression: expression.expression.clone(),
                 });
             }

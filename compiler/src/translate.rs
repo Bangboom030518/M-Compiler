@@ -14,7 +14,7 @@ pub enum BranchStatus<T> {
 
 pub struct Translator<'a, M> {
     builder: cranelift::prelude::FunctionBuilder<'a>,
-    declarations: &'a Declarations,
+    declarations: &'a mut Declarations,
     module: &'a mut M,
 }
 
@@ -28,7 +28,7 @@ where
 
     pub fn new(
         builder: cranelift::prelude::FunctionBuilder<'a>,
-        declarations: &'a Declarations,
+        declarations: &'a mut Declarations,
         module: &'a mut M,
     ) -> Self {
         Self {
@@ -57,7 +57,7 @@ where
 
                 let layout = self
                     .declarations
-                    .get_layout(assignment.right.expect_type()?);
+                    .insert_layout(assignment.right.expect_type()?)?;
 
                 let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -81,7 +81,7 @@ where
                 self.builder.declare_var(
                     variable.into(),
                     self.declarations
-                        .get_layout(expression.expect_type()?)
+                        .insert_layout(expression.expect_type()?)?
                         .cranelift_type(&self.declarations.isa),
                 );
                 let BranchStatus::Continue(expression) = self.expression(expression)? else {
@@ -124,7 +124,10 @@ where
         if let Some(then_return) = &then_branch.expression {
             self.builder.append_block_param(
                 merge_block,
-                match self.declarations.get_layout(then_return.expect_type()?) {
+                match self
+                    .declarations
+                    .insert_layout(then_return.expect_type()?)?
+                {
                     Layout::Primitive(primitive) => {
                         primitive.cranelift_type(self.declarations.isa.pointer_type())
                     }
@@ -217,7 +220,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let struct_layout = self
             .declarations
-            .get_layout(access.expression.expect_type()?);
+            .insert_layout(access.expression.expect_type()?)?;
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
@@ -267,7 +270,7 @@ where
         );
 
         for (offset, expression) in constructor.0 {
-            let layout = self.declarations.get_layout(expression.expect_type()?);
+            let layout = self.declarations.insert_layout(expression.expect_type()?)?;
 
             let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -289,7 +292,7 @@ where
         let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
             todo!("closures!")
         };
-        let function = self.declarations.get_function(declaration)?;
+        let function = self.declarations.get_function(declaration)?.clone();
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
@@ -302,7 +305,7 @@ where
 
         let return_layout = self
             .declarations
-            .get_layout(function.signature().return_type);
+            .insert_layout(&function.signature().return_type)?;
 
         if return_layout.is_aggregate() {
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -354,7 +357,7 @@ where
         &mut self,
         expression: hir::TypedExpression,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = self.declarations.get_layout(expression.expect_type()?);
+        let layout = self.declarations.insert_layout(expression.expect_type()?)?;
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
@@ -375,17 +378,19 @@ where
     }
 
     fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = self.declarations.get_layout(store.pointer.expect_type()?);
-        if layout != &Layout::Primitive(crate::layout::Primitive::USize) {
+        let layout = self
+            .declarations
+            .insert_layout(store.pointer.expect_type()?)?;
+        if layout != Layout::Primitive(crate::layout::Primitive::USize) {
             return Err(SemanticError::InvalidAddr {
-                found: layout.clone(),
+                found: layout,
                 expression: store.pointer.expression,
             });
         }
 
         let layout = self
             .declarations
-            .get_layout(store.expression.expect_type()?);
+            .insert_layout(store.expression.expect_type()?)?;
 
         if layout.is_aggregate() {
             todo!()
@@ -422,7 +427,7 @@ where
 
         if array.length != bytes.len() as u128
             || !matches!(
-                self.declarations.get_layout(array.item),
+                self.declarations.insert_layout(&array.item)?,
                 Layout::Primitive(Primitive::U8)
             )
         {
@@ -453,12 +458,13 @@ where
         &mut self,
         hir::TypedExpression {
             expression,
-            type_id,
+            type_ref,
         }: hir::TypedExpression,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = type_id
-            .map(|type_id| self.declarations.get_layout(type_id))
-            .ok_or_else(|| SemanticError::UnknownType(expression.clone()));
+        let layout = match type_ref.map(|type_id| self.declarations.insert_layout(&type_id)) {
+            Some(result) => Ok(result?),
+            None => Err(SemanticError::UnknownType(expression.clone())),
+        };
 
         let value = match expression {
             hir::Expression::IntegerConst(int) => {
@@ -502,7 +508,7 @@ where
 
                 BranchStatus::Continue(value)
             }
-            hir::Expression::StringConst(string) => self.string_const(&string, layout?)?,
+            hir::Expression::StringConst(string) => self.string_const(&string, &layout?)?,
             hir::Expression::Addr(inner) => {
                 layout?;
                 let BranchStatus::Continue(value) = self.expression(*inner)? else {
@@ -520,13 +526,13 @@ where
                 }
             }
             hir::Expression::Store(store) => self.store(*store)?,
-            hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, layout?)?,
+            hir::Expression::BinaryIntrinsic(binary) => self.binary_intrinsic(*binary, &layout?)?,
             hir::Expression::If(r#if) => self.translate_if(*r#if)?,
             hir::Expression::FieldAccess(access) => {
                 // layout?;
-                self.field_access(*access, layout?)?
+                self.field_access(*access, &layout?)?
             }
-            hir::Expression::Constructor(constructor) => self.constructor(constructor, layout?)?,
+            hir::Expression::Constructor(constructor) => self.constructor(constructor, &layout?)?,
             hir::Expression::Return(expression) => {
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {
                     return Ok(BranchStatus::Finished);
