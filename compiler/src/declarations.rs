@@ -320,7 +320,7 @@ impl Declarations {
                             if r#type.generics.value.is_empty() {
                                 GenericArgument::Length(Length::Reference(id))
                             } else {
-                                todo!("nice error")
+                                return Err(SemanticError::GenericParametersMismatch)
                             }
                         }
                         Declaration::TypeGeneric(_) | Declaration::Type(_) => {
@@ -392,7 +392,7 @@ impl Declarations {
                         Declaration::TypeGeneric(index) => type_reference
                             .generics
                             .get(*index)
-                            .unwrap_or_else(|| todo!("wrong n of generics"))
+                            .ok_or(SemanticError::GenericParametersMismatch)?
                             .expect_type()?
                             .clone(),
                         Declaration::Function(_) => return Err(SemanticError::InvalidFunction),

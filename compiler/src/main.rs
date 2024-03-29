@@ -87,6 +87,8 @@ pub enum SemanticError {
     InvalidLengthGeneric,
     #[error("Invalid type generic")]
     InvalidTypeGeneric,
+    #[error("The wrong number of generics were passed to a function. Figure the rest out :)")]
+    GenericParametersMismatch
 }
 
 fn main() {
