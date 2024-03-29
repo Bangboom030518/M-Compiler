@@ -147,7 +147,7 @@ pub struct Declarations {
 
 impl Declarations {
     pub fn new(
-        parser_declarations: HashMap<String, parser::Declaration>,
+        mut parser_declarations: HashMap<String, parser::Declaration>,
         isa: &Arc<dyn TargetIsa>,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
@@ -158,7 +158,144 @@ impl Declarations {
             layouts: HashMap::new(),
         };
 
-        declarations.append_new(None, parser_declarations, module)?;
+        let scope_declarations = parser_declarations
+            .iter()
+            .map(|(ident, ..)| (ident.clone(), declarations.create_uninitialised()))
+            .collect();
+
+        let scope_id = declarations.create_scope(TopLevelScope {
+            declarations: scope_declarations,
+            parent: None,
+        });
+
+        let mut functions = Vec::new();
+        let mut extern_functions = Vec::new();
+        for (name, id) in declarations.scopes[scope_id.0].declarations.clone() {
+            match parser_declarations
+                .remove_entry(&name)
+                .expect("name to exist")
+                .1
+            {
+                parser::Declaration::Struct(r#struct) => {
+                    let inner_scope =
+                        declarations.resolve_generic_parameters(r#struct.generics, scope_id);
+
+                    let fields = r#struct
+                        .fields
+                        .iter()
+                        .map(|field| field.value.clone())
+                        .map(|parser::top_level::Field { r#type, name }| {
+                            let type_id = declarations
+                                .lookup(&r#type.value.name.value.0, inner_scope)
+                                .ok_or_else(|| {
+                                    SemanticError::DeclarationNotFound(r#type.value.name.clone())
+                                })?;
+                            Ok((
+                                name,
+                                TypeReference {
+                                    id: type_id,
+                                    generics: declarations.resolve_generics(
+                                        &r#type.value.generics.value,
+                                        inner_scope,
+                                    )?,
+                                },
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, SemanticError>>()?;
+
+                    declarations.initialise(
+                        id,
+                        Declaration::Type(Type::Struct {
+                            fields,
+                            scope: inner_scope,
+                        }),
+                    );
+                }
+                parser::Declaration::Union(_) => todo!("unions"),
+                parser::Declaration::Primitive(primitive) => {
+                    use parser::top_level::{Length as L, PrimitiveKind as P};
+
+                    let inner_scope =
+                        declarations.resolve_generic_parameters(primitive.generics, scope_id);
+
+                    let primitive = match primitive.kind.value {
+                        P::U8 => Primitive::U8,
+                        P::U16 => Primitive::U16,
+                        P::U32 => Primitive::U32,
+                        P::U64 => Primitive::U64,
+                        P::U128 => Primitive::U128,
+                        P::I8 => Primitive::I8,
+                        P::I16 => Primitive::I16,
+                        P::I32 => Primitive::I32,
+                        P::I64 => Primitive::I64,
+                        P::I128 => Primitive::I128,
+                        P::F32 => Primitive::F32,
+                        P::F64 => Primitive::F64,
+                        P::USize => Primitive::USize,
+                        P::Array(length, item) => {
+                            let length = match length.value {
+                                L::Ident(ident) => Length::Reference(
+                                    declarations
+                                        .lookup(ident.as_ref(), inner_scope)
+                                        .ok_or_else(|| {
+                                            SemanticError::DeclarationNotFound(
+                                                ident.spanned(length.span),
+                                            )
+                                        })?,
+                                ),
+                                L::Literal(length) => Length::Literal(length),
+                            };
+
+                            let inner = declarations
+                                .lookup(&item.value.name.value.0, inner_scope)
+                                .ok_or_else(|| {
+                                    SemanticError::DeclarationNotFound(item.value.name)
+                                })?;
+
+                            let generics = declarations
+                                .resolve_generics(&item.value.generics.value, inner_scope)?;
+
+                            Primitive::Array(
+                                length,
+                                TypeReference {
+                                    generics,
+                                    id: inner,
+                                },
+                            )
+                        }
+                    };
+
+                    declarations.initialise(
+                        id,
+                        Declaration::Type(Type::Primitive(primitive, inner_scope)),
+                    );
+                }
+                parser::Declaration::Function(function) => functions.push((function, id)),
+                parser::Declaration::ExternFunction(function) => {
+                    extern_functions.push((function, id));
+                }
+            }
+        }
+
+        for (function, id) in functions {
+            let function = Declaration::Function(Function::Internal(function::Internal::new(
+                function,
+                &mut declarations,
+                scope_id,
+                module,
+            )?));
+            declarations.initialise(id, function);
+        }
+
+        for (function, id) in extern_functions {
+            let function = Declaration::Function(Function::External(function::External::new(
+                function,
+                &mut declarations,
+                scope_id,
+                module,
+            )?));
+            declarations.initialise(id, function);
+        }
 
         Ok(declarations)
     }
@@ -309,142 +446,6 @@ impl Declarations {
             declarations: generics,
             parent: Some(parent),
         })
-    }
-
-    fn append_new(
-        &mut self,
-        parent_scope: Option<ScopeId>,
-        mut declarations: HashMap<String, parser::Declaration>,
-        module: &mut impl Module,
-    ) -> Result<(), SemanticError> {
-        let scope_id = {
-            let declarations = declarations
-                .iter()
-                .map(|(ident, ..)| (ident.clone(), self.create_uninitialised()))
-                .collect();
-
-            self.create_scope(TopLevelScope {
-                declarations,
-                parent: parent_scope,
-            })
-        };
-
-        let mut functions = Vec::new();
-        let mut extern_functions = Vec::new();
-        for (name, id) in self.scopes[scope_id.0].declarations.clone() {
-            match declarations.remove_entry(&name).expect("name to exist").1 {
-                parser::Declaration::Struct(r#struct) => {
-                    let inner_scope = self.resolve_generic_parameters(r#struct.generics, scope_id);
-
-                    let fields = r#struct
-                        .fields
-                        .iter()
-                        .map(|field| field.value.clone())
-                        .map(|parser::top_level::Field { r#type, name }| {
-                            let type_id = self
-                                .lookup(&r#type.value.name.value.0, inner_scope)
-                                .ok_or_else(|| {
-                                    SemanticError::DeclarationNotFound(r#type.value.name.clone())
-                                })?;
-                            Ok((
-                                name,
-                                TypeReference {
-                                    id: type_id,
-                                    generics: self.resolve_generics(
-                                        &r#type.value.generics.value,
-                                        inner_scope,
-                                    )?,
-                                },
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, SemanticError>>()?;
-
-                    self.initialise(
-                        id,
-                        Declaration::Type(Type::Struct {
-                            fields,
-                            scope: inner_scope,
-                        }),
-                    );
-                }
-                parser::Declaration::Union(_) => todo!("unions"),
-                parser::Declaration::Primitive(primitive) => {
-                    use parser::top_level::{Length as L, PrimitiveKind as P};
-
-                    let inner_scope = self.resolve_generic_parameters(primitive.generics, scope_id);
-
-                    let primitive = match primitive.kind.value {
-                        P::U8 => Primitive::U8,
-                        P::U16 => Primitive::U16,
-                        P::U32 => Primitive::U32,
-                        P::U64 => Primitive::U64,
-                        P::U128 => Primitive::U128,
-                        P::I8 => Primitive::I8,
-                        P::I16 => Primitive::I16,
-                        P::I32 => Primitive::I32,
-                        P::I64 => Primitive::I64,
-                        P::I128 => Primitive::I128,
-                        P::F32 => Primitive::F32,
-                        P::F64 => Primitive::F64,
-                        P::USize => Primitive::USize,
-                        P::Array(length, item) => {
-                            let length = match length.value {
-                                L::Ident(ident) => Length::Reference(
-                                    self.lookup(ident.as_ref(), inner_scope).ok_or_else(|| {
-                                        SemanticError::DeclarationNotFound(
-                                            ident.spanned(length.span),
-                                        )
-                                    })?,
-                                ),
-                                L::Literal(length) => Length::Literal(length),
-                            };
-
-                            let inner = self
-                                .lookup(&item.value.name.value.0, inner_scope)
-                                .ok_or_else(|| {
-                                    SemanticError::DeclarationNotFound(item.value.name)
-                                })?;
-
-                            let generics =
-                                self.resolve_generics(&item.value.generics.value, inner_scope)?;
-
-                            Primitive::Array(
-                                length,
-                                TypeReference {
-                                    generics,
-                                    id: inner,
-                                },
-                            )
-                        }
-                    };
-
-                    self.initialise(
-                        id,
-                        Declaration::Type(Type::Primitive(primitive, inner_scope)),
-                    );
-                }
-                parser::Declaration::Function(function) => functions.push((function, id)),
-                parser::Declaration::ExternFunction(function) => {
-                    extern_functions.push((function, id));
-                }
-            }
-        }
-
-        for (function, id) in functions {
-            let function = Declaration::Function(Function::Internal(function::Internal::new(
-                function, self, scope_id, module,
-            )?));
-            self.initialise(id, function);
-        }
-
-        for (function, id) in extern_functions {
-            let function = Declaration::Function(Function::External(function::External::new(
-                function, self, scope_id, module,
-            )?));
-            self.initialise(id, function);
-        }
-
-        Ok(())
     }
 
     pub fn create(&mut self, declaration: Declaration) -> Id {
