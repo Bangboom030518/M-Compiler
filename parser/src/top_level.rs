@@ -364,7 +364,7 @@ impl Parse for Declaration {
 fn test_primitive() {
     use tokenizer::Tokenizer;
 
-    let source = r#"type U32 @u32 end"#;
+    let source = "type U32 @u32 end";
     let primitive = Parser::from(Tokenizer::from(source))
         .parse::<Primitive>()
         .expect("didn't parse!");
@@ -385,8 +385,8 @@ fn top_level_decl_parses() {
     use tokenizer::Tokenizer;
 
     let source = r"type Point struct
-    UInt8 x
-    UInt8 y
+    UInt8 x,
+    UInt8 y,
 end";
 
     let declaration = Parser::from(Tokenizer::from(source))
