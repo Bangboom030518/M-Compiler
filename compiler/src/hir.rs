@@ -87,7 +87,7 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn with_type(self, type_ref: TypeReference) -> TypedExpression {
+    pub const fn with_type(self, type_ref: TypeReference) -> TypedExpression {
         TypedExpression {
             expression: self,
             type_ref: Some(type_ref),

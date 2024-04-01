@@ -19,7 +19,7 @@ pub struct MSignature {
 impl MSignature {
     fn new(
         parameters: &[Spanned<parser::Type>],
-        return_type: Spanned<parser::Type>,
+        return_type: &Spanned<parser::Type>,
         declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
         scope: ScopeId,
@@ -86,7 +86,7 @@ impl External {
     ) -> Result<Self, SemanticError> {
         let signature = MSignature::new(
             &function.parameters,
-            function.return_type,
+            &function.return_type,
             declarations,
             function.name,
             scope_id,
@@ -141,7 +141,7 @@ impl Internal {
                 .into_iter()
                 .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
                 .collect::<Result<Vec<_>, _>>()?,
-            function
+            &function
                 .return_type
                 .ok_or(SemanticError::MissingReturnType)?,
             declarations,
