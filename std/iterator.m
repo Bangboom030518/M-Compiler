@@ -10,9 +10,9 @@ type FunctionIterator<F, I> = struct where F: FuncMut<(), Optional<I>>
 interface Iterator
     type Item
 
-    fn next = (self MutRef<Self>) Optional<Item>
+    fn Optional<Item> next(self MutRef<Self>)
 
-    fn map = <F, N>(self Self) Map<Self.Item, F, N> where F: FuncMut<(Self.Item), N>
+    fn<F, N> Map<Self.Item, F, N> map(self Self) where F: FuncMut<(Self.Item), N>
 
 type Map<I, F, N> = struct where I: Iterator, F: FuncMut<(I.Item), N>
     iterator I
@@ -26,16 +26,16 @@ type Map<I, F, N> = struct where I: Iterator, F: FuncMut<(I.Item), N>
 
 type Null = ()
 
-type Optional<T> = union { T, Null }
-    fn map<N, F> = (self Self, mapping F) Optional<N> where F: FuncMut<(T), N>
+type[T] Optional = union { T, Null }
+    fn[N, FuncMut[(T), N] F] Optional[N] map(Self self, F mapping)
         match self
             value as T -> mapping(value)
             _ as Null -> Null()
     
-    fn with_error<E>(self Self, error E) Fallible<T, E>
+    fn[E] Fallible[T, E] with_error(Self self, E error)
         match self
             value as T -> value
-            error as E -> error
+            _ as Null -> error
 
     fn unwrap_or = (self Self, default T) T
         match self

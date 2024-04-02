@@ -13,16 +13,12 @@ fn malloc @extern("malloc", fn(USize) USize)
 fn free @extern("free", fn(USize) UInt8)
 fn memcpy @extern("memcpy", fn(USize, USize, USize) UInt8)
 
-fn UInt8 add(UInt8 a, UInt8 b)
-    @add(a, b)
+fn[T, @length L] Slice[T] slice(Array[T, L] array)
+    Slice[T]
+        ptr = @addr(array),
+        length = L,
+    end
 end
-
-// fn[T, @length L] Slice[T] slice(Array[T, L] array)
-//     Slice[T]
-//         ptr = @addr(str),
-//         length = L,
-//     end
-// end
 
 fn UInt8 print(Slice[UInt8] data)
     let ptr = malloc(@add(data.length, 1))
@@ -34,11 +30,11 @@ fn UInt8 print(Slice[UInt8] data)
 end
 
 fn UInt8 main()
-    let data = @assert_type("Hi!", Array[UInt8, 3])
-    let slice = Slice[UInt8]
-        ptr = @addr(data),
-        length = 3
-    end
-    print(slice)
+    let data = slice[UInt8, 3](@assert_type("Hi!", Array[UInt8, 3]))
+    // let slice = Slice[UInt8]
+    //     ptr = @addr(data),
+    //     length = 3
+    // end
+    print(data)
     0
 end
