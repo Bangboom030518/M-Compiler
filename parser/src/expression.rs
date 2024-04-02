@@ -314,7 +314,6 @@ impl Expression {
             parser.take_token_if(TokenType::CloseParen)?;
             return Ok(expression);
         }
-        // TODO: parser.scope(|parser| {})
         parser
             .parse::<Call>()
             .map_spanned(Self::Call)

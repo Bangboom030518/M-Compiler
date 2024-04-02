@@ -296,8 +296,8 @@ impl<'a> Inferer<'a> {
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
             if expected != found {
                 return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.insert_layout(&expected)?.clone(),
-                    found: self.declarations.insert_layout(&found)?.clone(),
+                    expected: self.declarations.insert_layout(&expected)?,
+                    found: self.declarations.insert_layout(&found)?,
                     expression: expression.expression.clone(),
                 });
             }

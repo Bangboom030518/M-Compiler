@@ -413,9 +413,8 @@ impl Declarations {
             },
         };
 
-        self.layouts.insert(type_reference.clone(), layout);
-        // TODO: `.unwrap()`
-        Ok(self.layouts.get(type_reference).unwrap().clone())
+        self.layouts.insert(type_reference.clone(), layout.clone());
+        Ok(layout)
     }
 
     fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {

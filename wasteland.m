@@ -228,15 +228,3 @@ end
 fn deref = (self) T
     @deref(self.ptr, T)
 end
-
-fn UInt8 str_test(mut Ptr<Point> point)
-    @deref(point).x = 2
-    // TODO: this is wrong - where's the length?????
-    let mut string = "money money money!!!"
-    string = "12"
-    
-    let a = 32
-    @array(USize, a)
-    puts_byte_list(@slice_pointer(string))
-    0
-end

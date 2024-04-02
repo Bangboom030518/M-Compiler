@@ -35,7 +35,6 @@ impl<M> CraneliftContext<M> {
     }
 }
 
-// TODO: annotated results
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SemanticError {
     #[error("Number literal used as non-number")]
