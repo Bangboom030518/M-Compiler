@@ -393,7 +393,7 @@ where
             .insert_layout(store.expression.expect_type()?)?;
 
         if layout.is_aggregate() {
-            todo!()
+            todo!("store aggregates")
         } else {
             let BranchStatus::Continue(pointer) = self.load_primitive(store.pointer)? else {
                 return Ok(BranchStatus::Finished);
@@ -545,7 +545,7 @@ where
             hir::Expression::LocalAccess(variable) => {
                 BranchStatus::Continue(self.builder.use_var(variable.into()))
             }
-            hir::Expression::GlobalAccess(_) => todo!(),
+            hir::Expression::GlobalAccess(_) => todo!("global access"),
             hir::Expression::Call(call) => self.call(*call)?,
         };
 

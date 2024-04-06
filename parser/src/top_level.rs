@@ -142,7 +142,7 @@ pub struct Union {
 
 impl Parse for Union {
     fn parse(_: &mut Parser) -> Result<Spanned<Self>, Error> {
-        todo!()
+        todo!("unions")
     }
 }
 
@@ -157,7 +157,10 @@ pub struct Function {
 
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let start = parser.take_token_if(TokenType::Function).recoverable()?.start();
+        let start = parser
+            .take_token_if(TokenType::Function)
+            .recoverable()?
+            .start();
         let generics = parser.parse()?;
         let mut return_type = parser.parse().ok();
 
@@ -221,6 +224,12 @@ pub enum PrimitiveKind {
     Array(Spanned<Length>, Spanned<Type>),
 }
 
+impl PrimitiveKind {
+    const VALID_IDENTS: &'static [&'static str] = &[
+        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "array",
+    ];
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Length {
     Literal(u128),
@@ -261,7 +270,7 @@ impl Parse for PrimitiveKind {
                     parser.take_token_if(TokenType::CloseParen)?;
                     Self::Array(length, inner)
                 }
-                _ => todo!("Invalid intrinsic error"),
+                _ => return Err(parser.unexpected_ident(Self::VALID_IDENTS)),
             };
             Ok(kind)
         })
@@ -295,11 +304,14 @@ pub struct ExternFunction {
 
 impl Parse for ExternFunction {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let start = parser.take_token_if(TokenType::Function).recoverable()?.start();
+        let start = parser
+            .take_token_if(TokenType::Function)
+            .recoverable()?
+            .start();
         let name = parser.parse()?;
         parser.take_token_if(TokenType::At)?;
         if parser.parse::<Ident>()?.value.0 != "extern" {
-            todo!()
+            return Err(parser.unexpected_ident(&["extern"]));
         };
 
         parser.take_token_if(TokenType::OpenParen)?;

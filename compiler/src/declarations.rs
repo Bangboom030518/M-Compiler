@@ -85,6 +85,29 @@ impl Declaration {
             _ => Err(SemanticError::InvalidFunction),
         }
     }
+
+    pub const fn expect_type(&self) -> Result<&Type, SemanticError> {
+        match self {
+            Self::Type(ty) => Ok(ty),
+            _ => Err(SemanticError::InvalidType),
+        }
+    }
+
+    pub const fn expect_length_generic(&self) -> Result<usize, SemanticError> {
+        match self {
+            Self::LengthGeneric(generic) => Ok(*generic),
+            _ => Err(SemanticError::InvalidLengthGeneric),
+        }
+    }
+
+    pub const fn expect_type_generic(&self) -> Result<usize, SemanticError> {
+        match self {
+            Self::TypeGeneric(generic) => Ok(*generic),
+            _ => Err(SemanticError::InvalidTypeGeneric),
+        }
+    }
+
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -102,12 +125,10 @@ impl Length {
         let length = match self {
             Self::Literal(length) => length,
             Self::Reference(id) => {
-                let Declaration::LengthGeneric(index) = declarations.get(id) else {
-                    todo!()
-                };
+                let index = declarations.get(id).expect_length_generic()?;
                 generics
-                    .get(*index)
-                    .unwrap_or_else(|| todo!("wrong n of generics"))
+                    .get(index)
+                    .ok_or(SemanticError::GenericParametersMismatch)?
                     .expect_length()?
                     .resolve(generics, declarations)?
             }

@@ -156,8 +156,8 @@ impl<'a> Inferer<'a> {
 
                     if let Some(type_ref) = type_ref {
                         if *type_ref != field.type_id {
-                            let expected = self.declarations.insert_layout(type_ref)?.clone();
-                            let found = self.declarations.insert_layout(&field.type_id)?.clone();
+                            let expected = self.declarations.insert_layout(type_ref)?;
+                            let found = self.declarations.insert_layout(&field.type_id)?;
                             return Err(SemanticError::MismatchedTypes {
                                 expected,
                                 found,
@@ -278,7 +278,7 @@ impl<'a> Inferer<'a> {
                         self.expression(pointer, None)?
                     } else {
                         return Err(SemanticError::InvalidAddr {
-                            found: layout.clone(),
+                            found: layout,
                             expression: expression.expression.clone(),
                         });
                     }

@@ -12,15 +12,11 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    pub(crate) fn recoverable(self) -> Self {
+    pub(crate) const fn recoverable(self) -> Self {
         Self {
             recoverable: true,
             ..self
         }
-    }
-
-    pub(crate) fn is_recoverable(&self) -> bool {
-        self.recoverable
     }
 }
 
@@ -207,7 +203,7 @@ impl<T> Branch<T> for Result<Spanned<T>, Error> {
         mapping: impl FnMut(U) -> T,
     ) -> Self {
         self.or_else(|err| {
-            if err.is_recoverable() {
+            if err.recoverable {
                 parser.parse().map_spanned(mapping)
             } else {
                 Err(err)
