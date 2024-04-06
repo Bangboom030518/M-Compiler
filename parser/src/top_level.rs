@@ -1,4 +1,4 @@
-use crate::parser::{Error, Parser};
+use crate::parser::{Branch, Error, Parser};
 use crate::{Ident, Parse, Statement, Type};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
@@ -354,9 +354,9 @@ impl Parse for Declaration {
         parser
             .parse()
             .map_spanned(Self::Function)
-            .or_else(|_| parser.parse().map_spanned(Self::ExternFunction))
-            .or_else(|_| parser.parse().map_spanned(Self::Struct))
-            .or_else(|_| parser.parse().map_spanned(Self::Primitive))
+            .branch(parser, Self::ExternFunction)
+            .branch(parser, Self::Struct)
+            .branch(parser, Self::Primitive)
     }
 }
 

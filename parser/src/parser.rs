@@ -1,7 +1,7 @@
 use crate::Parse;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokenizer::{AsSpanned, Spanned, Token, TokenType, TokenTypeBitFields, Tokenizer};
+use tokenizer::{AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer};
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("Parse error")]
@@ -17,6 +17,10 @@ impl Error {
             recoverable: true,
             ..self
         }
+    }
+
+    pub(crate) fn is_recoverable(&self) -> bool {
+        self.recoverable
     }
 }
 
@@ -115,8 +119,9 @@ impl Parser {
             .get(self.position)
             .map(|spanned| spanned.as_ref().map(Arc::clone))
             .unwrap_or_else(|| {
-                self.tokens.push(self.tokenizer.take().map(Arc::new));
-                self.tokens.last().unwrap().as_ref().map(Arc::clone)
+                let token = self.tokenizer.take().map(Arc::new);
+                self.tokens.push(token.as_ref().map(Arc::clone));
+                token
             })
     }
 
@@ -185,4 +190,28 @@ impl Parser {
     special!(take_float, peek_float, Float, f64);
     special!(take_integer, peek_integer, Integer, u128);
     special!(take_char, peek_char, Char, char);
+}
+
+pub(crate) trait Branch<T> {
+    fn branch<U: Parse>(
+        self,
+        parser: &mut Parser,
+        mapping: impl FnMut(U) -> T,
+    ) -> Result<Spanned<T>, Error>;
+}
+
+impl<T> Branch<T> for Result<Spanned<T>, Error> {
+    fn branch<U: Parse>(
+        self,
+        parser: &mut Parser,
+        mapping: impl FnMut(U) -> T,
+    ) -> Result<Spanned<T>, Error> {
+        self.or_else(|err| {
+            if err.is_recoverable() {
+                parser.parse().map_spanned(mapping)
+            } else {
+                Err(err)
+            }
+        })
+    }
 }
