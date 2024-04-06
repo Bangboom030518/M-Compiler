@@ -68,7 +68,7 @@ impl Parse for Generic {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let value = if let Ok(at) = parser.take_token_if(TokenType::At) {
             if parser.take_ident()?.value != "length" {
-                todo!("nice error")
+                return Err(parser.unexpected_ident(&["length"]));
             }
             let name = parser.parse()?;
             let end = name.end();

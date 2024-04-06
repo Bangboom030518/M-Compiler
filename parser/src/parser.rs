@@ -1,11 +1,29 @@
 use crate::Parse;
+use std::collections::HashSet;
 use std::sync::Arc;
-use tokenizer::{Spanned, Token, TokenType, TokenTypeBitFields, Tokenizer};
+use tokenizer::{AsSpanned, Spanned, Token, TokenType, TokenTypeBitFields, Tokenizer};
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("Parse error")]
 pub(crate) struct Error {
     position: usize,
+    kind: Kind,
+    recoverable: bool,
+}
+
+impl Error {
+    pub(crate) fn recoverable(self) -> Self {
+        Self {
+            recoverable: true,
+            ..self
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Kind {
+    UnexpectedToken,
+    UnexpectedIdentifier(&'static [&'static str]),
 }
 
 #[derive(Debug)]
@@ -52,14 +70,43 @@ macro_rules! special {
 
 impl Parser {
     pub(crate) fn parse_error(&self, error: Error) -> crate::ParseError {
-        crate::ParseError {
-            expected: self.expected_tokens,
-            found: self
-                .tokens
-                .get(error.position)
-                .expect("invalid error position")
-                .as_ref()
-                .map(|token| token.as_ref().clone()),
+        match error.kind {
+            Kind::UnexpectedToken => crate::ParseError::UnexpectedToken {
+                expected: self.expected_tokens,
+                found: self
+                    .tokens
+                    .get(error.position)
+                    .expect("invalid error position")
+                    .as_ref()
+                    .map(|token| token.as_ref().clone()),
+            },
+            Kind::UnexpectedIdentifier(expected) => {
+                let ident = self
+                    .tokens
+                    .get(error.position)
+                    .expect("invalid error position")
+                    .as_ref()
+                    .map(|token| token.as_ref().clone())
+                    .map(|token| match token {
+                        Token::Ident(ident) => ident,
+                        _ => {
+                            unreachable!("unexpected identifier errors only exist on ident tokens")
+                        }
+                    });
+
+                crate::ParseError::UnexpectedIdentifier {
+                    expected,
+                    found: crate::Ident(ident.value).spanned(ident.span),
+                }
+            }
+        }
+    }
+
+    pub(crate) const fn unexpected_ident(&self, expected: &'static [&'static str]) -> Error {
+        Error {
+            position: self.position,
+            kind: Kind::UnexpectedIdentifier(expected),
+            recoverable: false,
         }
     }
 
@@ -116,6 +163,8 @@ impl Parser {
         } else {
             Err(Error {
                 position: self.position,
+                kind: Kind::UnexpectedToken,
+                recoverable: false,
             })
         }
     }

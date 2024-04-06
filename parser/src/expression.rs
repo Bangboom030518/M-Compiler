@@ -136,7 +136,8 @@ pub enum IntrinsicOperator {
 }
 
 impl IntrinsicOperator {
-    fn from_str(string: &str) -> Result<Self, Error> {
+    const OPERATORS: &'static [&'static str] = &["add", "sub", "lt", "gt", "lte", "gte", "eq", "ne"];
+    fn from_str(string: &str, parser: &Parser) -> Result<Self, Error> {
         let operator = match string {
             "add" => Self::Add,
             "sub" => Self::Sub,
@@ -146,7 +147,7 @@ impl IntrinsicOperator {
             "gte" => Self::Cmp(CmpOperator::Gte),
             "eq" => Self::Cmp(CmpOperator::Eq),
             "ne" => Self::Cmp(CmpOperator::Ne),
-            _ => return Err(todo!("nice error")),
+            _ => return Err(parser.unexpected_ident(Self::OPERATORS)),
         };
         Ok(operator)
     }
@@ -166,6 +167,10 @@ pub enum IntrinsicCall {
         Box<Spanned<Expression>>,
         IntrinsicOperator,
     ),
+}
+
+impl IntrinsicCall {
+    const IDENTS: &'static [&'static str] = &["assert_type", "addr", "load", "store", "add", "sub", "lt", "gt", "lte", "gte", "eq", "ne"];
 }
 
 impl Parse for IntrinsicCall {
@@ -193,14 +198,14 @@ impl Parse for IntrinsicCall {
                 let expression = Box::new(parser.parse()?);
                 Self::Store { pointer, expression }
             }
-            token if let Ok(operator) = IntrinsicOperator::from_str(token) => {
+            token if let Ok(operator) = IntrinsicOperator::from_str(token, parser) => {
                 let left = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 let right = Box::new(parser.parse()?);
 
                 Self::Binary(left, right, operator)
             }
-            _ => todo!("nice error"),
+            _ => return Err(parser.unexpected_ident(Self::IDENTS)),
         };
 
         let end = parser.take_token_if(TokenType::CloseParen)?.end();

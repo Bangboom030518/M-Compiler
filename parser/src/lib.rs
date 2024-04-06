@@ -1,8 +1,11 @@
-#![warn(
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::unwrap_used,
-    clippy::unreachable
+#![cfg_attr(
+    not(test),
+    warn(
+        clippy::pedantic,
+        clippy::nursery,
+        clippy::unwrap_used,
+        clippy::unreachable
+    )
 )]
 #![feature(assert_matches, iter_collect_into, if_let_guard)]
 
@@ -27,9 +30,23 @@ trait Parse {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("expected one of '{expected}', found '{:?}'", found.value)]
-pub struct ParseError {
+pub struct UnexpectedToken {
     expected: TokenTypeBitFields,
     found: Spanned<Token>,
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("expected one of '{expected}', found '{:?}'", found.value)]
+    UnexpectedToken {
+        expected: TokenTypeBitFields,
+        found: Spanned<Token>,
+    },
+    #[error("unexpected identifier '{:?}'. Expected one of {expected:?}", found.value)]
+    UnexpectedIdentifier {
+        expected: &'static [&'static str],
+        found: Spanned<Ident>,
+    },
 }
 
 /// # Errors
@@ -95,17 +112,16 @@ pub struct Type {
 impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let name = parser.parse()?;
-        let (generics, span) =
-            if let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) {
-                let generics = parser.parse_csv();
-                let close = parser.take_token_if(TokenType::CloseSquareParen)?;
-                (
-                    generics.spanned(open.start()..close.end()),
-                    name.start()..close.end(),
-                )
-            } else {
-                (Vec::new().spanned(parser.empty_span()), name.span.clone())
-            };
+        let (generics, span) = if let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) {
+            let generics = parser.parse_csv();
+            let close = parser.take_token_if(TokenType::CloseSquareParen)?;
+            (
+                generics.spanned(open.start()..close.end()),
+                name.start()..close.end(),
+            )
+        } else {
+            (Vec::new().spanned(parser.empty_span()), name.span.clone())
+        };
 
         Ok(Self { name, generics }.spanned(span))
     }
