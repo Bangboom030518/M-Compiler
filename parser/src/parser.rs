@@ -205,7 +205,7 @@ impl<T> Branch<T> for Result<Spanned<T>, Error> {
         self,
         parser: &mut Parser,
         mapping: impl FnMut(U) -> T,
-    ) -> Result<Spanned<T>, Error> {
+    ) -> Self {
         self.or_else(|err| {
             if err.is_recoverable() {
                 parser.parse().map_spanned(mapping)
@@ -213,5 +213,15 @@ impl<T> Branch<T> for Result<Spanned<T>, Error> {
                 Err(err)
             }
         })
+    }
+}
+
+pub(crate) trait Recoverable {
+    fn recoverable(self) -> Self;
+}
+
+impl<T> Recoverable for Result<T, Error> {
+    fn recoverable(self) -> Self {
+        self.map_err(Error::recoverable)
     }
 }

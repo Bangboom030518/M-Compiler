@@ -1,4 +1,4 @@
-use crate::parser::{Branch, Error, Parser};
+use crate::parser::{Branch, Error, Parser, Recoverable};
 use crate::{Ident, Parse, Statement, Type};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
@@ -157,7 +157,7 @@ pub struct Function {
 
 impl Parse for Function {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let start = parser.take_token_if(TokenType::Function)?.start();
+        let start = parser.take_token_if(TokenType::Function).recoverable()?.start();
         let generics = parser.parse()?;
         let mut return_type = parser.parse().ok();
 
@@ -273,7 +273,7 @@ impl Parse for Primitive {
         let start = parser.take_token_if(TokenType::Type)?.start();
         let generics = parser.parse()?;
         let name = parser.parse()?;
-        parser.take_token_if(TokenType::At)?;
+        parser.take_token_if(TokenType::At).recoverable()?;
         let kind = parser.parse()?;
         let end = parser.take_token_if(TokenType::End)?.end();
         Ok(Self {
@@ -295,7 +295,7 @@ pub struct ExternFunction {
 
 impl Parse for ExternFunction {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let start = parser.take_token_if(TokenType::Function)?.start();
+        let start = parser.take_token_if(TokenType::Function).recoverable()?.start();
         let name = parser.parse()?;
         parser.take_token_if(TokenType::At)?;
         if parser.parse::<Ident>()?.value.0 != "extern" {
