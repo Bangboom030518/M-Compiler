@@ -1,7 +1,8 @@
 use crate::Parse;
-use std::collections::HashSet;
 use std::sync::Arc;
-use tokenizer::{AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer};
+use tokenizer::{
+    AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
+};
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("Parse error")]
@@ -197,11 +198,7 @@ pub(crate) trait Branch<T> {
 }
 
 impl<T> Branch<T> for Result<Spanned<T>, Error> {
-    fn branch<U: Parse>(
-        self,
-        parser: &mut Parser,
-        mapping: impl FnMut(U) -> T,
-    ) -> Self {
+    fn branch<U: Parse>(self, parser: &mut Parser, mapping: impl FnMut(U) -> T) -> Self {
         self.or_else(|err| {
             if err.recoverable {
                 parser.parse().map_spanned(mapping)

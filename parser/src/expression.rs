@@ -1,5 +1,5 @@
 use crate::parser::Parser;
-use crate::{Error, Ident, Parse, Type};
+use crate::{Error, GenericArgument, Ident, Parse, Type};
 use control_flow::If;
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
@@ -136,7 +136,8 @@ pub enum IntrinsicOperator {
 }
 
 impl IntrinsicOperator {
-    const OPERATORS: &'static [&'static str] = &["add", "sub", "lt", "gt", "lte", "gte", "eq", "ne"];
+    const OPERATORS: &'static [&'static str] =
+        &["add", "sub", "lt", "gt", "lte", "gte", "eq", "ne"];
     fn from_str(string: &str, parser: &Parser) -> Result<Self, Error> {
         let operator = match string {
             "add" => Self::Add,
@@ -170,7 +171,20 @@ pub enum IntrinsicCall {
 }
 
 impl IntrinsicCall {
-    const IDENTS: &'static [&'static str] = &["assert_type", "addr", "load", "store", "add", "sub", "lt", "gt", "lte", "gte", "eq", "ne"];
+    const IDENTS: &'static [&'static str] = &[
+        "assert_type",
+        "addr",
+        "load",
+        "store",
+        "add",
+        "sub",
+        "lt",
+        "gt",
+        "lte",
+        "gte",
+        "eq",
+        "ne",
+    ];
 }
 
 impl Parse for IntrinsicCall {
@@ -291,6 +305,26 @@ impl Parse for FieldAccess {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Generixed {
+    pub expression: Spanned<Expression>,
+    pub generics: Spanned<crate::GenericArguments>,
+}
+
+impl Parse for Generixed {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let expression = Expression::parse_nonpostfix_term(parser)?;
+        let generics = parser.parse()?;
+        let span = expression.start()..generics.end();
+
+        Ok(Self {
+            expression,
+            generics,
+        }
+        .spanned(span))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Ident(Ident),
     IntrinsicCall(IntrinsicCall),
@@ -302,6 +336,7 @@ pub enum Expression {
     Return(Box<Return>),
     Constructor(Constructor),
     FieldAccess(Box<FieldAccess>),
+    Generixed(Box<Generixed>),
 }
 
 // TODO:
@@ -334,6 +369,12 @@ impl Expression {
                     .parse()
                     .map_spanned(Box::new)
                     .map_spanned(Self::Return)
+            })
+            .or_else(|_| {
+                parser
+                    .parse()
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::Generixed)
             })
             .or_else(|_| parser.parse().map_spanned(Self::IntrinsicCall))
             .or_else(|_| Self::parse_nonpostfix_term(parser))

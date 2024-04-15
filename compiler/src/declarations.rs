@@ -255,7 +255,7 @@ impl Declarations {
                     TypeReference {
                         id: type_id,
                         generics: self.resolve_generics(
-                            &r#type.value.generics.value,
+                            &r#type.value.generics.value.0,
                             inner_scope,
                         )?,
                     },
@@ -309,7 +309,7 @@ impl Declarations {
                     })?;
 
                 let generics = self
-                    .resolve_generics(&item.value.generics.value, inner_scope)?;
+                    .resolve_generics(&item.value.generics.value.0, inner_scope)?;
 
                 Primitive::Array(
                     length,
@@ -340,7 +340,7 @@ impl Declarations {
                         .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
                     let value = match self.get(id) {
                         Declaration::LengthGeneric(_) => {
-                            if r#type.generics.value.is_empty() {
+                            if r#type.generics.value.0.is_empty() {
                                 GenericArgument::Length(Length::Reference(id))
                             } else {
                                 return Err(SemanticError::GenericParametersMismatch)
@@ -349,7 +349,7 @@ impl Declarations {
                         Declaration::TypeGeneric(_) | Declaration::Type(_) => {
                             GenericArgument::Type(TypeReference {
                                 id,
-                                generics: self.resolve_generics(&r#type.generics.value, scope)?,
+                                generics: self.resolve_generics(&r#type.generics.value.0, scope)?,
                             })
                         }
                         Declaration::Function(_) => return Err(SemanticError::InvalidType),
@@ -513,7 +513,7 @@ impl Declarations {
             .lookup(r#type.name.value.as_ref(), scope)
             .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
 
-        let generics = self.resolve_generics(&r#type.generics.value, scope)?;
+        let generics = self.resolve_generics(&r#type.generics.value.0, scope)?;
 
         Ok(TypeReference { id, generics })
     }

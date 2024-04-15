@@ -30,11 +30,11 @@ fn UInt8 print(Slice[UInt8] data)
 end
 
 fn UInt8 main()
-    let data = slice[UInt8, 3](@assert_type("Hi!", Array[UInt8, 3]))
-    // let slice = Slice[UInt8]
-    //     ptr = @addr(data),
-    //     length = 3
-    // end
-    print(data)
+    let data = slice[UInt8, 3]("Hi!")
+    let slice = Slice[UInt8]
+        ptr = @addr(data),
+        length = 3
+    end
+    print(slice)
     0
 end

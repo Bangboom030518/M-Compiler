@@ -15,7 +15,7 @@ impl TypeBinding {
     ) -> Result<Spanned<Self>, Error> {
         let r#type = parser.parse::<Type>()?;
 
-        if peek(parser) && r#type.value.generics.value.is_empty() {
+        if peek(parser) && r#type.value.generics.value.0.is_empty() {
             let name = r#type.value.name;
             let span = name.span.clone();
             Ok(Self { name, r#type: None }.spanned(span))
@@ -161,7 +161,9 @@ impl Parse for Function {
             .take_token_if(TokenType::Function)
             .recoverable()?
             .start();
+
         let generics = parser.parse()?;
+
         let mut return_type = parser.parse().ok();
 
         let name = parser.parse().or_else({
@@ -169,7 +171,7 @@ impl Parse for Function {
                 Some(Spanned {
                     value: Type { name, generics },
                     ..
-                }) if generics.value.is_empty() => {
+                }) if generics.value.0.is_empty() => {
                     return_type = None;
                     Ok(name)
                 }
@@ -308,8 +310,8 @@ impl Parse for ExternFunction {
             .take_token_if(TokenType::Function)
             .recoverable()?
             .start();
-        let name = parser.parse()?;
-        parser.take_token_if(TokenType::At)?;
+        let name = parser.parse().recoverable()?;
+        parser.take_token_if(TokenType::At).recoverable()?;
         if parser.parse::<Ident>()?.value.0 != "extern" {
             return Err(parser.unexpected_ident(&["extern"]));
         };
@@ -365,10 +367,10 @@ impl Parse for Declaration {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         parser
             .parse()
-            .map_spanned(Self::Function)
-            .branch(parser, Self::ExternFunction)
-            .branch(parser, Self::Struct)
+            .map_spanned(Self::ExternFunction)
+            .branch(parser, Self::Function)
             .branch(parser, Self::Primitive)
+            .branch(parser, Self::Struct)
     }
 }
 
@@ -475,8 +477,8 @@ end";
     else {
         panic!()
     };
-    assert!(field_1_generics.value.is_empty());
-    assert!(field_2_generics.value.is_empty());
+    assert!(field_1_generics.value.0.is_empty());
+    assert!(field_2_generics.value.0.is_empty());
     assert_eq!(field_1, "x");
     assert_eq!(field_1_ty, "UInt8");
     assert_eq!(field_2, "y");

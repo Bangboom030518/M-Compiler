@@ -294,6 +294,7 @@ impl<'a> Builder<'a> {
             }
             parser::Expression::Binary(_) => todo!("binary"),
             parser::Expression::UnaryPrefix(_) => todo!("unary"),
+            parser::Expression::Generixed(_) => todo!("generics"),
         }
     }
 }

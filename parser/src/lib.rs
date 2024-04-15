@@ -12,6 +12,7 @@
 pub use expression::{Expression, Literal};
 use parser::{Error, Parser};
 use std::collections::HashMap;
+use std::f64::consts::E;
 use std::fmt::Display;
 use tokenizer::{
     AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
@@ -88,6 +89,18 @@ impl Parse for Ident {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GenericArguments(pub Vec<Spanned<GenericArgument>>);
+
+impl Parse for GenericArguments {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let start = parser.take_token_if(TokenType::OpenSquareParen)?.start();
+        let generics = parser.parse_csv();
+        let span = start..parser.take_token_if(TokenType::CloseSquareParen)?.end();
+        Ok(Self(generics).spanned(span))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericArgument {
     Type(Type),
@@ -106,23 +119,19 @@ impl Parse for GenericArgument {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Type {
     pub name: Spanned<Ident>,
-    pub generics: Spanned<Vec<Spanned<GenericArgument>>>,
+    pub generics: Spanned<GenericArguments>,
 }
 
 impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let name = parser.parse()?;
-        let (generics, span) = if let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) {
-            let generics = parser.parse_csv();
-            let close = parser.take_token_if(TokenType::CloseSquareParen)?;
-            (
-                generics.spanned(open.start()..close.end()),
-                name.start()..close.end(),
-            )
+        let generics = if parser.peek_token_if(TokenType::OpenSquareParen).is_ok() {
+            let generics = parser.parse()?;
+            generics
         } else {
-            (Vec::new().spanned(parser.empty_span()), name.span.clone())
+            GenericArguments::default().spanned(parser.empty_span())
         };
-
+        let span = name.start()..generics.end();
         Ok(Self { name, generics }.spanned(span))
     }
 }
