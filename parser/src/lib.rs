@@ -4,7 +4,9 @@
         clippy::pedantic,
         clippy::nursery,
         clippy::unwrap_used,
-        clippy::unreachable
+        clippy::unreachable,
+        clippy::todo,
+        clippy::dbg_macro,
     )
 )]
 #![feature(assert_matches, iter_collect_into, if_let_guard)]
@@ -12,7 +14,6 @@
 pub use expression::{Expression, Literal};
 use parser::{Error, Parser};
 use std::collections::HashMap;
-use std::f64::consts::E;
 use std::fmt::Display;
 use tokenizer::{
     AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,

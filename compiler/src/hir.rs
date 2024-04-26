@@ -1,4 +1,4 @@
-use crate::declarations::{self, TypeReference};
+use crate::declarations::{self, GenericArgument, TypeReference};
 use crate::SemanticError;
 pub use builder::Builder;
 use builder::VariableId;
@@ -69,6 +69,12 @@ pub struct Store {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Generixed {
+    pub expression: TypedExpression,
+    pub generics: Vec<GenericArgument>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     IntegerConst(u128),
     FloatConst(f64),
@@ -84,6 +90,7 @@ pub enum Expression {
     Store(Box<Store>),
     LocalAccess(VariableId),
     GlobalAccess(declarations::Id),
+    Generixed(Box<Generixed>),
 }
 
 impl Expression {

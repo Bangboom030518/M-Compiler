@@ -51,9 +51,10 @@ pub struct Call {
     pub arguments: Vec<Spanned<Expression>>,
 }
 
-impl Parse for Call {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let callable = Expression::parse_nonpostfix_term(parser)?;
+impl Call {
+    fn parse(parser: &mut Parser, mut allow: TermKindBitFields) -> Result<Spanned<Self>, Error> {
+        allow.remove(TermKind::Call);
+        let callable = Expression::parse_term(parser, allow)?;
         let type_arguments = if parser.take_token_if(TokenType::LessThan).is_ok() {
             let type_arguments = parser.parse_csv();
             parser.take_token_if(TokenType::GreaterThan)?;
@@ -294,9 +295,10 @@ pub struct FieldAccess {
     pub ident: Spanned<Ident>,
 }
 
-impl Parse for FieldAccess {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let expression = Expression::parse_nonpostfix_term(parser)?;
+impl FieldAccess {
+    fn parse(parser: &mut Parser, mut allow: TermKindBitFields) -> Result<Spanned<Self>, Error> {
+        allow.remove(TermKind::FieldAccess);
+        let expression = Expression::parse_term(parser, allow)?;
         parser.take_token_if(TokenType::Dot)?;
         let ident = parser.parse()?;
         let span = expression.start()..ident.end();
@@ -310,9 +312,10 @@ pub struct Generixed {
     pub generics: Spanned<crate::GenericArguments>,
 }
 
-impl Parse for Generixed {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let expression = Expression::parse_nonpostfix_term(parser)?;
+impl Generixed {
+    fn parse(parser: &mut Parser, mut allow: TermKindBitFields) -> Result<Spanned<Self>, Error> {
+        allow.remove(TermKind::Generixed);
+        let expression = Expression::parse_term(parser, allow)?;
         let generics = parser.parse()?;
         let span = expression.start()..generics.end();
 
@@ -339,45 +342,67 @@ pub enum Expression {
     Generixed(Box<Generixed>),
 }
 
-// TODO:
-#[cfg(ignore)]
-pub enum Path {
-    Ident(Ident),
-    Generic(Vec<Ident>, ScopeAccessor),
-    NamespaceOrFieldAccess { parent: Ident, child: Ident },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, bitfields::BitFields)]
+pub enum TermKind {
+    Call,
+    Generixed,
+    FieldAccess,
+    // Constructor,
+    // Return,
+    // IntrinsicCall,
 }
 
 impl Expression {
-    fn parse_term(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        if parser.take_token_if(TokenType::OpenParen).is_ok() {
-            let expression = parser.parse()?;
-            parser.take_token_if(TokenType::CloseParen)?;
-            return Ok(expression);
+    fn parse_term(parser: &mut Parser, allow: TermKindBitFields) -> Result<Spanned<Self>, Error> {
+        // if parser.take_token_if(TokenType::OpenParen).is_ok() {
+        //     let expression = parser.parse()?;
+        //     parser.take_token_if(TokenType::CloseParen)?;
+        //     return Ok(expression);
+        // }
+
+        if allow.contains(TermKind::Call) {
+            if let Ok(value) = Call::parse(parser, allow).map_spanned(Self::Call) {
+                return Ok(value);
+            }
         }
-        parser
-            .parse::<Call>()
-            .map_spanned(Self::Call)
-            .or_else(|_| {
-                parser
-                    .parse()
-                    .map_spanned(Box::new)
-                    .map_spanned(Self::FieldAccess)
-            })
-            .or_else(|_| parser.parse().map_spanned(Self::Constructor))
-            .or_else(|_| {
-                parser
-                    .parse()
-                    .map_spanned(Box::new)
-                    .map_spanned(Self::Return)
-            })
-            .or_else(|_| {
-                parser
-                    .parse()
-                    .map_spanned(Box::new)
-                    .map_spanned(Self::Generixed)
-            })
-            .or_else(|_| parser.parse().map_spanned(Self::IntrinsicCall))
-            .or_else(|_| Self::parse_nonpostfix_term(parser))
+
+        // if allow.contains(TermKind::Constructor) {
+        if let Ok(value) = parser.parse().map_spanned(Self::Constructor) {
+            return Ok(value);
+        }
+        // }
+
+        if allow.contains(TermKind::Generixed) {
+            if let Ok(value) = Generixed::parse(parser, allow)
+                .map_spanned(Box::new)
+                .map_spanned(Self::Generixed)
+            {
+                return Ok(value);
+            }
+        }
+
+        if allow.contains(TermKind::FieldAccess) {
+            if let Ok(value) = FieldAccess::parse(parser, allow)
+                .map_spanned(Box::new)
+                .map_spanned(Self::FieldAccess)
+            {
+                return Ok(value);
+            }
+        }
+
+        if let Ok(value) = parser
+            .parse()
+            .map_spanned(Box::new)
+            .map_spanned(Self::Return)
+        {
+            return Ok(value);
+        }
+
+        if let Ok(value) = parser.parse().map_spanned(Self::IntrinsicCall) {
+            return Ok(value);
+        }
+
+        Self::parse_nonpostfix_term(parser)
     }
 
     fn parse_nonpostfix_term(parser: &mut Parser) -> Result<Spanned<Self>, Error> {

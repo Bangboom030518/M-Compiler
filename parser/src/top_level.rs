@@ -64,6 +64,15 @@ pub enum Generic {
     Length { name: Spanned<Ident> },
 }
 
+impl Generic {
+    #[must_use]
+    pub fn ident(self) -> Spanned<Ident> {
+        match self {
+            Self::Type { name } | Self::Length { name } => name,
+        }
+    }
+}
+
 impl Parse for Generic {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let value = if let Ok(at) = parser.take_token_if(TokenType::At) {

@@ -5,6 +5,7 @@
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
+use declarations::ConcreteFunction;
 use layout::Layout;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -87,7 +88,9 @@ pub enum SemanticError {
     #[error("Invalid type generic")]
     InvalidTypeGeneric,
     #[error("The wrong number of generics were passed to a function. Figure the rest out :)")]
-    GenericParametersMismatch
+    GenericParametersMismatch,
+    #[error("Tried to put generics somewhere they don't belong.")]
+    UnexpectedGenerics,
 }
 
 fn main() {
@@ -117,25 +120,50 @@ fn main() {
         declarations::Declarations::new(declarations, &isa, &mut module).unwrap();
 
     let mut context = CraneliftContext::new(module);
+    let main = declarations
+        .lookup("main", declarations::TOP_LEVEL_SCOPE)
+        .expect("no main!");
 
-    let mut functions = HashMap::new();
-    for declaration in declarations.declarations.clone().into_iter().flatten() {
-        let declarations::Declaration::Function(declarations::Function::Internal(function)) =
-            declaration
-        else {
-            continue;
-        };
+    let ConcreteFunction::Internal(main) = declarations
+        .insert_function(
+            declarations::FuncReference {
+                id: main,
+                generics: Vec::new(),
+            },
+            &mut context.module,
+        )
+        .expect("🎉 uh oh!")
+    else {
+        panic!("main should not be extern")
+    };
 
-        let name = function.signature.name.value.to_string();
-        let id = function
-            .compile(&mut declarations, &mut context)
-            .expect("TODO");
+    main.compile(&mut declarations, &mut context)
+        .expect("🎉 uh oh!");
 
-        functions.insert(name, id);
-    }
+    // let main_function = declarations
+    //     .concrete_functions
+    //     .values()
+    //     .find(|function| &function.signature().name.value.0 == "main")
+    //     .expect("no main function!");
+
+    // let mut functions = HashMap::new();
+    // for declaration in declarations.declarations.clone().into_iter().flatten() {
+    //     let declarations::Declaration::Function(declarations::GenericFunction::Internal {..}) =
+    //         declaration
+    //     else {
+    //         continue;
+    //     };
+
+    //     let name = function.signature.name.value.to_string();
+    //     let id = function
+    //         .compile(&mut declarations, &mut context)
+    //         .expect("TODO");
+
+    //     functions.insert(name, id);
+    // }
 
     context.module.finalize_definitions().unwrap();
-    let function = *functions.get("main").unwrap();
+    let function = main.id;
 
     let code = context.module.get_finalized_function(function);
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };

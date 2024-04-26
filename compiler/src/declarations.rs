@@ -14,8 +14,16 @@ pub struct Id(usize);
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct ScopeId(usize);
 
+pub const TOP_LEVEL_SCOPE: ScopeId = ScopeId(0);
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TypeReference {
+    pub id: Id,
+    pub generics: Vec<GenericArgument>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FuncReference {
     pub id: Id,
     pub generics: Vec<GenericArgument>,
 }
@@ -48,38 +56,46 @@ enum Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Function {
+pub enum GenericFunction {
+    Internal {
+        function: parser::Function,
+        scope_id: ScopeId,
+    },
+    External(function::External),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConcreteFunction {
     Internal(function::Internal),
     External(function::External),
 }
 
-// TODO: refactor VV
-impl Function {
+impl ConcreteFunction {
     pub const fn signature(&self) -> &function::MSignature {
         match self {
-            Self::External(func) => &func.signature,
-            Self::Internal(func) => &func.signature,
+            Self::Internal(function) => &function.signature,
+            Self::External(function) => &function.signature,
         }
     }
 
     pub const fn id(&self) -> FuncId {
         match self {
-            Self::External(func) => func.id,
-            Self::Internal(func) => func.id,
+            Self::Internal(function) => function.id,
+            Self::External(function) => function.id,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Declaration {
+enum Declaration {
     Type(Type),
-    Function(Function),
+    Function(GenericFunction),
     LengthGeneric(usize),
     TypeGeneric(usize),
 }
 
 impl Declaration {
-    pub const fn expect_function(&self) -> Result<&Function, SemanticError> {
+    pub const fn expect_function(&self) -> Result<&GenericFunction, SemanticError> {
         match self {
             Self::Function(function) => Ok(function),
             _ => Err(SemanticError::InvalidFunction),
@@ -106,8 +122,6 @@ impl Declaration {
             _ => Err(SemanticError::InvalidTypeGeneric),
         }
     }
-
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -160,10 +174,11 @@ impl GenericArgument {
 }
 
 pub struct Declarations {
-    pub declarations: Vec<Option<Declaration>>,
+    declarations: Vec<Option<Declaration>>,
     pub scopes: Vec<TopLevelScope>,
     pub isa: Arc<dyn TargetIsa>,
     pub layouts: HashMap<TypeReference, Layout>,
+    pub concrete_functions: HashMap<FuncReference, ConcreteFunction>,
 }
 
 impl Declarations {
@@ -177,6 +192,7 @@ impl Declarations {
             scopes: Vec::new(),
             isa: Arc::clone(isa),
             layouts: HashMap::new(),
+            concrete_functions: HashMap::new(),
         };
 
         let scope_declarations = parser_declarations
@@ -214,31 +230,28 @@ impl Declarations {
         }
 
         for (function, id) in functions {
-            let function = Declaration::Function(Function::Internal(function::Internal::new(
-                function,
-                &mut declarations,
-                scope_id,
-                module,
-            )?));
-            declarations.initialise(id, function);
+            declarations.initialise(
+                id,
+                Declaration::Function(GenericFunction::Internal { function, scope_id }),
+            );
         }
 
         for (function, id) in extern_functions {
-            let function = Declaration::Function(Function::External(function::External::new(
-                function,
-                &mut declarations,
-                scope_id,
-                module,
-            )?));
+            let function = Declaration::Function(GenericFunction::External(
+                function::External::new(function, &mut declarations, scope_id, module)?,
+            ));
             declarations.initialise(id, function);
         }
 
         Ok(declarations)
     }
-    
-    pub fn handle_struct(&mut self, ast_struct: parser::Struct, parent: ScopeId) -> Result<Declaration, SemanticError> {
-        let inner_scope =
-            self.resolve_generic_parameters(ast_struct.generics, parent);
+
+    fn handle_struct(
+        &mut self,
+        ast_struct: parser::Struct,
+        parent: ScopeId,
+    ) -> Result<Declaration, SemanticError> {
+        let inner_scope = self.resolve_generic_parameters(ast_struct.generics, parent);
 
         let fields = ast_struct
             .fields
@@ -247,17 +260,13 @@ impl Declarations {
             .map(|parser::top_level::Field { r#type, name }| {
                 let type_id = self
                     .lookup(&r#type.value.name.value.0, inner_scope)
-                    .ok_or_else(|| {
-                        SemanticError::DeclarationNotFound(r#type.value.name.clone())
-                    })?;
+                    .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.value.name.clone()))?;
                 Ok((
                     name,
                     TypeReference {
                         id: type_id,
-                        generics: self.resolve_generics(
-                            &r#type.value.generics.value.0,
-                            inner_scope,
-                        )?,
+                        generics: self
+                            .resolve_generics(&r#type.value.generics.value.0, inner_scope)?,
                     },
                 ))
             })
@@ -267,12 +276,15 @@ impl Declarations {
             scope: inner_scope,
         }))
     }
-    
-    pub fn handle_primitive(&mut self, ast_primitive: parser::top_level::Primitive, parent: ScopeId) -> Result<Declaration, SemanticError> {
+
+    fn handle_primitive(
+        &mut self,
+        ast_primitive: parser::top_level::Primitive,
+        parent: ScopeId,
+    ) -> Result<Declaration, SemanticError> {
         use parser::top_level::{Length as L, PrimitiveKind as P};
 
-        let inner_scope =
-            self.resolve_generic_parameters(ast_primitive.generics, parent);
+        let inner_scope = self.resolve_generic_parameters(ast_primitive.generics, parent);
 
         let primitive = match ast_primitive.kind.value {
             P::U8 => Primitive::U8,
@@ -290,26 +302,19 @@ impl Declarations {
             P::USize => Primitive::USize,
             P::Array(length, item) => {
                 let length = match length.value {
-                    L::Ident(ident) => Length::Reference(
-                        self
-                            .lookup(ident.as_ref(), inner_scope)
-                            .ok_or_else(|| {
-                                SemanticError::DeclarationNotFound(
-                                    ident.spanned(length.span),
-                                )
-                            })?,
-                    ),
+                    L::Ident(ident) => {
+                        Length::Reference(self.lookup(ident.as_ref(), inner_scope).ok_or_else(
+                            || SemanticError::DeclarationNotFound(ident.spanned(length.span)),
+                        )?)
+                    }
                     L::Literal(length) => Length::Literal(length),
                 };
 
                 let inner = self
                     .lookup(&item.value.name.value.0, inner_scope)
-                    .ok_or_else(|| {
-                        SemanticError::DeclarationNotFound(item.value.name)
-                    })?;
+                    .ok_or_else(|| SemanticError::DeclarationNotFound(item.value.name))?;
 
-                let generics = self
-                    .resolve_generics(&item.value.generics.value.0, inner_scope)?;
+                let generics = self.resolve_generics(&item.value.generics.value.0, inner_scope)?;
 
                 Primitive::Array(
                     length,
@@ -343,7 +348,7 @@ impl Declarations {
                             if r#type.generics.value.0.is_empty() {
                                 GenericArgument::Length(Length::Reference(id))
                             } else {
-                                return Err(SemanticError::GenericParametersMismatch)
+                                return Err(SemanticError::GenericParametersMismatch);
                             }
                         }
                         Declaration::TypeGeneric(_) | Declaration::Type(_) => {
@@ -470,7 +475,7 @@ impl Declarations {
         })
     }
 
-    pub fn create(&mut self, declaration: Declaration) -> Id {
+    fn create(&mut self, declaration: Declaration) -> Id {
         let id = self.declarations.len();
         self.declarations.push(Some(declaration));
         Id(id)
@@ -481,7 +486,7 @@ impl Declarations {
         Id(self.declarations.len() - 1)
     }
 
-    pub fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
+    fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
         self.declarations[index] = Some(declaration);
     }
 
@@ -494,8 +499,37 @@ impl Declarations {
             .unwrap_or_else(|| panic!("🎉 declaration `{id}` was uninitialised 🎉"))
     }
 
-    pub fn get_function(&self, id: Id) -> Result<&Function, SemanticError> {
-        self.get(id).expect_function()
+    pub fn insert_function(
+        &mut self,
+        func_reference: FuncReference,
+        module: &mut impl Module,
+    ) -> Result<ConcreteFunction, SemanticError> {
+        // TODO: `.clone()`s
+        if let Some(function) = self.concrete_functions.get(&func_reference) {
+            return Ok(function.clone());
+        }
+
+        let Ok(generic_function) = self.get(func_reference.id).expect_function() else {
+            return Err(SemanticError::InvalidType);
+        };
+
+        let function = match generic_function {
+            GenericFunction::Internal { function, scope_id } => {
+                ConcreteFunction::Internal(function::Internal::new(
+                    // TODO: `function.clone()`
+                    function.clone(),
+                    self,
+                    *scope_id,
+                    module,
+                    func_reference.generics.clone(),
+                )?)
+            }
+            GenericFunction::External(external) => ConcreteFunction::External(external.clone()),
+        };
+
+        self.concrete_functions
+            .insert(func_reference, function.clone());
+        Ok(function)
     }
 
     pub fn lookup(&self, ident: &str, scope: ScopeId) -> Option<Id> {

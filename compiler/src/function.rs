@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, ScopeId, TypeReference};
+use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
 use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -6,6 +6,7 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
+use std::collections::HashMap;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +117,7 @@ pub struct Internal {
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: FuncId,
+    pub generic_arguments: HashMap<String, GenericArgument>,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
@@ -128,6 +130,7 @@ impl Internal {
         declarations: &mut Declarations,
         scope_id: ScopeId,
         module: &mut impl Module,
+        generic_arguments: Vec<GenericArgument>,
     ) -> Result<Self, SemanticError> {
         let parameters: (Vec<_>, Vec<_>) = function
             .parameters
@@ -165,6 +168,11 @@ impl Internal {
             }
         }
 
+        // TODO: check these!
+        let generic_arguments = std::iter::zip(function.generics.value.generics, generic_arguments)
+            .map(|(ident, argument)| (ident.value.ident().value.0, argument))
+            .collect::<HashMap<_, _>>();
+
         let id = module
             .declare_function(
                 signature.name.value.as_ref(),
@@ -179,6 +187,7 @@ impl Internal {
             scope_id,
             body,
             id,
+            generic_arguments,
         })
     }
 
@@ -254,7 +263,7 @@ impl Internal {
             .collect::<Result<_, SemanticError>>()?;
 
         let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
-        inferer::Inferer::function(&mut func, declarations)?;
+        inferer::Inferer::function(&mut func, declarations, &mut cranelift_context.module)?;
 
         let mut translator = Translator::new(builder, declarations, &mut cranelift_context.module);
 

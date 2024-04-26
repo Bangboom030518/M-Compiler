@@ -130,7 +130,7 @@ pub struct Terms {
 
 impl Terms {
     pub(crate) fn parse(parser: &mut Parser) -> Result<Self, Error> {
-        let left_term = super::Expression::parse_term(parser)?;
+        let left_term = super::Expression::parse_term(parser, super::TermKindBitFields::full())?;
         let mut right_terms = Vec::new();
         while let Ok(term) = parser.parse() {
             right_terms.push(term);
@@ -200,7 +200,7 @@ pub struct Term {
 impl Parse for Term {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let operator = parser.parse()?;
-        let expression = super::Expression::parse_term(parser)?;
+        let expression = super::Expression::parse_term(parser, super::TermKindBitFields::full())?;
         let span = operator.start()..expression.end();
         Ok(Self {
             operator,

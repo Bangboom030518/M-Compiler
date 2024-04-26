@@ -1,5 +1,5 @@
 use super::builder::{self, VariableId};
-use crate::declarations::{self, Declarations};
+use crate::declarations::{self, Declarations, FuncReference};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
 use declarations::TypeReference;
@@ -29,21 +29,27 @@ impl EnvironmentState {
     }
 }
 
-pub struct Inferer<'a> {
+pub struct Inferer<'a, M> {
     variables: &'a mut HashMap<VariableId, Option<TypeReference>>,
     return_type: TypeReference,
     declarations: &'a mut Declarations,
+    module: &'a mut M,
 }
 
-impl<'a> Inferer<'a> {
+impl<'a, M> Inferer<'a, M>
+where
+    M: cranelift_module::Module,
+{
     pub fn function(
         function: &mut builder::Function,
         declarations: &mut declarations::Declarations,
+        module: &mut M,
     ) -> Result<(), SemanticError> {
         let mut inferer = Inferer {
             variables: &mut function.variables,
             return_type: function.return_type.clone(),
             declarations,
+            module,
         };
 
         'a: loop {
@@ -224,11 +230,35 @@ impl<'a> Inferer<'a> {
                 self.if_expression(if_expression, expected_type.clone())?
             }
             hir::Expression::Call(call) => {
-                let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
-                    todo!("closures!")
-                };
-                let signature = self.declarations.get_function(declaration)?.signature().clone();
+                dbg!();
+                let (callable, generics) =
+                    if let hir::Expression::Generixed(generixed) = &call.callable.expression {
+                        dbg!();
+                        let hir::Generixed {
+                            expression,
+                            generics,
+                        } = generixed.as_ref();
+                        (expression.expression.clone(), generics.clone())
+                    } else {
+                        (call.callable.expression.clone(), Vec::new())
+                    };
 
+                let hir::Expression::GlobalAccess(declaration) = callable else {
+                    todo!("func refs!")
+                };
+
+                let signature = self
+                    .declarations
+                    .insert_function(
+                        FuncReference {
+                            id: declaration,
+                            generics,
+                        },
+                        self.module,
+                    )?
+                    .signature()
+                    .clone();
+                
                 if signature.parameters.len() != call.arguments.len() {
                     return Err(SemanticError::InvalidNumberOfArguments);
                 }
@@ -286,8 +316,15 @@ impl<'a> Inferer<'a> {
                     EnvironmentState::default()
                 }
             }
-            hir::Expression::GlobalAccess(_) => todo!("global access!"),
+            hir::Expression::GlobalAccess(_) => {
+                // TODO: exprs
+                EnvironmentState::default()
+            }
             hir::Expression::Load(inner) => self.expression(inner, None)?,
+            hir::Expression::Generixed(generixed) => {
+                dbg!();
+                self.expression(&mut generixed.expression, None)?
+            }
             hir::Expression::Store(store) => EnvironmentState::default()
                 .merge(self.expression(&mut store.expression, None)?)
                 .merge(self.expression(&mut store.pointer, None)?),

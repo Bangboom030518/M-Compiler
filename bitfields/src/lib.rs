@@ -43,6 +43,12 @@ pub fn bit_fields(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         }
 
         impl #struct_name {
+            pub fn full() -> Self {
+                Self {
+                    #(#variants: true),*
+                }
+            }
+
             pub fn contains(self, item: #name) -> bool {
                 match item {
                     #(#name::#variants => self.#variants),*
@@ -56,6 +62,11 @@ pub fn bit_fields(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             pub fn insert(&mut self, item: #name) {
                 match item {
                     #(#name::#variants => self.#variants = true),*
+                }
+            }
+            pub fn remove(&mut self, item: #name) {
+                match item {
+                    #(#name::#variants => self.#variants = false),*
                 }
             }
 

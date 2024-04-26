@@ -1,4 +1,4 @@
-use crate::declarations::Declarations;
+use crate::declarations::{Declarations, FuncReference};
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -289,10 +289,24 @@ where
     }
 
     fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, SemanticError> {
-        let hir::Expression::GlobalAccess(declaration) = call.callable.expression else {
+        let (callable, generics) =
+            if let hir::Expression::Generixed(generixed) = call.callable.expression {
+                (generixed.expression.expression, generixed.generics)
+            } else {
+                (call.callable.expression, Vec::new())
+            };
+
+        let hir::Expression::GlobalAccess(declaration) = callable else {
             todo!("closures!")
         };
-        let function = self.declarations.get_function(declaration)?.clone();
+
+        let function = self.declarations.insert_function(
+            FuncReference {
+                id: declaration,
+                generics,
+            },
+            &mut self.module,
+        )?;
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
@@ -545,8 +559,9 @@ where
             hir::Expression::LocalAccess(variable) => {
                 BranchStatus::Continue(self.builder.use_var(variable.into()))
             }
-            hir::Expression::GlobalAccess(_) => todo!("global access"),
             hir::Expression::Call(call) => self.call(*call)?,
+            hir::Expression::Generixed(_) => todo!("generixed"),
+            hir::Expression::GlobalAccess(_) => todo!("global access"),
         };
 
         Ok(value)

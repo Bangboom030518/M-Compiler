@@ -1,5 +1,5 @@
 use super::{Store, TypedExpression};
-use crate::declarations::{Declarations, ScopeId, TypeReference};
+use crate::declarations::{Declarations, GenericArgument, Length, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
@@ -40,6 +40,7 @@ pub struct Builder<'a> {
     local_scopes: Vec<HashMap<String, Variable>>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
+    generic_arguments: HashMap<String, GenericArgument>,
 }
 
 impl<'a> Builder<'a> {
@@ -64,6 +65,7 @@ impl<'a> Builder<'a> {
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
+            generic_arguments: function.generic_arguments.clone(),
         }
     }
 
@@ -196,14 +198,37 @@ impl<'a> Builder<'a> {
         .with_type(type_ref))
     }
 
-    // fn lookup_type(&self, path: Spanned<&parser::Type>) -> Result<declarations::Id, SemanticError> {
-    //     let ident = match path.value {
-    //         parser::Type::Ident(ident) => ident,
-    //     };
-    //     self.declarations
-    //         .lookup(ident.as_ref(), self.top_level_scope)
-    //         .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone().spanned(path.span)))
-    // }
+    fn resolve_generic_argument(
+        &mut self,
+        argument: parser::GenericArgument,
+    ) -> Result<GenericArgument, SemanticError> {
+        let ty = match argument {
+            parser::GenericArgument::Literal(value) => {
+                return Ok(GenericArgument::Length(Length::Literal(value)));
+            }
+            parser::GenericArgument::Type(ty) => ty,
+        };
+
+        if let Some(value) = self.generic_arguments.get(&ty.name.value.0) {
+            return if ty.generics.value.0.is_empty() {
+                Ok(value.clone())
+            } else {
+                Err(SemanticError::UnexpectedGenerics)
+            };
+        };
+
+        if let Some(id) = self
+            .declarations
+            .lookup(&ty.name.value.0, self.top_level_scope)
+        {
+            return self
+                .declarations
+                .resolve_generics(&ty.generics.value.0, self.top_level_scope)
+                .map(|generics| GenericArgument::Type(TypeReference { generics, id }));
+        }
+
+        Err(SemanticError::DeclarationNotFound(ty.name))
+    }
 
     fn expression(
         &mut self,
@@ -292,9 +317,21 @@ impl<'a> Builder<'a> {
                 }))
                 .into())
             }
+            parser::Expression::Generixed(generixed) => {
+                Ok(Expression::Generixed(Box::new(hir::Generixed {
+                    expression: self.expression(generixed.expression.as_ref())?,
+                    generics: generixed
+                        .generics
+                        .value
+                        .0
+                        .iter()
+                        .map(|generic| self.resolve_generic_argument(generic.value.clone()))
+                        .collect::<Result<_, _>>()?,
+                }))
+                .into())
+            }
             parser::Expression::Binary(_) => todo!("binary"),
             parser::Expression::UnaryPrefix(_) => todo!("unary"),
-            parser::Expression::Generixed(_) => todo!("generics"),
         }
     }
 }
