@@ -29,10 +29,10 @@ pub(crate) enum Kind {
 
 #[derive(Debug)]
 pub struct Parser {
-    tokenizer: Tokenizer,
-    tokens: Vec<Spanned<Arc<Token>>>,
-    position: usize,
-    expected_tokens: TokenTypeBitFields,
+    pub tokenizer: Tokenizer,
+    pub tokens: Vec<Spanned<Arc<Token>>>,
+    pub position: usize,
+    pub expected_tokens: TokenTypeBitFields,
 }
 
 impl From<Tokenizer> for Parser {

@@ -1,5 +1,5 @@
 use super::builder::{self, VariableId};
-use crate::declarations::{self, Declarations, FuncReference};
+use crate::declarations::{self, Declarations, FuncReference, GenericArgument};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
 use declarations::TypeReference;
@@ -34,6 +34,7 @@ pub struct Inferer<'a, M> {
     return_type: TypeReference,
     declarations: &'a mut Declarations,
     module: &'a mut M,
+    generics: &'a [GenericArgument]
 }
 
 impl<'a, M> Inferer<'a, M>
@@ -44,12 +45,14 @@ where
         function: &mut builder::Function,
         declarations: &mut declarations::Declarations,
         module: &mut M,
+        generics: &'a [GenericArgument],
     ) -> Result<(), SemanticError> {
         let mut inferer = Inferer {
             variables: &mut function.variables,
             return_type: function.return_type.clone(),
             declarations,
             module,
+            generics
         };
 
         'a: loop {
@@ -153,7 +156,7 @@ where
         let struct_type_id = field_access.expression.type_ref.clone();
         match struct_type_id {
             None => Ok(environment_state),
-            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id)? {
+            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id, self.generics)? {
                 Layout::Struct(layout) => {
                     let fields = layout.fields;
                     let field = fields
@@ -162,8 +165,8 @@ where
 
                     if let Some(type_ref) = type_ref {
                         if *type_ref != field.type_id {
-                            let expected = self.declarations.insert_layout(type_ref)?;
-                            let found = self.declarations.insert_layout(&field.type_id)?;
+                            let expected = self.declarations.insert_layout(type_ref, self.generics)?;
+                            let found = self.declarations.insert_layout(&field.type_id, self.generics)?;
                             return Err(SemanticError::MismatchedTypes {
                                 expected,
                                 found,
@@ -230,10 +233,8 @@ where
                 self.if_expression(if_expression, expected_type.clone())?
             }
             hir::Expression::Call(call) => {
-                dbg!();
                 let (callable, generics) =
                     if let hir::Expression::Generixed(generixed) = &call.callable.expression {
-                        dbg!();
                         let hir::Generixed {
                             expression,
                             generics,
@@ -303,7 +304,7 @@ where
             hir::Expression::Addr(pointer) => {
                 // TODO: move to translate
                 if let Some(type_ref) = expression.type_ref.clone() {
-                    let layout = self.declarations.insert_layout(&type_ref)?;
+                    let layout = self.declarations.insert_layout(&type_ref, self.generics)?;
                     if layout == Layout::Primitive(layout::Primitive::USize) {
                         self.expression(pointer, None)?
                     } else {
@@ -333,8 +334,8 @@ where
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
             if expected != found {
                 return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.insert_layout(&expected)?,
-                    found: self.declarations.insert_layout(&found)?,
+                    expected: self.declarations.insert_layout(&expected, self.generics)?,
+                    found: self.declarations.insert_layout(&found, self.generics)?,
                     expression: expression.expression.clone(),
                 });
             }

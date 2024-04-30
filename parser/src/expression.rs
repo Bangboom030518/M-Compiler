@@ -354,38 +354,40 @@ pub enum TermKind {
 
 impl Expression {
     fn parse_term(parser: &mut Parser, allow: TermKindBitFields) -> Result<Spanned<Self>, Error> {
-        // if parser.take_token_if(TokenType::OpenParen).is_ok() {
-        //     let expression = parser.parse()?;
-        //     parser.take_token_if(TokenType::CloseParen)?;
-        //     return Ok(expression);
-        // }
+        if parser.take_token_if(TokenType::OpenParen).is_ok() {
+            let expression = parser.parse()?;
+            parser.take_token_if(TokenType::CloseParen)?;
+            return Ok(expression);
+        }
 
         if allow.contains(TermKind::Call) {
-            if let Ok(value) = Call::parse(parser, allow).map_spanned(Self::Call) {
+            if let Ok(value) =
+                parser.scope(|parser| Call::parse(parser, allow).map_spanned(Self::Call))
+            {
                 return Ok(value);
             }
         }
 
-        // if allow.contains(TermKind::Constructor) {
         if let Ok(value) = parser.parse().map_spanned(Self::Constructor) {
             return Ok(value);
         }
-        // }
 
         if allow.contains(TermKind::Generixed) {
-            if let Ok(value) = Generixed::parse(parser, allow)
-                .map_spanned(Box::new)
-                .map_spanned(Self::Generixed)
-            {
+            if let Ok(value) = parser.scope(|parser| {
+                Generixed::parse(parser, allow)
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::Generixed)
+            }) {
                 return Ok(value);
             }
         }
 
         if allow.contains(TermKind::FieldAccess) {
-            if let Ok(value) = FieldAccess::parse(parser, allow)
-                .map_spanned(Box::new)
-                .map_spanned(Self::FieldAccess)
-            {
+            if let Ok(value) = parser.scope(|parser| {
+                FieldAccess::parse(parser, allow)
+                    .map_spanned(Box::new)
+                    .map_spanned(Self::FieldAccess)
+            }) {
                 return Ok(value);
             }
         }
@@ -400,16 +402,6 @@ impl Expression {
 
         if let Ok(value) = parser.parse().map_spanned(Self::IntrinsicCall) {
             return Ok(value);
-        }
-
-        Self::parse_nonpostfix_term(parser)
-    }
-
-    fn parse_nonpostfix_term(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        if parser.take_token_if(TokenType::OpenParen).is_ok() {
-            let expression = parser.parse()?;
-            parser.take_token_if(TokenType::CloseParen)?;
-            return Ok(expression);
         }
 
         parser

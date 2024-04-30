@@ -21,7 +21,7 @@ fn[T, @length L] Slice[T] slice(Array[T, L] array)
 end
 
 fn UInt8 print(Slice[UInt8] data)
-    let ptr = malloc(@add(data.length, 1))
+    // let ptr = malloc(@add(data.length, 1))
     memcpy(ptr, data.ptr, data.length)
     @store(@add(ptr, data.length), @assert_type(0, UInt8)) // '\0'
     puts(ptr)

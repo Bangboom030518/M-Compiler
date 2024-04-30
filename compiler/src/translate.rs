@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, FuncReference};
+use crate::declarations::{Declarations, FuncReference, GenericArgument};
 use crate::layout::{Layout, Primitive};
 use crate::{hir, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -16,6 +16,7 @@ pub struct Translator<'a, M> {
     builder: cranelift::prelude::FunctionBuilder<'a>,
     declarations: &'a mut Declarations,
     module: &'a mut M,
+    generics: &'a [GenericArgument],
 }
 
 impl<'a, M> Translator<'a, M>
@@ -30,11 +31,13 @@ where
         builder: cranelift::prelude::FunctionBuilder<'a>,
         declarations: &'a mut Declarations,
         module: &'a mut M,
+        generics: &'a [GenericArgument],
     ) -> Self {
         Self {
             builder,
             declarations,
             module,
+            generics,
         }
     }
 
@@ -57,7 +60,7 @@ where
 
                 let layout = self
                     .declarations
-                    .insert_layout(assignment.right.expect_type()?)?;
+                    .insert_layout(assignment.right.expect_type()?, &self.generics)?;
 
                 let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -81,7 +84,7 @@ where
                 self.builder.declare_var(
                     variable.into(),
                     self.declarations
-                        .insert_layout(expression.expect_type()?)?
+                        .insert_layout(expression.expect_type()?, &self.generics)?
                         .cranelift_type(&self.declarations.isa),
                 );
                 let BranchStatus::Continue(expression) = self.expression(expression)? else {
@@ -126,7 +129,7 @@ where
                 merge_block,
                 match self
                     .declarations
-                    .insert_layout(then_return.expect_type()?)?
+                    .insert_layout(then_return.expect_type()?, &self.generics)?
                 {
                     Layout::Primitive(primitive) => {
                         primitive.cranelift_type(self.declarations.isa.pointer_type())
@@ -220,7 +223,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let struct_layout = self
             .declarations
-            .insert_layout(access.expression.expect_type()?)?;
+            .insert_layout(access.expression.expect_type()?, &self.generics)?;
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
@@ -270,7 +273,7 @@ where
         );
 
         for (offset, expression) in constructor.0 {
-            let layout = self.declarations.insert_layout(expression.expect_type()?)?;
+            let layout = self.declarations.insert_layout(expression.expect_type()?, self.generics)?;
 
             let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -319,7 +322,7 @@ where
 
         let return_layout = self
             .declarations
-            .insert_layout(&function.signature().return_type)?;
+            .insert_layout(&function.signature().return_type, &self.generics)?;
 
         if return_layout.is_aggregate() {
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -371,7 +374,9 @@ where
         &mut self,
         expression: hir::TypedExpression,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = self.declarations.insert_layout(expression.expect_type()?)?;
+        let layout = self
+            .declarations
+            .insert_layout(expression.expect_type()?, &self.generics)?;
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
@@ -394,7 +399,7 @@ where
     fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .insert_layout(store.pointer.expect_type()?)?;
+            .insert_layout(store.pointer.expect_type()?, &self.generics)?;
         if layout != Layout::Primitive(crate::layout::Primitive::USize) {
             return Err(SemanticError::InvalidAddr {
                 found: layout,
@@ -404,7 +409,7 @@ where
 
         let layout = self
             .declarations
-            .insert_layout(store.expression.expect_type()?)?;
+            .insert_layout(store.expression.expect_type()?, &self.generics)?;
 
         if layout.is_aggregate() {
             todo!("store aggregates")
@@ -441,7 +446,8 @@ where
 
         if array.length != bytes.len() as u128
             || !matches!(
-                self.declarations.insert_layout(&array.item)?,
+                self.declarations
+                    .insert_layout(&array.item, self.generics)?,
                 Layout::Primitive(Primitive::U8)
             )
         {
@@ -475,7 +481,9 @@ where
             type_ref,
         }: hir::TypedExpression,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = match type_ref.map(|type_id| self.declarations.insert_layout(&type_id)) {
+        let layout = match type_ref
+            .map(|type_id| self.declarations.insert_layout(&type_id, self.generics))
+        {
             Some(result) => Ok(result?),
             None => Err(SemanticError::UnknownType(expression.clone())),
         };

@@ -40,7 +40,7 @@ pub struct Builder<'a> {
     local_scopes: Vec<HashMap<String, Variable>>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
-    generic_arguments: HashMap<String, GenericArgument>,
+    generics: &'a [GenericArgument], // generic_arguments: HashMap<String, GenericArgument>,
 }
 
 impl<'a> Builder<'a> {
@@ -65,7 +65,8 @@ impl<'a> Builder<'a> {
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
-            generic_arguments: function.generic_arguments.clone(),
+            generics: &function.generics,
+            // generic_arguments: function.generic_arguments.clone(),
         }
     }
 
@@ -173,7 +174,8 @@ impl<'a> Builder<'a> {
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref)? else {
+        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref, self.generics)?
+        else {
             return Err(SemanticError::InvalidConstructor);
         };
 
@@ -198,37 +200,37 @@ impl<'a> Builder<'a> {
         .with_type(type_ref))
     }
 
-    fn resolve_generic_argument(
-        &mut self,
-        argument: parser::GenericArgument,
-    ) -> Result<GenericArgument, SemanticError> {
-        let ty = match argument {
-            parser::GenericArgument::Literal(value) => {
-                return Ok(GenericArgument::Length(Length::Literal(value)));
-            }
-            parser::GenericArgument::Type(ty) => ty,
-        };
+    // fn resolve_generic_argument(
+    //     &mut self,
+    //     argument: parser::GenericArgument,
+    // ) -> Result<GenericArgument, SemanticError> {
+    //     let ty = match argument {
+    //         parser::GenericArgument::Literal(value) => {
+    //             return Ok(GenericArgument::Length(Length::Literal(value)));
+    //         }
+    //         parser::GenericArgument::Type(ty) => ty,
+    //     };
 
-        if let Some(value) = self.generic_arguments.get(&ty.name.value.0) {
-            return if ty.generics.value.0.is_empty() {
-                Ok(value.clone())
-            } else {
-                Err(SemanticError::UnexpectedGenerics)
-            };
-        };
+    //     if let Some(value) = self.generic_arguments.get(&ty.name.value.0) {
+    //         return if ty.generics.value.0.is_empty() {
+    //             Ok(value.clone())
+    //         } else {
+    //             Err(SemanticError::UnexpectedGenerics)
+    //         };
+    //     };
 
-        if let Some(id) = self
-            .declarations
-            .lookup(&ty.name.value.0, self.top_level_scope)
-        {
-            return self
-                .declarations
-                .resolve_generics(&ty.generics.value.0, self.top_level_scope)
-                .map(|generics| GenericArgument::Type(TypeReference { generics, id }));
-        }
+    //     if let Some(id) = self
+    //         .declarations
+    //         .lookup(&ty.name.value.0, self.top_level_scope)
+    //     {
+    //         return self
+    //             .declarations
+    //             .resolve_generics(&ty.generics.value.0, self.top_level_scope)
+    //             .map(|generics| GenericArgument::Type(TypeReference { generics, id }));
+    //     }
 
-        Err(SemanticError::DeclarationNotFound(ty.name))
-    }
+    //     Err(SemanticError::DeclarationNotFound(ty.name))
+    // }
 
     fn expression(
         &mut self,
@@ -320,13 +322,17 @@ impl<'a> Builder<'a> {
             parser::Expression::Generixed(generixed) => {
                 Ok(Expression::Generixed(Box::new(hir::Generixed {
                     expression: self.expression(generixed.expression.as_ref())?,
-                    generics: generixed
-                        .generics
-                        .value
-                        .0
-                        .iter()
-                        .map(|generic| self.resolve_generic_argument(generic.value.clone()))
-                        .collect::<Result<_, _>>()?,
+                    generics: self
+                        .declarations
+                        .resolve_generics(&generixed.generics.value.0, self.top_level_scope)?, // .value
+                                                                                               // .0
+                                                                                               // .iter()
+                                                                                               // .enumerate()
+                                                                                               // .map(|generic| match generic.1.value.clone() {
+                                                                                               //     parser::GenericArgument::Literal(literal) => todo!(),
+                                                                                               //     parser::GenericArgument::Type(_) => self.declarations.lookup(, self.top_level_scope)
+                                                                                               // })
+                                                                                               // .collect::<Result<_, _>>()?,
                 }))
                 .into())
             }

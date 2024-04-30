@@ -7,7 +7,6 @@ use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::ConcreteFunction;
 use layout::Layout;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
@@ -48,9 +47,9 @@ pub enum SemanticError {
     InvalidAssignment,
     #[error("Declaration not found: '{}'", 0.0)]
     DeclarationNotFound(Spanned<parser::Ident>),
-    #[error("Expected a type, found a function")]
+    #[error("Expected a type")]
     InvalidType,
-    #[error("Expected a function, found a type or generic")]
+    #[error("Expected a function")]
     InvalidFunction,
     #[error("Couldn't infer type of parameter")]
     UntypedParameter,
@@ -98,7 +97,23 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let declarations = parser::parse_file(include_str!("../../input.m")).expect("Parse error! :(");
+    let input = include_str!("../../input.m");
+    let declarations = match parser::parse_file(input) {
+        Ok(x) => x,
+        Err(error) => {
+            use parser::ParseError;
+            match error {
+                ParseError::UnexpectedIdentifier { expected, found } => todo!("unexpected ident"),
+                ParseError::UnexpectedToken { expected, found } => panic!(
+                    "expected: {expected:?}, found: {:?} in '{}'",
+                    found.value,
+                    input
+                        .get((found.span.start - 5)..(found.span.end + 5))
+                        .unwrap()
+                ),
+            }
+        }
+    };
 
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
@@ -137,8 +152,21 @@ fn main() {
         panic!("main should not be extern")
     };
 
-    main.compile(&mut declarations, &mut context)
-        .expect("🎉 uh oh!");
+    match main.compile(&mut declarations, &mut context) {
+        Ok(_) => {}
+        Err(error) => match error {
+            SemanticError::DeclarationNotFound(ident) => {
+                panic!(
+                    "ident not found '{}': '{}'",
+                    ident.value,
+                    input
+                        .get((ident.span.start - 5)..(ident.span.end + 5))
+                        .unwrap()
+                )
+            }
+            error => todo!("handle meee: {error}"),
+        },
+    }
 
     // let main_function = declarations
     //     .concrete_functions

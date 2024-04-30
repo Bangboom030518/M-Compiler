@@ -87,7 +87,7 @@ impl ConcreteFunction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum Declaration {
+pub enum Declaration {
     Type(Type),
     Function(GenericFunction),
     LengthGeneric(usize),
@@ -357,7 +357,9 @@ impl Declarations {
                                 generics: self.resolve_generics(&r#type.generics.value.0, scope)?,
                             })
                         }
-                        Declaration::Function(_) => return Err(SemanticError::InvalidType),
+                        Declaration::Function(_) => {
+                            return Err(SemanticError::InvalidType);
+                        }
                     };
                     Ok(value)
                 }
@@ -368,14 +370,23 @@ impl Declarations {
     pub fn insert_layout(
         &mut self,
         type_reference: &TypeReference,
+        function_generics: &[GenericArgument],
     ) -> Result<Layout, SemanticError> {
         // TODO: clones
         if let Some(layout) = self.layouts.get(type_reference) {
             return Ok(layout.clone());
         }
 
-        let Declaration::Type(r#type) = self.get(type_reference.id) else {
-            return Err(SemanticError::InvalidType);
+        let r#type = match self.get(type_reference.id) {
+            Declaration::Type(r#type) => r#type,
+            Declaration::TypeGeneric(index) => {
+                return self
+                    .insert_layout(function_generics[*index].expect_type()?, function_generics)
+            }
+            _ => {
+                dbg!();
+                return Err(SemanticError::InvalidType);
+            }
         };
 
         let layout = match r#type.clone() {
@@ -392,7 +403,7 @@ impl Declarations {
                             ),
                         },
                     );
-                    let layout = self.insert_layout(r#type)?;
+                    let layout = self.insert_layout(r#type, function_generics)?;
                     offset += layout.size(&self.isa);
                 }
                 Layout::Struct(layout::Struct {
@@ -429,7 +440,7 @@ impl Declarations {
                         }
                     };
 
-                    let size = self.insert_layout(&item)?.size(&self.isa);
+                    let size = self.insert_layout(&item, function_generics)?.size(&self.isa);
                     Layout::Array(Array {
                         length: length.resolve(&type_reference.generics, self)?,
                         size,
@@ -443,13 +454,13 @@ impl Declarations {
         Ok(layout)
     }
 
-    fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
+    pub fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
         let id = self.scopes.len();
         self.scopes.push(scope);
         ScopeId(id)
     }
 
-    fn resolve_generic_parameters(
+    pub fn resolve_generic_parameters(
         &mut self,
         generics: Spanned<parser::top_level::Generics>,
         parent: ScopeId,
@@ -475,7 +486,7 @@ impl Declarations {
         })
     }
 
-    fn create(&mut self, declaration: Declaration) -> Id {
+    pub fn create(&mut self, declaration: Declaration) -> Id {
         let id = self.declarations.len();
         self.declarations.push(Some(declaration));
         Id(id)
@@ -510,6 +521,7 @@ impl Declarations {
         }
 
         let Ok(generic_function) = self.get(func_reference.id).expect_function() else {
+            dbg!();
             return Err(SemanticError::InvalidType);
         };
 
@@ -537,6 +549,32 @@ impl Declarations {
             .get(ident)
             .or_else(|| self.lookup(ident, self.scopes[scope.0].parent?))
     }
+
+    // pub fn lookup_type_with_generic_arguments(
+    //     &mut self,
+    //     r#type: &parser::Type,
+    //     scope: ScopeId,
+    //     generics: &HashMap<String, GenericArgument>,
+    // ) -> Result<TypeReference, SemanticError> {
+    //     let Some(id) = self.lookup(r#type.name.value.as_ref(), scope) else {
+    //         match generics.get(&r#type.name.value.0) {
+    //             // TODO: shouldn't have sub generics
+    //             Some(GenericArgument::Type(r#type)) => {
+    //                 if !r#type.generics.is_empty() {
+    //                     return Err(SemanticError::UnexpectedGenerics);
+    //                 }
+    //                 return Ok(r#type.clone());
+    //             }
+    //             Some(GenericArgument::Length(_)) => {
+    //                 return Err(SemanticError::InvalidLengthGeneric)
+    //             }
+    //             _ => return Err(SemanticError::DeclarationNotFound(r#type.name.clone())),
+    //         }
+    //     };
+    //     let generics = self.resolve_generics(&r#type.generics.value.0, scope, generics)?;
+
+    //     Ok(TypeReference { id, generics })
+    // }
 
     pub fn lookup_type(
         &mut self,

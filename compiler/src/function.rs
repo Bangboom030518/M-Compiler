@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
+use crate::declarations::{Declaration, Declarations, GenericArgument, ScopeId, TypeReference};
 use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -6,7 +6,6 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
-use std::collections::HashMap;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +24,7 @@ impl MSignature {
         name: Spanned<parser::Ident>,
         scope: ScopeId,
         module: &impl Module,
+        generics: &[GenericArgument]
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
         let parameters = parameters
@@ -35,7 +35,7 @@ impl MSignature {
         signature.params = parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations.insert_layout(type_ref)?;
+                let layout = declarations.insert_layout(type_ref, generics)?;
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -49,7 +49,7 @@ impl MSignature {
 
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
 
-        signature.returns = vec![match declarations.insert_layout(&return_type)? {
+        signature.returns = vec![match declarations.insert_layout(&return_type, generics)? {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
@@ -92,6 +92,7 @@ impl External {
             function.name,
             scope_id,
             module,
+            &[]
         )?;
 
         let id = module
@@ -117,7 +118,8 @@ pub struct Internal {
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: FuncId,
-    pub generic_arguments: HashMap<String, GenericArgument>,
+    pub generics: Vec<GenericArgument>,
+    // pub generic_arguments: Vec<GenericArgument>,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
@@ -128,10 +130,34 @@ impl Internal {
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
-        scope_id: ScopeId,
+        scope: ScopeId,
         module: &mut impl Module,
-        generic_arguments: Vec<GenericArgument>,
+        generics: Vec<GenericArgument>,
     ) -> Result<Self, SemanticError> {
+        // TODO: check these!
+        // let generics = std::iter::zip(function.generics.clone().value.generics, generic_arguments)
+        //     .map(|(ident, argument)| (ident.value.ident().value.0, argument))
+        //     .collect::<HashMap<_, _>>();
+
+        let scope = declarations.resolve_generic_parameters(function.generics, scope);
+
+        // let generic_arguments2 = generic_arguments
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(index, (ident, argument))| {
+        //         let argument = match argument {
+        //             GenericArgument::Length(_) => Declaration::LengthGeneric(index),
+        //             GenericArgument::Type(_) => Declaration::TypeGeneric(index),
+        //         };
+        //         (ident.clone(), declarations.create(argument))
+        //     })
+        //     .collect();
+
+        // let scope = declarations.create_scope(crate::declarations::TopLevelScope {
+        //     declarations: generic_arguments2,
+        //     parent: Some(scope),
+        // });
+
         let parameters: (Vec<_>, Vec<_>) = function
             .parameters
             .into_iter()
@@ -149,8 +175,9 @@ impl Internal {
                 .ok_or(SemanticError::MissingReturnType)?,
             declarations,
             function.name,
-            scope_id,
+            scope,
             module,
+            &generics
         )?;
 
         let mut body = function.body;
@@ -168,11 +195,6 @@ impl Internal {
             }
         }
 
-        // TODO: check these!
-        let generic_arguments = std::iter::zip(function.generics.value.generics, generic_arguments)
-            .map(|(ident, argument)| (ident.value.ident().value.0, argument))
-            .collect::<HashMap<_, _>>();
-
         let id = module
             .declare_function(
                 signature.name.value.as_ref(),
@@ -184,10 +206,11 @@ impl Internal {
         Ok(Self {
             signature,
             parameter_names: parameters.0,
-            scope_id,
+            scope_id: scope,
             body,
             id,
-            generic_arguments,
+            generics
+            // generic_arguments,
         })
     }
 
@@ -212,7 +235,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout(&self.signature.return_type)?
+            .insert_layout(&self.signature.return_type, &self.generics)?
             .is_aggregate()
         {
             let param = block_params
@@ -233,7 +256,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout(type_ref)?;
+                let layout = declarations.insert_layout(type_ref, &self.generics)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -263,9 +286,9 @@ impl Internal {
             .collect::<Result<_, SemanticError>>()?;
 
         let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
-        inferer::Inferer::function(&mut func, declarations, &mut cranelift_context.module)?;
+        inferer::Inferer::function(&mut func, declarations, &mut cranelift_context.module, &self.generics)?;
 
-        let mut translator = Translator::new(builder, declarations, &mut cranelift_context.module);
+        let mut translator = Translator::new(builder, declarations, &mut cranelift_context.module, &self.generics);
 
         for statement in func.body {
             if translator.statement(statement)? == BranchStatus::Finished {
