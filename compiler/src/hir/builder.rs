@@ -49,6 +49,7 @@ impl<'a> Builder<'a> {
         function: &'a function::Internal,
         parameters: Vec<(Spanned<parser::Ident>, Variable, TypeReference)>,
     ) -> Self {
+        dbg!();
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
         let new_variable_index = parameters.len() + crate::function::SPECIAL_VARIABLES.len();
@@ -71,6 +72,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn build(mut self) -> Result<Function, SemanticError> {
+        dbg!();
         let body = self
             .body
             .iter()
@@ -174,7 +176,7 @@ impl<'a> Builder<'a> {
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref, self.generics)?
+        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref)?
         else {
             return Err(SemanticError::InvalidConstructor);
         };

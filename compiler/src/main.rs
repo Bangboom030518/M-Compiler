@@ -131,8 +131,21 @@ fn main() {
     );
 
     let mut module = cranelift_jit::JITModule::new(builder);
-    let mut declarations =
-        declarations::Declarations::new(declarations, &isa, &mut module).unwrap();
+    let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {
+        Ok(declarations) => declarations,
+        Err(error) => match error {
+            SemanticError::DeclarationNotFound(ident) => {
+                panic!(
+                    "ident not found '{}': '{}'",
+                    ident.value,
+                    input
+                        .get((ident.span.start - 5)..(ident.span.end + 5))
+                        .unwrap()
+                )
+            }
+            error => todo!("handle meee: {error}"),
+        },
+    };
 
     let mut context = CraneliftContext::new(module);
     let main = declarations

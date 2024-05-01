@@ -43,16 +43,47 @@ enum Primitive {
     F32,
     F64,
     USize,
-    Array(Length, TypeReference),
+    Array(Length, FieldType),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Type {
+enum FieldType {
+    Type(TypeReference),
+    Generic(Spanned<Ident>),
+}
+
+impl FieldType {
+    fn resolve(
+        self,
+        declarations: &Declarations,
+        scope: ScopeId,
+    ) -> Result<TypeReference, SemanticError> {
+        match self {
+            Self::Type(type_reference) => Ok(type_reference),
+            Self::Generic(name) => {
+                let id = declarations
+                    .lookup(&name.value.0, scope)
+                    .ok_or_else(|| SemanticError::DeclarationNotFound(name))?;
+
+                declarations.get(id).expect_type_alias()
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Type {
+    kind: TypeKind,
+    generic_parameters: Spanned<parser::top_level::Generics>,
+    parent_scope: ScopeId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TypeKind {
     Struct {
-        fields: Vec<(Spanned<Ident>, TypeReference)>,
-        scope: ScopeId, // ident: String,
+        fields: Vec<(Spanned<Ident>, FieldType)>,
     },
-    Primitive(Primitive, ScopeId),
+    Primitive(Primitive),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -90,8 +121,10 @@ impl ConcreteFunction {
 pub enum Declaration {
     Type(Type),
     Function(GenericFunction),
-    LengthGeneric(usize),
-    TypeGeneric(usize),
+    TypeAlias(TypeReference),
+    Length(u128),
+    // LengthGeneric(usize),
+    // TypeGeneric(usize),
 }
 
 impl Declaration {
@@ -109,45 +142,39 @@ impl Declaration {
         }
     }
 
-    pub const fn expect_length_generic(&self) -> Result<usize, SemanticError> {
+    pub const fn expect_length(&self) -> Result<u128, SemanticError> {
         match self {
-            Self::LengthGeneric(generic) => Ok(*generic),
+            Self::Length(generic) => Ok(*generic),
             _ => Err(SemanticError::InvalidLengthGeneric),
         }
     }
 
-    pub const fn expect_type_generic(&self) -> Result<usize, SemanticError> {
+    pub fn expect_type_alias(&self) -> Result<TypeReference, SemanticError> {
         match self {
-            Self::TypeGeneric(generic) => Ok(*generic),
+            Self::TypeAlias(generic) => Ok(generic.clone()),
             _ => Err(SemanticError::InvalidTypeGeneric),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Length {
     Literal(u128),
-    Reference(Id),
+    Generic(String),
 }
 
 impl Length {
-    fn resolve(
-        self,
-        generics: &[GenericArgument],
-        declarations: &mut Declarations,
-    ) -> Result<u128, SemanticError> {
-        let length = match self {
-            Self::Literal(length) => length,
-            Self::Reference(id) => {
-                let index = declarations.get(id).expect_length_generic()?;
-                generics
-                    .get(index)
-                    .ok_or(SemanticError::GenericParametersMismatch)?
-                    .expect_length()?
-                    .resolve(generics, declarations)?
+    fn resolve(self, declarations: &Declarations, scope: ScopeId) -> Result<u128, SemanticError> {
+        match self {
+            Self::Literal(length) => Ok(length),
+            Self::Generic(name) => {
+                let id = declarations
+                    .lookup(&name, scope)
+                    .ok_or_else(|| SemanticError::DeclarationNotFound(todo!()))?;
+
+                declarations.get(id).expect_length()
             }
-        };
-        Ok(length)
+        }
     }
 }
 
@@ -249,42 +276,57 @@ impl Declarations {
     fn handle_struct(
         &mut self,
         ast_struct: parser::Struct,
+        // generic_arguments: &[GenericArgument],
         parent: ScopeId,
     ) -> Result<Declaration, SemanticError> {
-        let inner_scope = self.resolve_generic_parameters(ast_struct.generics, parent);
+        // let inner_scope = self.create_generic_scope(ast_struct.generics, generic_arguments, parent)?;
 
         let fields = ast_struct
             .fields
             .iter()
             .map(|field| field.value.clone())
             .map(|parser::top_level::Field { r#type, name }| {
-                let type_id = self
-                    .lookup(&r#type.value.name.value.0, inner_scope)
-                    .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.value.name.clone()))?;
-                Ok((
-                    name,
-                    TypeReference {
-                        id: type_id,
-                        generics: self
-                            .resolve_generics(&r#type.value.generics.value.0, inner_scope)?,
-                    },
-                ))
+                let field_type = match self.lookup(&r#type.value.name.value.0, parent) {
+                    Some(id) => FieldType::Type(TypeReference {
+                        id,
+                        generics: self.resolve_generics(&r#type.value.generics.value.0, parent)?,
+                    }),
+                    None => {
+                        // let index = ast_struct
+                        //     .generics
+                        //     .value
+                        //     .generics
+                        //     .iter()
+                        //     .position(|generic| match &generic.value {
+                        //         parser::top_level::Generic::Length { name: param_name }
+                        //         | parser::top_level::Generic::Type { name: param_name } => {
+                        //             param_name.value == name.value
+                        //         }
+                        //     })
+                        //     .ok_or_else(|| {
+                        //         SemanticError::DeclarationNotFound(r#type.value.name.clone())
+                        //     })?;
+                        FieldType::Generic(name.clone())
+                    }
+                };
+
+                Ok((name, field_type))
             })
             .collect::<Result<Vec<_>, SemanticError>>()?;
-        Ok(Declaration::Type(Type::Struct {
-            fields,
-            scope: inner_scope,
+
+        Ok(Declaration::Type(Type {
+            kind: TypeKind::Struct { fields },
+            parent_scope: parent,
+            generic_parameters: ast_struct.generics,
         }))
     }
 
     fn handle_primitive(
         &mut self,
         ast_primitive: parser::top_level::Primitive,
-        parent: ScopeId,
+        scope: ScopeId,
     ) -> Result<Declaration, SemanticError> {
         use parser::top_level::{Length as L, PrimitiveKind as P};
-
-        let inner_scope = self.resolve_generic_parameters(ast_primitive.generics, parent);
 
         let primitive = match ast_primitive.kind.value {
             P::U8 => Primitive::U8,
@@ -300,32 +342,30 @@ impl Declarations {
             P::F32 => Primitive::F32,
             P::F64 => Primitive::F64,
             P::USize => Primitive::USize,
-            P::Array(length, item) => {
+            P::Array(length, element_type) => {
                 let length = match length.value {
-                    L::Ident(ident) => {
-                        Length::Reference(self.lookup(ident.as_ref(), inner_scope).ok_or_else(
-                            || SemanticError::DeclarationNotFound(ident.spanned(length.span)),
-                        )?)
-                    }
+                    L::Ident(ident) => Length::Generic(ident.0),
                     L::Literal(length) => Length::Literal(length),
                 };
 
-                let inner = self
-                    .lookup(&item.value.name.value.0, inner_scope)
-                    .ok_or_else(|| SemanticError::DeclarationNotFound(item.value.name))?;
+                let element_type = match self.lookup(&element_type.value.name.value.0, scope) {
+                    Some(id) => FieldType::Type(TypeReference {
+                        id,
+                        generics: self
+                            .resolve_generics(&element_type.value.generics.value.0, scope)?,
+                    }),
+                    None => FieldType::Generic(element_type.value.name),
+                };
 
-                let generics = self.resolve_generics(&item.value.generics.value.0, inner_scope)?;
-
-                Primitive::Array(
-                    length,
-                    TypeReference {
-                        generics,
-                        id: inner,
-                    },
-                )
+                Primitive::Array(length, element_type)
             }
         };
-        Ok(Declaration::Type(Type::Primitive(primitive, inner_scope)))
+
+        Ok(Declaration::Type(Type {
+            parent_scope: scope,
+            generic_parameters: ast_primitive.generics,
+            kind: TypeKind::Primitive(primitive),
+        }))
     }
 
     pub fn resolve_generics(
@@ -343,15 +383,18 @@ impl Declarations {
                     let id = self
                         .lookup(r#type.name.value.as_ref(), scope)
                         .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
+
                     let value = match self.get(id) {
-                        Declaration::LengthGeneric(_) => {
+                        Declaration::Length(_) => {
                             if r#type.generics.value.0.is_empty() {
-                                GenericArgument::Length(Length::Reference(id))
+                                GenericArgument::Length(Length::Generic(
+                                    r#type.name.value.0.clone(),
+                                ))
                             } else {
                                 return Err(SemanticError::GenericParametersMismatch);
                             }
                         }
-                        Declaration::TypeGeneric(_) | Declaration::Type(_) => {
+                        Declaration::TypeAlias(_) | Declaration::Type(_) => {
                             GenericArgument::Type(TypeReference {
                                 id,
                                 generics: self.resolve_generics(&r#type.generics.value.0, scope)?,
@@ -370,40 +413,45 @@ impl Declarations {
     pub fn insert_layout(
         &mut self,
         type_reference: &TypeReference,
-        function_generics: &[GenericArgument],
+        // function_generics: &[GenericArgument],
     ) -> Result<Layout, SemanticError> {
         // TODO: clones
         if let Some(layout) = self.layouts.get(type_reference) {
             return Ok(layout.clone());
         }
 
-        let r#type = match self.get(type_reference.id) {
+        // TODO: clone
+        let r#type = match self.get(type_reference.id).clone() {
             Declaration::Type(r#type) => r#type,
-            Declaration::TypeGeneric(index) => {
-                return self
-                    .insert_layout(function_generics[*index].expect_type()?, function_generics)
-            }
+            Declaration::TypeAlias(reference) => return self.insert_layout(&reference),
             _ => {
                 dbg!();
                 return Err(SemanticError::InvalidType);
             }
         };
 
-        let layout = match r#type.clone() {
-            Type::Struct { fields, scope } => {
+        let scope = self.create_generic_scope(
+            r#type.generic_parameters.clone(),
+            &type_reference.generics,
+            r#type.parent_scope,
+        )?;
+
+        let layout = match r#type.kind {
+            TypeKind::Struct { fields } => {
                 let mut offset = 0;
                 let mut layout_fields = HashMap::new();
-                for (name, r#type) in &fields {
+                for (name, field) in &fields {
+                    let field = field.clone().resolve(self, scope)?;
                     layout_fields.insert(
                         name.value.0.clone(),
                         layout::Field {
-                            type_id: r#type.clone(),
+                            type_id: field.clone(),
                             offset: Offset32::new(
                                 i32::try_from(offset).expect("struct offset exceded `i32::MAX`"),
                             ),
                         },
                     );
-                    let layout = self.insert_layout(r#type, function_generics)?;
+                    let layout = self.insert_layout(&field)?;
                     offset += layout.size(&self.isa);
                 }
                 Layout::Struct(layout::Struct {
@@ -411,7 +459,7 @@ impl Declarations {
                     size: offset,
                 })
             }
-            Type::Primitive(primitive, scope) => match primitive {
+            TypeKind::Primitive(primitive) => match primitive {
                 Primitive::F32 => Layout::Primitive(layout::Primitive::F32),
                 Primitive::F64 => Layout::Primitive(layout::Primitive::F64),
                 Primitive::U8 => Layout::Primitive(layout::Primitive::U8),
@@ -426,23 +474,18 @@ impl Declarations {
                 Primitive::I128 => Layout::Primitive(layout::Primitive::I128),
                 Primitive::USize => Layout::Primitive(layout::Primitive::USize),
                 Primitive::Array(length, item) => {
+                    let item = item.resolve(self, scope)?;
                     let item = match self.get(item.id) {
                         Declaration::Type(_) => item,
-                        Declaration::TypeGeneric(index) => type_reference
-                            .generics
-                            .get(*index)
-                            .ok_or(SemanticError::GenericParametersMismatch)?
-                            .expect_type()?
-                            .clone(),
+                        Declaration::TypeAlias(reference) => reference.clone(),
                         Declaration::Function(_) => return Err(SemanticError::InvalidFunction),
-                        Declaration::LengthGeneric(_) => {
-                            return Err(SemanticError::InvalidLengthGeneric)
-                        }
+                        Declaration::Length(_) => return Err(SemanticError::InvalidLengthGeneric),
                     };
 
-                    let size = self.insert_layout(&item, function_generics)?.size(&self.isa);
+                    let size = self.insert_layout(&item)?.size(&self.isa);
+
                     Layout::Array(Array {
-                        length: length.resolve(&type_reference.generics, self)?,
+                        length: length.resolve(self, scope)?,
                         size,
                         item,
                     })
@@ -460,30 +503,38 @@ impl Declarations {
         ScopeId(id)
     }
 
-    pub fn resolve_generic_parameters(
+    pub fn create_generic_scope(
         &mut self,
         generics: Spanned<parser::top_level::Generics>,
+        arguments: &[GenericArgument],
         parent: ScopeId,
-    ) -> ScopeId {
+    ) -> Result<ScopeId, SemanticError> {
+        if arguments.len() != generics.value.generics.len() {
+            return Err(SemanticError::GenericParametersMismatch);
+        }
+
         let generics = generics
             .value
             .generics
             .into_iter()
-            .enumerate()
-            .map(|(index, generic)| match generic.value {
+            .zip(arguments)
+            .map(|(generic, argument)| match generic.value {
                 parser::top_level::Generic::Length { name } => {
-                    (name.value.0, self.create(Declaration::LengthGeneric(index)))
+                    let length = argument.expect_length()?.clone();
+                    let length = length.resolve(self, parent)?;
+                    Ok((name.value.0, self.create(Declaration::Length(length))))
                 }
-                parser::top_level::Generic::Type { name } => {
-                    (name.value.0, self.create(Declaration::TypeGeneric(index)))
-                }
+                parser::top_level::Generic::Type { name } => Ok((
+                    name.value.0,
+                    self.create(Declaration::TypeAlias(argument.expect_type()?.clone())),
+                )),
             })
-            .collect();
+            .collect::<Result<_, SemanticError>>()?;
 
-        self.create_scope(TopLevelScope {
+        Ok(self.create_scope(dbg!(TopLevelScope {
             declarations: generics,
             parent: Some(parent),
-        })
+        })))
     }
 
     pub fn create(&mut self, declaration: Declaration) -> Id {
@@ -581,6 +632,7 @@ impl Declarations {
         r#type: &parser::Type,
         scope: ScopeId,
     ) -> Result<TypeReference, SemanticError> {
+        dbg!();
         let id = self
             .lookup(r#type.name.value.as_ref(), scope)
             .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;

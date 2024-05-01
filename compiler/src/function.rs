@@ -1,4 +1,4 @@
-use crate::declarations::{Declaration, Declarations, GenericArgument, ScopeId, TypeReference};
+use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
 use crate::hir::inferer;
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -24,7 +24,7 @@ impl MSignature {
         name: Spanned<parser::Ident>,
         scope: ScopeId,
         module: &impl Module,
-        generics: &[GenericArgument]
+        generics: &[GenericArgument],
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
         let parameters = parameters
@@ -35,7 +35,7 @@ impl MSignature {
         signature.params = parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations.insert_layout(type_ref, generics)?;
+                let layout = declarations.insert_layout(type_ref)?;
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -49,7 +49,7 @@ impl MSignature {
 
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
 
-        signature.returns = vec![match declarations.insert_layout(&return_type, generics)? {
+        signature.returns = vec![match declarations.insert_layout(&return_type)? {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
@@ -92,7 +92,7 @@ impl External {
             function.name,
             scope_id,
             module,
-            &[]
+            &[],
         )?;
 
         let id = module
@@ -139,7 +139,7 @@ impl Internal {
         //     .map(|(ident, argument)| (ident.value.ident().value.0, argument))
         //     .collect::<HashMap<_, _>>();
 
-        let scope = declarations.resolve_generic_parameters(function.generics, scope);
+        let scope = declarations.create_generic_scope(function.generics, &generics, scope)?;
 
         // let generic_arguments2 = generic_arguments
         //     .iter()
@@ -177,7 +177,7 @@ impl Internal {
             function.name,
             scope,
             module,
-            &generics
+            &generics,
         )?;
 
         let mut body = function.body;
@@ -209,8 +209,7 @@ impl Internal {
             scope_id: scope,
             body,
             id,
-            generics
-            // generic_arguments,
+            generics, // generic_arguments,
         })
     }
 
@@ -235,7 +234,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout(&self.signature.return_type, &self.generics)?
+            .insert_layout(&self.signature.return_type)?
             .is_aggregate()
         {
             let param = block_params
@@ -256,7 +255,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout(type_ref, &self.generics)?;
+                let layout = declarations.insert_layout(type_ref)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -286,9 +285,19 @@ impl Internal {
             .collect::<Result<_, SemanticError>>()?;
 
         let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
-        inferer::Inferer::function(&mut func, declarations, &mut cranelift_context.module, &self.generics)?;
+        inferer::Inferer::function(
+            &mut func,
+            declarations,
+            &mut cranelift_context.module,
+            &self.generics,
+        )?;
 
-        let mut translator = Translator::new(builder, declarations, &mut cranelift_context.module, &self.generics);
+        let mut translator = Translator::new(
+            builder,
+            declarations,
+            &mut cranelift_context.module,
+            &self.generics,
+        );
 
         for statement in func.body {
             if translator.statement(statement)? == BranchStatus::Finished {

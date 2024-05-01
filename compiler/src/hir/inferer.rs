@@ -156,7 +156,7 @@ where
         let struct_type_id = field_access.expression.type_ref.clone();
         match struct_type_id {
             None => Ok(environment_state),
-            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id, self.generics)? {
+            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id)? {
                 Layout::Struct(layout) => {
                     let fields = layout.fields;
                     let field = fields
@@ -165,8 +165,8 @@ where
 
                     if let Some(type_ref) = type_ref {
                         if *type_ref != field.type_id {
-                            let expected = self.declarations.insert_layout(type_ref, self.generics)?;
-                            let found = self.declarations.insert_layout(&field.type_id, self.generics)?;
+                            let expected = self.declarations.insert_layout(type_ref)?;
+                            let found = self.declarations.insert_layout(&field.type_id)?;
                             return Err(SemanticError::MismatchedTypes {
                                 expected,
                                 found,
@@ -304,7 +304,7 @@ where
             hir::Expression::Addr(pointer) => {
                 // TODO: move to translate
                 if let Some(type_ref) = expression.type_ref.clone() {
-                    let layout = self.declarations.insert_layout(&type_ref, self.generics)?;
+                    let layout = self.declarations.insert_layout(&type_ref)?;
                     if layout == Layout::Primitive(layout::Primitive::USize) {
                         self.expression(pointer, None)?
                     } else {
@@ -334,8 +334,8 @@ where
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
             if expected != found {
                 return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.insert_layout(&expected, self.generics)?,
-                    found: self.declarations.insert_layout(&found, self.generics)?,
+                    expected: self.declarations.insert_layout(&expected)?,
+                    found: self.declarations.insert_layout(&found)?,
                     expression: expression.expression.clone(),
                 });
             }
