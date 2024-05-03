@@ -5,8 +5,10 @@
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use declarations::ConcreteFunction;
+use declarations::{ConcreteFunction, Declarations, FuncReference};
 use layout::Layout;
+use std::collections::HashSet;
+use std::hash::Hash;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
@@ -57,7 +59,7 @@ pub enum SemanticError {
     MissingReturnType,
     #[error("Incorrect function arity was assumed")]
     InvalidNumberOfArguments,
-    #[error("Mismatched types")]
+    #[error("Mismatched types.\nexpected '{expected:?}',\nfound    '{found:?}'.")]
     MismatchedTypes {
         expected: Layout,
         found: Layout,
@@ -90,6 +92,62 @@ pub enum SemanticError {
     GenericParametersMismatch,
     #[error("Tried to put generics somewhere they don't belong.")]
     UnexpectedGenerics,
+}
+
+struct FunctionCompiler {
+    to_compile: Vec<FuncReference>,
+    compiled: HashSet<FuncReference>,
+}
+
+impl FunctionCompiler {
+    fn new(id: declarations::Id) -> Self {
+        Self {
+            to_compile: vec![FuncReference {
+                id,
+                generics: Vec::new(),
+            }],
+            compiled: HashSet::new(),
+        }
+    }
+
+    fn push(&mut self, func: FuncReference) {
+        self.to_compile.push(func);
+    }
+
+    fn compile_all(
+        &mut self,
+        declarations: &mut Declarations,
+        context: &mut CraneliftContext<impl Module>,
+    ) -> Result<(), SemanticError> {
+        loop {
+            let Some(func_ref) = self.to_compile.pop() else {
+                break;
+            };
+
+            if self.compiled.contains(&func_ref) {
+                continue;
+            }
+            let function = declarations
+                .concrete_functions
+                .remove(&func_ref)
+                .expect("function not found");
+
+            let ConcreteFunction::Internal(internal) = function else {
+                declarations.concrete_functions.insert(func_ref, function);
+                continue;
+            };
+            // TODO: `.clone()`
+            internal.clone().compile(declarations, context, self)?;
+
+            declarations
+                .concrete_functions
+                .insert(func_ref.clone(), ConcreteFunction::Internal(internal));
+
+            self.compiled.insert(func_ref);
+        }
+
+        Ok(())
+    }
 }
 
 fn main() {
@@ -148,25 +206,28 @@ fn main() {
     };
 
     let mut context = CraneliftContext::new(module);
-    let main = declarations
+    let main_id = declarations
         .lookup("main", declarations::TOP_LEVEL_SCOPE)
         .expect("no main!");
 
     let ConcreteFunction::Internal(main) = declarations
         .insert_function(
             declarations::FuncReference {
-                id: main,
+                id: main_id,
                 generics: Vec::new(),
             },
             &mut context.module,
+            declarations::TOP_LEVEL_SCOPE,
         )
         .expect("🎉 uh oh!")
     else {
         panic!("main should not be extern")
     };
 
-    match main.compile(&mut declarations, &mut context) {
-        Ok(_) => {}
+    // let function_compiler = FunctionCompiler::new(main_id);
+
+    match FunctionCompiler::new(main_id).compile_all(&mut declarations, &mut context) {
+        Ok(()) => {}
         Err(error) => match error {
             SemanticError::DeclarationNotFound(ident) => {
                 panic!(

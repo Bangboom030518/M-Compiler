@@ -1,5 +1,5 @@
 use super::builder::{self, VariableId};
-use crate::declarations::{self, Declarations, FuncReference, GenericArgument};
+use crate::declarations::{self, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
 use declarations::TypeReference;
@@ -34,7 +34,7 @@ pub struct Inferer<'a, M> {
     return_type: TypeReference,
     declarations: &'a mut Declarations,
     module: &'a mut M,
-    generics: &'a [GenericArgument]
+    scope: ScopeId,
 }
 
 impl<'a, M> Inferer<'a, M>
@@ -44,15 +44,15 @@ where
     pub fn function(
         function: &mut builder::Function,
         declarations: &mut declarations::Declarations,
-        module: &mut M,
-        generics: &'a [GenericArgument],
+        context: &mut M,
+        scope: ScopeId,
     ) -> Result<(), SemanticError> {
         let mut inferer = Inferer {
             variables: &mut function.variables,
             return_type: function.return_type.clone(),
             declarations,
-            module,
-            generics
+            module: context,
+            scope,
         };
 
         'a: loop {
@@ -156,7 +156,10 @@ where
         let struct_type_id = field_access.expression.type_ref.clone();
         match struct_type_id {
             None => Ok(environment_state),
-            Some(struct_type_id) => match self.declarations.insert_layout(&struct_type_id)? {
+            Some(struct_type_id) => match self
+                .declarations
+                .insert_layout(&struct_type_id, self.scope)?
+            {
                 Layout::Struct(layout) => {
                     let fields = layout.fields;
                     let field = fields
@@ -164,9 +167,13 @@ where
                         .ok_or(SemanticError::NonExistentField)?;
 
                     if let Some(type_ref) = type_ref {
-                        if *type_ref != field.type_id {
-                            let expected = self.declarations.insert_layout(type_ref)?;
-                            let found = self.declarations.insert_layout(&field.type_id)?;
+                        if !type_ref.is_equivalent_to(&field.type_id, self.declarations) {
+                            let expected = self.declarations.insert_layout(type_ref, self.scope)?;
+                            let found = self
+                                .declarations
+                                .insert_layout(&field.type_id, self.scope)?;
+                            dbg!(&expected);
+                            dbg!(&found);
                             return Err(SemanticError::MismatchedTypes {
                                 expected,
                                 found,
@@ -247,7 +254,6 @@ where
                 let hir::Expression::GlobalAccess(declaration) = callable else {
                     todo!("func refs!")
                 };
-
                 let signature = self
                     .declarations
                     .insert_function(
@@ -256,10 +262,11 @@ where
                             generics,
                         },
                         self.module,
+                        self.scope,
                     )?
                     .signature()
                     .clone();
-                
+
                 if signature.parameters.len() != call.arguments.len() {
                     return Err(SemanticError::InvalidNumberOfArguments);
                 }
@@ -304,7 +311,7 @@ where
             hir::Expression::Addr(pointer) => {
                 // TODO: move to translate
                 if let Some(type_ref) = expression.type_ref.clone() {
-                    let layout = self.declarations.insert_layout(&type_ref)?;
+                    let layout = self.declarations.insert_layout(&type_ref, self.scope)?;
                     if layout == Layout::Primitive(layout::Primitive::USize) {
                         self.expression(pointer, None)?
                     } else {
@@ -323,7 +330,6 @@ where
             }
             hir::Expression::Load(inner) => self.expression(inner, None)?,
             hir::Expression::Generixed(generixed) => {
-                dbg!();
                 self.expression(&mut generixed.expression, None)?
             }
             hir::Expression::Store(store) => EnvironmentState::default()
@@ -332,10 +338,12 @@ where
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
-            if expected != found {
+            if expected.is_equivalent_to(&found, self.declarations) {
+                dbg!(&expected);
+                dbg!(&found);
                 return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.insert_layout(&expected)?,
-                    found: self.declarations.insert_layout(&found)?,
+                    expected: self.declarations.insert_layout(&expected, self.scope)?,
+                    found: self.declarations.insert_layout(&found, self.scope)?,
                     expression: expression.expression.clone(),
                 });
             }

@@ -24,7 +24,6 @@ impl MSignature {
         name: Spanned<parser::Ident>,
         scope: ScopeId,
         module: &impl Module,
-        generics: &[GenericArgument],
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
         let parameters = parameters
@@ -35,7 +34,7 @@ impl MSignature {
         signature.params = parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations.insert_layout(type_ref)?;
+                let layout = declarations.insert_layout(type_ref, scope)?;
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -49,7 +48,7 @@ impl MSignature {
 
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
 
-        signature.returns = vec![match declarations.insert_layout(&return_type)? {
+        signature.returns = vec![match declarations.insert_layout(&return_type, scope)? {
             Layout::Primitive(primitive) => {
                 AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
             }
@@ -92,7 +91,6 @@ impl External {
             function.name,
             scope_id,
             module,
-            &[],
         )?;
 
         let id = module
@@ -119,7 +117,6 @@ pub struct Internal {
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: FuncId,
     pub generics: Vec<GenericArgument>,
-    // pub generic_arguments: Vec<GenericArgument>,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
@@ -130,33 +127,17 @@ impl Internal {
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
-        scope: ScopeId,
         module: &mut impl Module,
-        generics: Vec<GenericArgument>,
+        generic_arguments: Vec<GenericArgument>,
+        parameter_scope: ScopeId,
+        argument_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
-        // TODO: check these!
-        // let generics = std::iter::zip(function.generics.clone().value.generics, generic_arguments)
-        //     .map(|(ident, argument)| (ident.value.ident().value.0, argument))
-        //     .collect::<HashMap<_, _>>();
-
-        let scope = declarations.create_generic_scope(function.generics, &generics, scope)?;
-
-        // let generic_arguments2 = generic_arguments
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(index, (ident, argument))| {
-        //         let argument = match argument {
-        //             GenericArgument::Length(_) => Declaration::LengthGeneric(index),
-        //             GenericArgument::Type(_) => Declaration::TypeGeneric(index),
-        //         };
-        //         (ident.clone(), declarations.create(argument))
-        //     })
-        //     .collect();
-
-        // let scope = declarations.create_scope(crate::declarations::TopLevelScope {
-        //     declarations: generic_arguments2,
-        //     parent: Some(scope),
-        // });
+        let scope = declarations.create_generic_scope(
+            function.generic_parameters,
+            &generic_arguments,
+            parameter_scope,
+            argument_scope,
+        )?;
 
         let parameters: (Vec<_>, Vec<_>) = function
             .parameters
@@ -177,7 +158,6 @@ impl Internal {
             function.name,
             scope,
             module,
-            &generics,
         )?;
 
         let mut body = function.body;
@@ -209,7 +189,7 @@ impl Internal {
             scope_id: scope,
             body,
             id,
-            generics, // generic_arguments,
+            generics: generic_arguments, // generic_arguments,
         })
     }
 
@@ -217,7 +197,8 @@ impl Internal {
         &self,
         declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
-    ) -> Result<FuncId, SemanticError> {
+        function_compiler: &mut crate::FunctionCompiler,
+    ) -> Result<(), SemanticError> {
         let mut builder = cranelift::prelude::FunctionBuilder::new(
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
@@ -234,7 +215,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout(&self.signature.return_type)?
+            .insert_layout(&self.signature.return_type, self.scope_id)?
             .is_aggregate()
         {
             let param = block_params
@@ -255,7 +236,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout(type_ref)?;
+                let layout = declarations.insert_layout(type_ref, self.scope_id)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -289,14 +270,15 @@ impl Internal {
             &mut func,
             declarations,
             &mut cranelift_context.module,
-            &self.generics,
+            self.scope_id,
         )?;
 
         let mut translator = Translator::new(
             builder,
             declarations,
             &mut cranelift_context.module,
-            &self.generics,
+            function_compiler,
+            self.scope_id,
         );
 
         for statement in func.body {
@@ -328,6 +310,6 @@ impl Internal {
             .module
             .clear_context(&mut cranelift_context.context);
 
-        Ok(self.id)
+        Ok(())
     }
 }
