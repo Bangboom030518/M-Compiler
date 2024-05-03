@@ -1,4 +1,4 @@
-use crate::declarations::{self, Declarations, FuncReference, ScopeId};
+use crate::declarations::{Declarations, FuncReference, ScopeId};
 use crate::layout::{Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -307,18 +307,16 @@ where
         let hir::Expression::GlobalAccess(declaration) = callable else {
             todo!("closures!")
         };
-        
+
         let reference = FuncReference {
             id: declaration,
             generics,
         };
-        
-        let function = self.declarations.insert_function(
-            reference.clone(),
-            &mut self.context,
-            self.scope,
-        )?;
-        
+
+        let function =
+            self.declarations
+                .insert_function(reference.clone(), &mut self.context, self.scope)?;
+
         self.function_compiler.push(reference);
 
         let mut arguments = Vec::new();

@@ -1,5 +1,5 @@
 use super::{Store, TypedExpression};
-use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
+use crate::declarations::{Declarations, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
@@ -40,7 +40,6 @@ pub struct Builder<'a> {
     local_scopes: Vec<HashMap<String, Variable>>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
-    generics: &'a [GenericArgument], // generic_arguments: HashMap<String, GenericArgument>,
 }
 
 impl<'a> Builder<'a> {
@@ -65,8 +64,6 @@ impl<'a> Builder<'a> {
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
-            generics: &function.generics,
-            // generic_arguments: function.generic_arguments.clone(),
         }
     }
 

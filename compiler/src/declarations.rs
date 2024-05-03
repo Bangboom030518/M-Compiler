@@ -23,7 +23,13 @@ pub struct TypeReference {
 }
 
 impl TypeReference {
-    pub fn is_equivalent_to(&self, other: &TypeReference, declarations: &mut Declarations) -> bool {
+    #[must_use]
+    pub fn assert_equivalent(
+        &self,
+        other: &TypeReference,
+        declarations: &mut Declarations,
+        // scope: ScopeId,
+    ) -> Result<(), SemanticError> {
         todo!("compare types")
     }
 }
@@ -113,7 +119,7 @@ impl ConcreteFunction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Declaration {
+enum Declaration {
     Type(Type),
     Function(GenericFunction),
     TypeAlias(TypeReference),
@@ -490,7 +496,7 @@ impl Declarations {
         }))
     }
 
-    pub fn create(&mut self, declaration: Declaration) -> Id {
+    fn create(&mut self, declaration: Declaration) -> Id {
         let id = self.declarations.len();
         self.declarations.push(Some(declaration));
         Id(id)
