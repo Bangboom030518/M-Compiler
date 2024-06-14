@@ -167,21 +167,12 @@ where
                         .ok_or(SemanticError::NonExistentField)?;
 
                     if let Some(type_ref) = type_ref {
-                        if !type_ref.is_equivalent_to(&field.type_id, self.declarations) {
-                            let expected = self.declarations.insert_layout(type_ref, self.scope)?;
-                            let found = self
-                                .declarations
-                                .insert_layout(&field.type_id, self.scope)?;
-                            dbg!(&expected);
-                            dbg!(&found);
-                            return Err(SemanticError::MismatchedTypes {
-                                expected,
-                                found,
-                                expression: hir::Expression::FieldAccess(Box::new(
-                                    field_access.clone(),
-                                )),
-                            });
-                        }
+                        type_ref.assert_equivalent(
+                            &field.type_id,
+                            self.declarations,
+                            self.scope,
+                            &hir::Expression::FieldAccess(Box::new(field_access.clone())),
+                        )?;
                     } else {
                         *type_ref = Some(field.type_id.clone());
                     };
@@ -338,15 +329,7 @@ where
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
-            if expected.is_equivalent_to(&found, self.declarations) {
-                dbg!(&expected);
-                dbg!(&found);
-                return Err(SemanticError::MismatchedTypes {
-                    expected: self.declarations.insert_layout(&expected, self.scope)?,
-                    found: self.declarations.insert_layout(&found, self.scope)?,
-                    expression: expression.expression.clone(),
-                });
-            }
+            expected.assert_equivalent(&found, self.declarations, self.scope, &expression.expression)?;
         }
 
         Ok(environment_state)

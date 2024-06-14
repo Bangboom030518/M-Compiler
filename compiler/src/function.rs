@@ -289,10 +289,14 @@ impl Internal {
 
         translator.finalize();
 
+        dbg!(&self.signature.name);
+
         cranelift_context
             .module
             .define_function(self.id, &mut cranelift_context.context)
-            .unwrap_or_else(|error| todo!("handle me properly: {error:?}"));
+            .unwrap_or_else(|error: cranelift_module::ModuleError| {
+                todo!("handle me properly: {error:?}")
+            });
 
         #[cfg(debug_assertions)]
         {

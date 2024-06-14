@@ -86,9 +86,10 @@ where
             hir::Statement::Let(variable, expression) => {
                 self.builder.declare_var(
                     variable.into(),
-                    self.declarations
-                        .insert_layout(expression.expect_type()?, self.scope)?
-                        .cranelift_type(&self.declarations.isa),
+                    self.declarations.isa.pointer_type(),
+                    // self.declarations
+                    //     .insert_layout(expression.expect_type()?, self.scope)?
+                    //     .cranelift_type(&self.declarations.isa),
                 );
                 let BranchStatus::Continue(expression) = self.expression(expression)? else {
                     return Ok(BranchStatus::Finished);

@@ -23,14 +23,52 @@ pub struct TypeReference {
 }
 
 impl TypeReference {
-    #[must_use]
+    pub fn resolve(&self, declarations: &Declarations) -> Self {
+        match declarations.get(self.id) {
+            Declaration::Function(_) => todo!(),
+            Declaration::Length(_) => todo!(),
+            Declaration::Type(_) => {
+                let generics = self
+                    .generics
+                    .clone()
+                    .into_iter()
+                    .map(|generic| match generic {
+                        GenericArgument::Length(_) => generic,
+                        GenericArgument::Type(r#type) => {
+                            GenericArgument::Type(r#type.resolve(declarations))
+                        }
+                    })
+                    .collect();
+
+                Self {
+                    generics,
+                    id: self.id,
+                }
+            }
+            Declaration::TypeAlias(r#type) => r#type.resolve(declarations),
+        }
+    }
+
     pub fn assert_equivalent(
         &self,
         other: &TypeReference,
         declarations: &mut Declarations,
-        // scope: ScopeId,
+        scope: ScopeId,
+        expression: &crate::hir::Expression,
     ) -> Result<(), SemanticError> {
-        todo!("compare types")
+        let left = self.resolve(declarations);
+        let right = other.resolve(declarations);
+        if left == right {
+            Ok(())
+        } else {
+            let left = declarations.insert_layout(&left, scope)?;
+            let right = declarations.insert_layout(&right, scope)?;
+            Err(SemanticError::MismatchedTypes {
+                expected: left,
+                found: right,
+                expression: expression.clone(),
+            })
+        }
     }
 }
 
