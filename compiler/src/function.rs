@@ -244,6 +244,7 @@ impl Internal {
                 } else {
                     let stack_slot = builder.create_sized_stack_slot(StackSlotData {
                         kind: StackSlotKind::ExplicitSlot,
+                        align_shift: 0,
                         size,
                     });
 

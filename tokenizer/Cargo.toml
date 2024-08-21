@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 itertools = { workspace = true }
 bitfields = { path = "../bitfields" }
+ahash.workspace = true
+

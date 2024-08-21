@@ -13,3 +13,5 @@ cranelift-module = { workspace = true }
 cranelift-native = { workspace = true }
 cranelift-reader = { workspace = true }
 itertools = { workspace = true }
+ahash.workspace = true
+

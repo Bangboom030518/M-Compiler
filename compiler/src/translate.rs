@@ -267,6 +267,7 @@ where
 
         let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
             kind: StackSlotKind::ExplicitSlot,
+            align_shift: 0,
             size: layout.size,
         });
 
@@ -337,6 +338,7 @@ where
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
                 return_layout.size(&self.declarations.isa),
+                0,
             ));
 
             let addr = self.builder.ins().stack_addr(
@@ -366,6 +368,7 @@ where
         let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
             kind: StackSlotKind::ExplicitSlot,
             size,
+            align_shift: 0,
         });
 
         self.builder

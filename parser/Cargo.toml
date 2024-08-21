@@ -9,3 +9,5 @@ itertools = { workspace = true }
 thiserror = { workspace = true }
 tokenizer = { path = "../tokenizer" }
 bitfields = { path = "../bitfields" }
+ahash.workspace = true
+

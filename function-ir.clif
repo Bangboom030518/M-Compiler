@@ -1,37 +1,37 @@
-function u0:0() -> i8 windows_fastcall {
+function u0:0() -> i8 system_v {
     ss0 = explicit_slot 16
-    ss1 = explicit_slot 4
+    ss1 = explicit_slot 1
     ss2 = explicit_slot 4
-    ss3 = explicit_slot 1
+    ss3 = explicit_slot 4
     ss4 = explicit_slot 1
     ss5 = explicit_slot 1
     gv0 = symbol colocated userextname0
-    sig0 = (i64, i64) -> i64 windows_fastcall
-    sig1 = () -> i32 windows_fastcall
-    sig2 = (i64) -> i8 windows_fastcall
+    sig0 = (i64, i64) -> i64 system_v
+    sig1 = (i64) -> i8 system_v
+    sig2 = () -> i32 system_v
     fn0 = colocated u0:7 sig0
-    fn1 = u0:0 sig1
-    fn2 = colocated u0:8 sig2
+    fn1 = colocated u0:8 sig1
+    fn2 = u0:3 sig2
 
 block0:
     v0 = symbol_value.i64 gv0
     v1 = stack_addr.i64 ss0
     v2 = call fn0(v0, v1)
-    v3 = call fn1()
+    v3 = call fn1(v2)
     v16 = stack_addr.i64 ss1
     store notrap v3, v16
     v4 = stack_addr.i64 ss1
-    v5 = load.i32 v4
-    v6 = iconst.i32 100
+    v5 = call fn2()
     v17 = stack_addr.i64 ss2
-    store notrap v6, v17  ; v6 = 100
-    v7 = stack_addr.i64 ss2
-    v8 = load.i32 v7
-    v9 = icmp eq v5, v8
+    store notrap v5, v17
+    v6 = stack_addr.i64 ss2
+    v7 = load.i32 v6
+    v8 = iconst.i32 100
     v18 = stack_addr.i64 ss3
-    store notrap v9, v18
-    v10 = stack_addr.i64 ss3
-    v11 = call fn2(v2)
+    store notrap v8, v18  ; v8 = 100
+    v9 = stack_addr.i64 ss3
+    v10 = load.i32 v9
+    v11 = icmp eq v7, v10
     v19 = stack_addr.i64 ss4
     store notrap v11, v19
     v12 = stack_addr.i64 ss4
@@ -42,7 +42,7 @@ block0:
     v15 = load.i8 v14
     return v15
 }
-function u0:0(i64) -> i8 windows_fastcall {
+function u0:0(i64) -> i8 system_v {
     ss0 = explicit_slot 8
     ss1 = explicit_slot 8
     ss2 = explicit_slot 8
@@ -52,13 +52,13 @@ function u0:0(i64) -> i8 windows_fastcall {
     ss6 = explicit_slot 1
     ss7 = explicit_slot 1
     ss8 = explicit_slot 1
-    sig0 = (i64) -> i64 windows_fastcall
-    sig1 = (i64, i64, i64) -> i8 windows_fastcall
-    sig2 = (i64) -> i8 windows_fastcall
-    sig3 = (i64) -> i8 windows_fastcall
-    fn0 = u0:2 sig0
-    fn1 = u0:1 sig1
-    fn2 = u0:5 sig2
+    sig0 = (i64) -> i64 system_v
+    sig1 = (i64, i64, i64) -> i8 system_v
+    sig2 = (i64) -> i8 system_v
+    sig3 = (i64) -> i8 system_v
+    fn0 = u0:1 sig0
+    fn1 = u0:0 sig1
+    fn2 = u0:2 sig2
     fn3 = u0:4 sig3
 
 block0(v0: i64):
@@ -123,12 +123,12 @@ block0(v0: i64):
     v40 = load.i8 v39
     return v40
 }
-function u0:0(i64, i64) -> i64 windows_fastcall {
+function u0:0(i64, i64) -> i64 system_v {
     ss0 = explicit_slot 16
     ss1 = explicit_slot 8
     ss2 = explicit_slot 8
-    sig0 = (i64, i64, i64) -> i64 windows_fastcall
-    sig1 = (i64, i64, i64) -> i64 windows_fastcall
+    sig0 = (i64, i64, i64) -> i64 system_v
+    sig1 = (i64, i64, i64) -> i64 system_v
     fn0 = %Memmove sig0
     fn1 = %Memmove sig1
 
