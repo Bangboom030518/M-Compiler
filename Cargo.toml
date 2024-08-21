@@ -1,10 +1,5 @@
 [workspace]
-members = [
-    "parser",
-    "compiler",
-    "tokenizer",
-    "bitfields"
-]
+members = ["parser", "compiler", "tokenizer", "bitfields"]
 default-run = "compiler"
 resolver = "2"
 

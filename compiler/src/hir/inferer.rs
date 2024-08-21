@@ -125,6 +125,13 @@ where
             else_branch,
         } = expression;
         let mut environment_state = self.expression(condition, None)?;
+        if let Some(type_ref) = &condition.type_ref {
+            if Layout::Primitive(layout::Primitive::U8)
+                != self.declarations.insert_layout(type_ref, self.scope)?
+            {
+                todo!("expected bool, found something else");
+            }
+        }
 
         environment_state.merge_mut(self.block(then_branch, expected_type.clone())?);
         let mut expected_type = expected_type.or_else(|| {
@@ -329,7 +336,12 @@ where
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
-            expected.assert_equivalent(&found, self.declarations, self.scope, &expression.expression)?;
+            expected.assert_equivalent(
+                &found,
+                self.declarations,
+                self.scope,
+                &expression.expression,
+            )?;
         }
 
         Ok(environment_state)

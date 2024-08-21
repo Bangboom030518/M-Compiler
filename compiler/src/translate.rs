@@ -145,7 +145,7 @@ where
         } else {
             todo!("void ifs")
         }
-
+        dbg!(&condition);
         let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
         };

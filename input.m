@@ -39,16 +39,18 @@ end
 
 fn UInt8 main()
     let data = slice[UInt8, 3]("Hi!")
-    // srand(123)
+    srand(123)
     // let a = not_rand()
     print(data)
     @assert_type(@eq(rand(), @assert_type(100, UInt32)), UInt8)
 
-    // if @assert_type(@eq(rand(), @assert_type(100, USize)), UInt8)
-    //     print(data)
-    //     @assert_type(0, UInt8)
-    // else
-    //     @assert_type(0, UInt8)
-    // end
+    if @assert_type(@eq(rand(), @assert_type(100, UInt32)), UInt8)
+        print(data)
+        @assert_type(0, UInt8)
+    else
+        @assert_type(0, UInt8)
+    end
     0
 end
+
+//# vim: commentstring=//%s
