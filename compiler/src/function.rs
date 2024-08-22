@@ -6,6 +6,7 @@ use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
+use isa::CallConv;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +25,13 @@ impl MSignature {
         name: Spanned<parser::Ident>,
         scope: ScopeId,
         module: &impl Module,
+        call_conv: Option<CallConv>,
     ) -> Result<Self, SemanticError> {
         let mut signature = module.make_signature();
+        if let Some(call_conv) = call_conv {
+            signature.call_conv = call_conv;
+        }
+
         let parameters = parameters
             .iter()
             .map(|r#type| declarations.lookup_type(&r#type.value, scope))
@@ -91,6 +97,10 @@ impl External {
             function.name,
             scope_id,
             module,
+            Some(CallConv::for_libcall(
+                module.isa().flags(),
+                module.isa().default_call_conv(),
+            )),
         )?;
 
         let id = module
@@ -158,6 +168,7 @@ impl Internal {
             function.name,
             scope,
             module,
+            None,
         )?;
 
         let mut body = function.body;
@@ -289,8 +300,6 @@ impl Internal {
         }
 
         translator.finalize();
-
-        dbg!(&self.signature.name);
 
         cranelift_context
             .module

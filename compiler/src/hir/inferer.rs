@@ -126,10 +126,9 @@ where
         } = expression;
         let mut environment_state = self.expression(condition, None)?;
         if let Some(type_ref) = &condition.type_ref {
-            if Layout::Primitive(layout::Primitive::U8)
-                != self.declarations.insert_layout(type_ref, self.scope)?
-            {
-                todo!("expected bool, found something else");
+            let layout = self.declarations.insert_layout(type_ref, self.scope)?;
+            if Layout::Primitive(layout::Primitive::U8) != layout {
+                // todo!("expected bool, found something else");
             }
         }
 

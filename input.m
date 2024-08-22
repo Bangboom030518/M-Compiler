@@ -16,6 +16,7 @@ fn memcpy @extern("memcpy", fn(USize, USize, USize) UInt8)
 // void srand(unsigned int seed)
 fn srand @extern("srand", fn(UInt32) UInt8)
 fn rand @extern("rand", fn() UInt32)
+fn printf @extern("printf", fn(USize, UInt32) UInt8)
 
 fn[T, @length L] Slice[T] slice(Array[T, L] array)
     Slice[T]
@@ -39,18 +40,18 @@ end
 
 fn UInt8 main()
     let data = slice[UInt8, 3]("Hi!")
-    srand(123)
+    srand(1230)
     // let a = not_rand()
-    print(data)
-    @assert_type(@eq(rand(), @assert_type(100, UInt32)), UInt8)
-
-    if @assert_type(@eq(rand(), @assert_type(100, UInt32)), UInt8)
-        print(data)
-        @assert_type(0, UInt8)
+    // @assert_type(@eq(rand(), 100), UInt8)
+	
+    let result = if @assert_type(@eq(rand(), 100), UInt8)
+        1
     else
-        @assert_type(0, UInt8)
+        print(data)
+        2
     end
+	printf(@addr(@assert_type("%u\n\0", Array[UInt8, 4])), result)
     0
 end
 
-//# vim: commentstring=//%s
+//# vim: commentstring=//%s tabstop=4 shiftwidth=4

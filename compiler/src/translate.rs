@@ -128,27 +128,39 @@ where
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
 
-        if let Some(then_return) = &then_branch.expression {
-            self.builder.append_block_param(
-                merge_block,
-                match self
-                    .declarations
-                    .insert_layout(then_return.expect_type()?, self.scope)?
-                {
-                    Layout::Primitive(primitive) => {
-                        primitive.cranelift_type(self.declarations.isa.pointer_type())
-                    }
-                    Layout::Struct(_) => todo!("structs in ifs!"),
-                    Layout::Array(_) => todo!("arrays in ifs!"),
-                },
-            );
-        } else {
-            todo!("void ifs")
-        }
-        dbg!(&condition);
+        self.builder
+            .append_block_param(merge_block, self.declarations.isa.pointer_type());
+
+        // if let Some(then_return) = &then_branch.expression {
+        //     self.builder.append_block_param(
+        //         merge_block,
+        //         match self
+        //             .declarations
+        //             .insert_layout(then_return.expect_type()?, self.scope)?
+        //         {
+        //             Layout::Primitive(primitive) => {
+        //                 dbg!(&primitive);
+        //                 dbg!(primitive.cranelift_type(self.declarations.isa.pointer_type()))
+        //             }
+        //             Layout::Struct(_) => todo!("structs in ifs!"),
+        //             Layout::Array(_) => todo!("arrays in ifs!"),
+        //         },
+        //     );
+        // } else {
+        //     todo!("void ifs")
+        // }
+
         let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
         };
+
+        // let condition = self.builder.ins().load(
+        //     condition_layout.cranelift_type(&self.declarations.isa),
+        //     MemFlags::new(),
+        //     condition,
+        //     Offset32::new(0),
+        // );
+
         self.builder
             .ins()
             .brif(condition, then_block, &[], else_block, &[]);
