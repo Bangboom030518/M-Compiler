@@ -48,24 +48,27 @@ impl MSignature {
                     Layout::Struct(_) | Layout::Array(_) => {
                         Ok(AbiParam::new(declarations.isa.pointer_type()))
                     }
+                    Layout::Void => todo!("void params"),
                 }
             })
             .collect::<Result<_, _>>()?;
 
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
-
-        signature.returns = vec![match declarations.insert_layout(&return_type, scope)? {
+        signature.returns = match declarations.insert_layout(&return_type, scope)? {
             Layout::Primitive(primitive) => {
-                AbiParam::new(primitive.cranelift_type(declarations.isa.pointer_type()))
+                vec![AbiParam::new(
+                    primitive.cranelift_type(declarations.isa.pointer_type()),
+                )]
             }
             Layout::Struct(_) | Layout::Array(_) => {
                 signature
                     .params
                     .push(AbiParam::new(declarations.isa.pointer_type()));
 
-                AbiParam::new(declarations.isa.pointer_type())
+                vec![AbiParam::new(declarations.isa.pointer_type())]
             }
-        }];
+            Layout::Void => Vec::new(),
+        };
 
         Ok(Self {
             parameters,

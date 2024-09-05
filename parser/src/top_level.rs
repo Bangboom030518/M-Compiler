@@ -232,12 +232,14 @@ pub enum PrimitiveKind {
     F32,
     F64,
     USize,
+    Void,
     Array(Spanned<Length>, Spanned<Type>),
 }
 
 impl PrimitiveKind {
     const VALID_IDENTS: &'static [&'static str] = &[
-        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "array",
+        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "void",
+        "array",
     ];
 }
 
@@ -273,6 +275,7 @@ impl Parse for PrimitiveKind {
                 "f32" => Self::F32,
                 "f64" => Self::F64,
                 "usize" => Self::USize,
+                "void" => Self::Void,
                 "array" => {
                     parser.take_token_if(TokenType::OpenParen)?;
                     let length = parser.parse()?;

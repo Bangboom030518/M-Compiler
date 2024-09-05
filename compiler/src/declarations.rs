@@ -80,6 +80,7 @@ pub struct FuncReference {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Primitive {
+    Void,
     U8,
     U16,
     U32,
@@ -313,6 +314,7 @@ impl Declarations {
                         P::F32 => Primitive::F32,
                         P::F64 => Primitive::F64,
                         P::USize => Primitive::USize,
+                        P::Void => Primitive::Void,
                         P::Array(length, element_type) => {
                             let length = match length.value {
                                 L::Ident(ident) => Length::Generic(ident.0),
@@ -463,6 +465,7 @@ impl Declarations {
                 Primitive::I64 => Layout::Primitive(layout::Primitive::I64),
                 Primitive::I128 => Layout::Primitive(layout::Primitive::I128),
                 Primitive::USize => Layout::Primitive(layout::Primitive::USize),
+                Primitive::Void => Layout::Void,
                 Primitive::Array(length, element_type) => {
                     let element_type = resolve_type(&element_type, self, scope)?;
                     let element_type = match self.get(element_type.id) {

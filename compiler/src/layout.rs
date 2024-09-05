@@ -28,6 +28,7 @@ pub enum Layout {
     Struct(Struct),
     Primitive(Primitive),
     Array(Array),
+    Void,
 }
 
 impl Layout {
@@ -36,6 +37,7 @@ impl Layout {
             Self::Primitive(primitive) => primitive.size(u32::from(isa.pointer_bytes())),
             Self::Struct(Struct { size, .. }) => *size,
             Self::Array(array) => array.size,
+            Self::Void => 0,
         }
     }
 
@@ -51,6 +53,7 @@ impl Layout {
         match self {
             Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
             Self::Struct(_) | Self::Array(_) => isa.pointer_type(),
+            Self::Void => todo!("unimplemented - clean up"),
         }
     }
 }

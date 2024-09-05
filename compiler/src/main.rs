@@ -8,7 +8,6 @@ use cranelift_module::Module;
 use declarations::{ConcreteFunction, Declarations, FuncReference};
 use layout::Layout;
 use std::collections::HashSet;
-use std::hash::Hash;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
@@ -150,6 +149,11 @@ impl FunctionCompiler {
     }
 }
 
+extern "C" fn print_int(n: usize) -> usize {
+    println!("{n}");
+    0
+}
+
 fn main() {
     #[cfg(debug_assertions)]
     {
@@ -183,10 +187,12 @@ fn main() {
         .finish(settings::Flags::new(flag_builder))
         .unwrap();
 
-    let builder = cranelift_jit::JITBuilder::with_isa(
+    let mut builder = cranelift_jit::JITBuilder::with_isa(
         Arc::clone(&isa),
         cranelift_module::default_libcall_names(),
     );
+
+    builder.symbol("print_int", print_int as *const u8);
 
     let mut module = cranelift_jit::JITModule::new(builder);
     let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {
@@ -268,6 +274,7 @@ fn main() {
     let function = main.id;
 
     let code = context.module.get_finalized_function(function);
+    println!("Compilation finished! Running compiled function...");
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
     unsafe { main() };
 }

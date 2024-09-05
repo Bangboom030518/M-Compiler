@@ -247,7 +247,7 @@ where
 
         let struct_layout = match struct_layout {
             Layout::Struct(struct_layout) => struct_layout,
-            Layout::Primitive(_) | Layout::Array(_) => {
+            Layout::Primitive(_) | Layout::Void | Layout::Array(_) => {
                 return Err(SemanticError::InvalidFieldAccess(struct_layout.clone()))
             }
         };
@@ -367,13 +367,23 @@ where
             .declare_func_in_func(function.id(), self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
-        let value = self.builder.inst_results(call)[0];
-        let value = if return_layout.is_aggregate() {
-            value
+        if return_layout == Layout::Void {
+            // TODO: What????
+            let value = self
+                .builder
+                .ins()
+                .iconst(self.context.isa().pointer_type(), 0);
+
+            Ok(BranchStatus::Continue(value))
         } else {
-            self.put_in_stack_slot(value, return_layout.size(&self.declarations.isa))
-        };
-        Ok(BranchStatus::Continue(value))
+            let value = self.builder.inst_results(call)[0];
+            let value = if return_layout.is_aggregate() {
+                value
+            } else {
+                self.put_in_stack_slot(value, return_layout.size(&self.declarations.isa))
+            };
+            Ok(BranchStatus::Continue(value))
+        }
     }
 
     fn put_in_stack_slot(&mut self, value: Value, size: u32) -> Value {
