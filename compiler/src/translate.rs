@@ -1,4 +1,8 @@
+use std::collections::hash_map::Keys;
+
 use crate::declarations::{Declarations, FuncReference, ScopeId};
+use crate::function::{AGGREGATE_PARAM_VARIABLE, SPECIAL_VARIABLES};
+use crate::hir::builder::VariableId;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -588,11 +592,35 @@ where
             }
             hir::Expression::Constructor(constructor) => self.constructor(constructor, &layout?)?,
             hir::Expression::Return(expression) => {
+                let layout = expression
+                    .type_ref
+                    .clone()
+                    .ok_or(SemanticError::UnknownType(hir::Expression::Return(
+                        expression.clone(),
+                    )))?;
+
+                let layout = self.declarations.insert_layout(&layout, self.scope)?;
+
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {
                     return Ok(BranchStatus::Finished);
                 };
 
-                self.builder.ins().return_(&[value]);
+                if layout.is_aggregate() {
+                    let return_param = self
+                        .builder
+                        .use_var(Variable::new(AGGREGATE_PARAM_VARIABLE));
+
+                    let size = self.iconst(layout.size(&self.declarations.isa));
+                    self.builder.call_memcpy(
+                        self.declarations.isa.frontend_config(),
+                        return_param,
+                        value,
+                        size,
+                    );
+                    self.builder.ins().return_(&[return_param]);
+                } else {
+                    self.builder.ins().return_(&[value]);
+                }
 
                 return Ok(BranchStatus::Finished);
             }

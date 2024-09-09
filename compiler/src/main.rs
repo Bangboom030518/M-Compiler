@@ -3,6 +3,8 @@
 
 // TODO: voidz
 
+use core::alloc;
+use core::arch::global_asm;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::{ConcreteFunction, Declarations, FuncReference};
@@ -149,11 +151,6 @@ impl FunctionCompiler {
     }
 }
 
-extern "C" fn print_int(n: usize) -> usize {
-    println!("{n}");
-    0
-}
-
 fn main() {
     #[cfg(debug_assertions)]
     {
@@ -192,7 +189,30 @@ fn main() {
         cranelift_module::default_libcall_names(),
     );
 
+    extern "C" fn print_int(n: usize) -> usize {
+        println!("{n}");
+        0
+    }
+
+    unsafe extern "C" fn alloc_rs(size: usize) -> *mut u8 {
+        use std::alloc::{alloc, handle_alloc_error, Layout};
+        let layout = Layout::from_size_align(size, 4).unwrap();
+        let ptr = unsafe { alloc(layout) };
+        if ptr.is_null() {
+            handle_alloc_error(layout);
+        }
+        ptr
+    }
+
+    unsafe extern "C" fn dealloc_rs(ptr: *mut u8, size: usize) -> usize {
+        use std::alloc::{dealloc, Layout};
+        unsafe { dealloc(ptr, Layout::from_size_align(size, 4).unwrap()) };
+        0
+    }
+
     builder.symbol("print_int", print_int as *const u8);
+    builder.symbol("alloc_rs", alloc_rs as *const u8);
+    builder.symbol("dealloc_rs", dealloc_rs as *const u8);
 
     let mut module = cranelift_jit::JITModule::new(builder);
     let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {

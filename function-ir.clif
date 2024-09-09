@@ -1,99 +1,66 @@
 function u0:0() -> i8 system_v {
     ss0 = explicit_slot 16
-    ss1 = explicit_slot 8
-    ss2 = explicit_slot 8
-    ss3 = explicit_slot 8
-    ss4 = explicit_slot 8
-    ss5 = explicit_slot 4
-    ss6 = explicit_slot 4
+    ss1 = explicit_slot 4
+    ss2 = explicit_slot 4
+    ss3 = explicit_slot 1
+    ss4 = explicit_slot 1
+    ss5 = explicit_slot 1
+    ss6 = explicit_slot 1
     ss7 = explicit_slot 1
-    ss8 = explicit_slot 1
-    ss9 = explicit_slot 1
-    ss10 = explicit_slot 1
-    ss11 = explicit_slot 1
     gv0 = symbol colocated userextname0
     sig0 = (i64, i64) -> i64 system_v
-    sig1 = (i64) -> i64 system_v
-    sig2 = (i64) -> i64 system_v
-    sig3 = (i64) -> i64 system_v
-    sig4 = () -> i32 system_v
-    sig5 = (i64) -> i8 system_v
-    fn0 = colocated u0:7 sig0
-    fn1 = u0:4 sig1
-    fn2 = u0:4 sig2
-    fn3 = u0:4 sig3
-    fn4 = colocated u0:8 sig4
-    fn5 = colocated u0:9 sig5
+    sig1 = () -> i32 system_v
+    sig2 = (i64) -> i8 system_v
+    fn0 = colocated u0:8 sig0
+    fn1 = colocated u0:9 sig1
+    fn2 = colocated u0:10 sig2
 
 block0:
     v0 = symbol_value.i64 gv0
     v1 = stack_addr.i64 ss0
     v2 = call fn0(v0, v1)
-    v3 = iconst.i64 8
-    v4 = iadd v2, v3  ; v3 = 8
-    v5 = load.i64 v4
-    v6 = call fn1(v5)
-    v37 = stack_addr.i64 ss1
-    store notrap v6, v37
-    v7 = stack_addr.i64 ss1
-    v8 = iconst.i64 8
-    v9 = iadd v2, v8  ; v8 = 8
-    v10 = load.i64 v9
-    v11 = call fn2(v10)
-    v38 = stack_addr.i64 ss2
-    store notrap v11, v38
-    v12 = stack_addr.i64 ss2
-    v13 = iconst.i64 0x2904
-    v39 = stack_addr.i64 ss3
-    store notrap v13, v39  ; v13 = 0x2904
-    v14 = stack_addr.i64 ss3
-    v15 = load.i64 v14
-    v16 = call fn3(v15)
-    v40 = stack_addr.i64 ss4
-    store notrap v16, v40
-    v17 = stack_addr.i64 ss4
-    v19 = call fn4()
-    v41 = stack_addr.i64 ss5
-    store notrap v19, v41
-    v20 = stack_addr.i64 ss5
-    v21 = load.i32 v20
-    v22 = iconst.i32 100
-    v42 = stack_addr.i64 ss6
-    store notrap v22, v42  ; v22 = 100
-    v23 = stack_addr.i64 ss6
-    v24 = load.i32 v23
-    v25 = icmp eq v21, v24
-    v43 = stack_addr.i64 ss7
-    store notrap v25, v43
-    v26 = stack_addr.i64 ss7
-    v27 = load.i8 v26
-    brif v27, block1, block2
+    v4 = call fn1()
+    v22 = stack_addr.i64 ss1
+    store notrap v4, v22
+    v5 = stack_addr.i64 ss1
+    v6 = load.i32 v5
+    v7 = iconst.i32 100
+    v23 = stack_addr.i64 ss2
+    store notrap v7, v23  ; v7 = 100
+    v8 = stack_addr.i64 ss2
+    v9 = load.i32 v8
+    v10 = icmp eq v6, v9
+    v24 = stack_addr.i64 ss3
+    store notrap v10, v24
+    v11 = stack_addr.i64 ss3
+    v12 = load.i8 v11
+    brif v12, block1, block2
 
 block1:
-    v28 = iconst.i8 1
-    v44 = stack_addr.i64 ss8
-    store notrap v28, v44  ; v28 = 1
-    v29 = stack_addr.i64 ss8
-    jump block3(v29)
+    v13 = iconst.i8 1
+    v25 = stack_addr.i64 ss4
+    store notrap v13, v25  ; v13 = 1
+    v14 = stack_addr.i64 ss4
+    jump block3(v14)
 
 block2:
-    v30 = call fn5(v2)
-    v45 = stack_addr.i64 ss9
-    store notrap v30, v45
-    v31 = stack_addr.i64 ss9
-    v32 = iconst.i8 2
-    v46 = stack_addr.i64 ss10
-    store notrap v32, v46  ; v32 = 2
-    v33 = stack_addr.i64 ss10
-    jump block3(v33)
+    v15 = call fn2(v2)
+    v26 = stack_addr.i64 ss5
+    store notrap v15, v26
+    v16 = stack_addr.i64 ss5
+    v17 = iconst.i8 2
+    v27 = stack_addr.i64 ss6
+    store notrap v17, v27  ; v17 = 2
+    v18 = stack_addr.i64 ss6
+    jump block3(v18)
 
-block3(v18: i64):
-    v34 = iconst.i8 0
-    v47 = stack_addr.i64 ss11
-    store notrap v34, v47  ; v34 = 0
-    v35 = stack_addr.i64 ss11
-    v36 = load.i8 v35
-    return v36
+block3(v3: i64):
+    v19 = iconst.i8 0
+    v28 = stack_addr.i64 ss7
+    store notrap v19, v28  ; v19 = 0
+    v20 = stack_addr.i64 ss7
+    v21 = load.i8 v20
+    return v21
 }
 function u0:0(i64) -> i8 system_v {
     ss0 = explicit_slot 8
@@ -101,14 +68,13 @@ function u0:0(i64) -> i8 system_v {
     ss2 = explicit_slot 8
     ss3 = explicit_slot 8
     ss4 = explicit_slot 1
-    ss5 = explicit_slot 8
+    ss5 = explicit_slot 4
     ss6 = explicit_slot 8
-    ss7 = explicit_slot 4
-    ss8 = explicit_slot 1
+    ss7 = explicit_slot 1
     sig0 = (i64) -> i64 system_v
     sig1 = (i64, i64, i64) system_v
     sig2 = (i64) -> i32 system_v
-    sig3 = (i64) system_v
+    sig3 = (i64, i64) -> i64 system_v
     fn0 = u0:0 sig0
     fn1 = u0:3 sig1
     fn2 = u0:1 sig2
@@ -119,18 +85,18 @@ block0(v0: i64):
     v2 = iadd v0, v1  ; v1 = 0
     v3 = load.i64 v2
     v4 = iconst.i64 1
-    v51 = stack_addr.i64 ss0
-    store notrap v4, v51  ; v4 = 1
+    v43 = stack_addr.i64 ss0
+    store notrap v4, v43  ; v4 = 1
     v5 = stack_addr.i64 ss0
     v6 = load.i64 v5
     v7 = iadd v3, v6
-    v52 = stack_addr.i64 ss1
-    store notrap v7, v52
+    v44 = stack_addr.i64 ss1
+    store notrap v7, v44
     v8 = stack_addr.i64 ss1
     v9 = load.i64 v8
     v10 = call fn0(v9)
-    v53 = stack_addr.i64 ss2
-    store notrap v10, v53
+    v45 = stack_addr.i64 ss2
+    store notrap v10, v45
     v11 = stack_addr.i64 ss2
     v12 = load.i64 v11
     v13 = iconst.i64 8
@@ -146,48 +112,36 @@ block0(v0: i64):
     v22 = iadd v0, v21  ; v21 = 0
     v23 = load.i64 v22
     v24 = iadd v20, v23
-    v54 = stack_addr.i64 ss3
-    store notrap v24, v54
+    v46 = stack_addr.i64 ss3
+    store notrap v24, v46
     v25 = stack_addr.i64 ss3
     v26 = load.i64 v25
     v27 = iconst.i8 0
-    v55 = stack_addr.i64 ss4
-    store notrap v27, v55  ; v27 = 0
+    v47 = stack_addr.i64 ss4
+    store notrap v27, v47  ; v27 = 0
     v28 = stack_addr.i64 ss4
     v29 = load.i8 v28
     store v29, v26
     v30 = iconst.i64 0
     v31 = load.i64 v11
-    v32 = iconst.i64 0
-    v56 = stack_addr.i64 ss5
-    store notrap v32, v56  ; v32 = 0
+    v32 = call fn2(v31)
+    v48 = stack_addr.i64 ss5
+    store notrap v32, v48
     v33 = stack_addr.i64 ss5
-    v34 = load.i64 v33
-    v35 = iadd v31, v34
-    v57 = stack_addr.i64 ss6
-    store notrap v35, v57
-    v36 = stack_addr.i64 ss6
+    v34 = load.i64 v11
+    v35 = iconst.i64 0
+    v36 = iadd v0, v35  ; v35 = 0
     v37 = load.i64 v36
-    v38 = iconst.i64 8
-    v39 = iadd v0, v38  ; v38 = 8
-    v40 = load.i64 v39
-    v41 = load.i8 v40
-    store v41, v37
-    v42 = iconst.i64 0
-    v43 = load.i64 v11
-    v44 = call fn2(v43)
-    v58 = stack_addr.i64 ss7
-    store notrap v44, v58
-    v45 = stack_addr.i64 ss7
-    v46 = load.i64 v11
-    call fn3(v46)
-    v47 = iconst.i64 0
-    v48 = iconst.i8 0
-    v59 = stack_addr.i64 ss8
-    store notrap v48, v59  ; v48 = 0
-    v49 = stack_addr.i64 ss8
-    v50 = load.i8 v49
-    return v50
+    v38 = call fn3(v34, v37)
+    v49 = stack_addr.i64 ss6
+    store notrap v38, v49
+    v39 = stack_addr.i64 ss6
+    v40 = iconst.i8 0
+    v50 = stack_addr.i64 ss7
+    store notrap v40, v50  ; v40 = 0
+    v41 = stack_addr.i64 ss7
+    v42 = load.i8 v41
+    return v42
 }
 function u0:0() -> i32 system_v {
     ss0 = explicit_slot 4
@@ -206,25 +160,29 @@ function u0:0(i64, i64) -> i64 system_v {
     ss2 = explicit_slot 8
     sig0 = (i64, i64, i64) -> i64 system_v
     sig1 = (i64, i64, i64) -> i64 system_v
+    sig2 = (i64, i64, i64) -> i64 system_v
     fn0 = %Memmove sig0
     fn1 = %Memmove sig1
+    fn2 = %Memcpy sig2
 
 block0(v0: i64, v1: i64):
     v2 = stack_addr.i64 ss0
     v3 = iconst.i64 8
-    v12 = iconst.i64 8
-    v4 = iadd v2, v12  ; v12 = 8
-    v13 = stack_addr.i64 ss1
-    store notrap v0, v13
+    v14 = iconst.i64 8
+    v4 = iadd v2, v14  ; v14 = 8
+    v15 = stack_addr.i64 ss1
+    store notrap v0, v15
     v5 = stack_addr.i64 ss1
     v6 = call fn0(v4, v5, v3)  ; v3 = 8
     v7 = iconst.i64 8
-    v14 = iconst.i64 0
-    v8 = iadd v2, v14  ; v14 = 0
+    v16 = iconst.i64 0
+    v8 = iadd v2, v16  ; v16 = 0
     v9 = iconst.i64 3
-    v15 = stack_addr.i64 ss2
-    store notrap v9, v15  ; v9 = 3
+    v17 = stack_addr.i64 ss2
+    store notrap v9, v17  ; v9 = 3
     v10 = stack_addr.i64 ss2
     v11 = call fn1(v8, v10, v7)  ; v7 = 8
-    return v2
+    v12 = iconst.i64 16
+    v13 = call fn2(v1, v2, v12)  ; v12 = 16
+    return v1
 }
