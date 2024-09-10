@@ -62,7 +62,13 @@ impl TypeReference {
             Ok(())
         } else {
             let left = declarations.insert_layout(&left, scope)?;
+
+            if left == Layout::Void {
+                return Ok(());
+            }
+
             let right = declarations.insert_layout(&right, scope)?;
+
             Err(SemanticError::MismatchedTypes {
                 expected: left,
                 found: right,

@@ -10,6 +10,7 @@ use cranelift_module::Module;
 use declarations::{ConcreteFunction, Declarations, FuncReference};
 use layout::Layout;
 use std::collections::HashSet;
+use std::io::Write;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
@@ -194,6 +195,12 @@ fn main() {
         0
     }
 
+    unsafe extern "C" fn print_str(str_ptr: *const u8, length: usize) {
+        std::io::stdout()
+            .lock()
+            .write(unsafe { std::slice::from_raw_parts(str_ptr, length) });
+    }
+
     unsafe extern "C" fn alloc_rs(size: usize) -> *mut u8 {
         use std::alloc::{alloc, handle_alloc_error, Layout};
         let layout = Layout::from_size_align(size, 4).unwrap();
@@ -210,9 +217,15 @@ fn main() {
         0
     }
 
+    unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
+        std::ptr::copy(src, dst, count);
+    }
+
     builder.symbol("print_int", print_int as *const u8);
     builder.symbol("alloc_rs", alloc_rs as *const u8);
     builder.symbol("dealloc_rs", dealloc_rs as *const u8);
+    builder.symbol("copy_rs", copy_rs as *const u8);
+    builder.symbol("print_str", print_str as *const u8);
 
     let mut module = cranelift_jit::JITModule::new(builder);
     let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {
