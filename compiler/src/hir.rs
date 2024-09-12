@@ -91,6 +91,7 @@ pub enum Expression {
     LocalAccess(VariableId),
     GlobalAccess(declarations::Id),
     Generixed(Box<Generixed>),
+    AssertType(Box<TypedExpression>),
 }
 
 impl Expression {

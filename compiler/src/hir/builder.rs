@@ -171,7 +171,9 @@ impl<'a> Builder<'a> {
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self.declarations.insert_layout(&type_ref, self.top_level_scope)?
+        let Layout::Struct(layout) = self
+            .declarations
+            .insert_layout(&type_ref, self.top_level_scope)?
         else {
             return Err(SemanticError::InvalidConstructor);
         };
@@ -252,12 +254,17 @@ impl<'a> Builder<'a> {
                     .into())
                 }
                 IntrinsicCall::AssertType(expression, r#type) => {
-                    let type_id = self
+                    let type_ref = self
                         .declarations
                         .lookup_type(&r#type.value, self.top_level_scope)?;
 
                     self.expression(expression.as_ref().as_ref())
-                        .map(|expression| expression.with_type(type_id))
+                        .map(|expression| {
+                            hir::Expression::AssertType(Box::new(
+                                expression.expression.with_type(type_ref.clone()),
+                            ))
+                            .with_type(type_ref)
+                        })
                 }
                 IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
                     self.expression(expression.as_ref().as_ref())?,

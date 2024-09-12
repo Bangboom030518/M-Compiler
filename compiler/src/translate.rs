@@ -630,6 +630,7 @@ where
             hir::Expression::Call(call) => self.call(*call)?,
             hir::Expression::Generixed(_) => todo!("generixed"),
             hir::Expression::GlobalAccess(_) => todo!("global access"),
+            hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };
 
         Ok(value)

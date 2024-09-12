@@ -13,6 +13,37 @@ enum EnvironmentState {
     Mutated,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct EnvironmentStateMonad<T> {
+    environment_state: EnvironmentState,
+    value: T,
+}
+
+impl<T> EnvironmentStateMonad<T> {
+    fn new(environment_state: EnvironmentState, value: T) -> Self {
+        Self {
+            environment_state,
+            value,
+        }
+    }
+
+    fn unwrap_merge(self, environment_state: &mut EnvironmentState) -> T {
+        environment_state.merge_mut(self.environment_state);
+        self.value
+    }
+
+    fn bind<U>(self, f: impl FnOnce(T) -> EnvironmentStateMonad<U>) -> EnvironmentStateMonad<U> {
+        let EnvironmentStateMonad {
+            environment_state,
+            value,
+        } = f(self.value);
+        EnvironmentStateMonad {
+            value,
+            environment_state: self.environment_state.merge(environment_state),
+        }
+    }
+}
+
 impl EnvironmentState {
     const fn merge(self, rhs: Self) -> Self {
         match (self, rhs) {
@@ -67,16 +98,26 @@ where
 
     fn statement(
         &mut self,
-        statement: &mut hir::Statement,
-    ) -> Result<EnvironmentState, SemanticError> {
+        statement: hir::Statement,
+    ) -> Result<EnvironmentStateMonad<hir::Statement>, SemanticError> {
         match statement {
             hir::Statement::Assignment(hir::Assignment { left, right }) => {
-                let environment_state = EnvironmentState::default()
-                    .merge(self.expression(right, left.type_ref.clone())?)
-                    .merge(self.expression(left, right.type_ref.clone())?)
-                    .merge(self.expression(right, left.type_ref.clone())?);
+                let mut environment_state = EnvironmentState::default();
 
-                Ok(environment_state)
+                let right = self
+                    .expression(right, left.type_ref.clone())?
+                    .unwrap_merge(&mut environment_state);
+                let left = self
+                    .expression(left, right.type_ref.clone())?
+                    .unwrap_merge(&mut environment_state);
+                let right = self
+                    .expression(right, left.type_ref.clone())?
+                    .unwrap_merge(&mut environment_state);
+
+                Ok(EnvironmentStateMonad {
+                    value: hir::Statement::Assignment(hir::Assignment { left, right }),
+                    environment_state,
+                })
             }
             hir::Statement::Let(variable, expression) => {
                 let variable_type = self
@@ -98,20 +139,34 @@ where
 
     fn block(
         &mut self,
-        block: &mut hir::Block,
+        block: hir::Block,
         expected_type: Option<TypeReference>,
-    ) -> Result<EnvironmentState, SemanticError> {
+    ) -> Result<EnvironmentStateMonad<hir::Block>, SemanticError> {
         let mut environment_state = EnvironmentState::default();
 
-        for statement in &mut block.statements {
-            environment_state.merge_mut(self.statement(statement)?);
-        }
+        let statements = block
+            .statements
+            .into_iter()
+            .map(|statement| {
+                self.statement(statement)
+                    .map(|statement| statement.unwrap_merge(&mut environment_state))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         if let Some(expression) = &mut block.expression {
             environment_state.merge_mut(self.expression(expression, expected_type)?);
         }
 
-        Ok(environment_state)
+        Ok(EnvironmentStateMonad::new(
+            environment_state,
+            hir::Block {
+                expression: block.expression.map(|expression| {
+                    self.expression(expression, expected_type)
+                        .map(|expression| expression.unwrap_merge(&mut environment_state))
+                }),
+                statements,
+            },
+        ))
     }
 
     fn if_expression(
@@ -194,12 +249,23 @@ where
         expression: &mut hir::TypedExpression,
         expected_type: Option<TypeReference>,
     ) -> Result<EnvironmentState, SemanticError> {
+        if let (Some(expected), Some(found)) = (expected_type.clone(), expression.type_ref.clone())
+        {
+            expected.assert_equivalent(
+                &found,
+                self.declarations,
+                self.scope,
+                &expression.expression,
+            )?;
+        }
+
         expression.type_ref = expression
             .type_ref
             .as_ref()
             .or(expected_type.as_ref())
             .cloned();
 
+        let mut inferred_type = None;
         let environment_state = match &mut expression.expression {
             hir::Expression::FloatConst(_)
             | hir::Expression::IntegerConst(_)
@@ -212,17 +278,16 @@ where
                     .variables
                     .get_mut(variable)
                     .expect("variable doesn't exist!");
-
                 if variable_type.is_none() {
                     if let expected_type @ Some(_) = expected_type.clone() {
-                        expression.type_ref = expected_type.clone();
+                        inferred_type = expected_type.clone();
                         *variable_type = expected_type;
                         EnvironmentState::Mutated
                     } else {
                         EnvironmentState::NonMutated
                     }
                 } else {
-                    expression.type_ref = variable_type.clone();
+                    inferred_type = variable_type.clone();
                     EnvironmentState::NonMutated
                 }
             }
@@ -277,7 +342,7 @@ where
                     environment_state.merge_mut(self.expression(argument, Some(type_id))?);
                 }
 
-                expression.type_ref = Some(signature.return_type);
+                inferred_type = Some(signature.return_type);
 
                 environment_state
             }
@@ -332,15 +397,23 @@ where
             hir::Expression::Store(store) => EnvironmentState::default()
                 .merge(self.expression(&mut store.expression, None)?)
                 .merge(self.expression(&mut store.pointer, None)?),
+            hir::Expression::AssertType(inner) => self.expression(
+                inner,
+                Some(inner.type_ref.clone().expect("assert_type to have a type")),
+            )?,
         };
 
         if let (Some(expected), Some(found)) = (expected_type, expression.type_ref.clone()) {
-            expected.assert_equivalent(
-                &found,
-                self.declarations,
-                self.scope,
-                &expression.expression,
-            )?;
+            if self.declarations.insert_layout(&expected, self.scope)? == Layout::Void {
+                expression.type_ref = Some(expected);
+            } else {
+                expected.assert_equivalent(
+                    &found,
+                    self.declarations,
+                    self.scope,
+                    &expression.expression,
+                )?;
+            }
         }
 
         Ok(environment_state)
