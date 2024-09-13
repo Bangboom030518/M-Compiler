@@ -1,4 +1,5 @@
 use super::builder::{self, VariableId};
+use super::TypedExpression;
 use crate::declarations::{self, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
@@ -122,13 +123,13 @@ where
             hir::Statement::Let(variable, expression) => {
                 let variable_type = self
                     .variables
-                    .get(variable)
+                    .get(&variable)
                     .expect("variable doesn't exist!");
 
                 let environment_state = self.expression(expression, variable_type.clone())?;
 
                 self.variables
-                    .insert(*variable, expression.type_ref.clone())
+                    .insert(variable, expression.type_ref.clone())
                     .expect("variable doesn't exist!");
 
                 Ok(environment_state)
@@ -246,9 +247,9 @@ where
 
     fn expression(
         &mut self,
-        expression: &mut hir::TypedExpression,
+        expression: hir::TypedExpression,
         expected_type: Option<TypeReference>,
-    ) -> Result<EnvironmentState, SemanticError> {
+    ) -> Result<EnvironmentStateMonad<TypedExpression>, SemanticError> {
         if let (Some(expected), Some(found)) = (expected_type.clone(), expression.type_ref.clone())
         {
             expected.assert_equivalent(
