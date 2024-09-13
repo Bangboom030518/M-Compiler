@@ -1,4 +1,4 @@
-use super::{Store, TypedExpression};
+use super::Store;
 use crate::declarations::{Declarations, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
@@ -166,7 +166,7 @@ impl<'a> Builder<'a> {
     fn constructor(
         &mut self,
         constructor: &parser::expression::Constructor,
-    ) -> Result<TypedExpression, SemanticError> {
+    ) -> Result<hir::Typed<Expression>, SemanticError> {
         let type_ref = self
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
@@ -234,7 +234,7 @@ impl<'a> Builder<'a> {
     fn expression(
         &mut self,
         expression: Spanned<&parser::Expression>,
-    ) -> Result<hir::TypedExpression, SemanticError> {
+    ) -> Result<hir::Typed<Expression>, SemanticError> {
         match expression.value {
             parser::Expression::Literal(literal) => match literal {
                 parser::Literal::Integer(int) => Ok(Expression::IntegerConst(*int).into()),
@@ -261,7 +261,7 @@ impl<'a> Builder<'a> {
                     self.expression(expression.as_ref().as_ref())
                         .map(|expression| {
                             hir::Expression::AssertType(Box::new(
-                                expression.expression.with_type(type_ref.clone()),
+                                expression.value.with_type(type_ref.clone()),
                             ))
                             .with_type(type_ref)
                         })
@@ -297,7 +297,7 @@ impl<'a> Builder<'a> {
                     .arguments
                     .iter()
                     .map(|argument| self.expression(argument.as_ref()))
-                    .map_ok(super::TypedExpression::from)
+                    .map_ok(super::Typed::<Expression>::from)
                     .collect::<Result<_, _>>()?,
             }))
             .into()),

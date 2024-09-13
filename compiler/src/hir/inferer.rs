@@ -1,5 +1,4 @@
 use super::builder::{self, VariableId};
-use super::TypedExpression;
 use crate::declarations::{self, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
@@ -21,7 +20,7 @@ struct EnvironmentStateMonad<T> {
 }
 
 impl<T> EnvironmentStateMonad<T> {
-    fn new(environment_state: EnvironmentState, value: T) -> Self {
+    const fn new(environment_state: EnvironmentState, value: T) -> Self {
         Self {
             environment_state,
             value,
@@ -42,6 +41,10 @@ impl<T> EnvironmentStateMonad<T> {
             value,
             environment_state: self.environment_state.merge(environment_state),
         }
+    }
+
+    fn boxed(self) -> EnvironmentStateMonad<Box<T>> {
+        self.map(Box::new)
     }
 
     fn map<U>(self, f: impl FnOnce(T) -> U) -> EnvironmentStateMonad<U> {
@@ -105,11 +108,11 @@ where
             }
         }
 
-        return Ok(builder::Function {
+        Ok(builder::Function {
             return_type: inferer.return_type,
             variables: inferer.variables,
             body: Vec::from(body),
-        });
+        })
     }
 
     fn statement(
@@ -307,17 +310,12 @@ where
 
     fn expression(
         &mut self,
-        mut expression: hir::TypedExpression,
+        mut expression: hir::Typed<hir::Expression>,
         expected_type: Option<TypeReference>,
-    ) -> Result<EnvironmentStateMonad<TypedExpression>, SemanticError> {
+    ) -> Result<EnvironmentStateMonad<hir::Typed<hir::Expression>>, SemanticError> {
         if let (Some(expected), Some(found)) = (expected_type.clone(), expression.type_ref.clone())
         {
-            expected.assert_equivalent(
-                &found,
-                self.declarations,
-                self.scope,
-                &expression.expression,
-            )?;
+            expected.assert_equivalent(&found, self.declarations, self.scope, &expression.value)?;
         }
 
         expression.type_ref = expression
@@ -328,7 +326,7 @@ where
 
         let mut inferred_type = None;
         // let mut state = EnvironmentState::new();
-        let mut expression = match expression.expression {
+        let mut expression = match expression.value {
             hir::Expression::FloatConst(_)
             | hir::Expression::IntegerConst(_)
             | hir::Expression::StringConst(_) => {
@@ -370,17 +368,17 @@ where
             }
             hir::Expression::If(if_expression) => self
                 .if_expression(hir::Typed::new(*if_expression, expression.type_ref))?
-                .map(|if_expression| if_expression.map(Box::new).map(hir::Expression::If).into()),
+                .map(|if_expression| if_expression.map(Box::new).map(hir::Expression::If)),
             hir::Expression::Call(mut call) => {
                 let (callable, generics) =
-                    if let hir::Expression::Generixed(generixed) = &call.callable.expression {
+                    if let hir::Expression::Generixed(generixed) = &call.callable.value {
                         let hir::Generixed {
                             expression,
                             generics,
                         } = generixed.as_ref();
-                        (expression.expression.clone(), generics.clone())
+                        (expression.value.clone(), generics.clone())
                     } else {
-                        (call.callable.expression.clone(), Vec::new())
+                        (call.callable.value.clone(), Vec::new())
                     };
 
                 let hir::Expression::GlobalAccess(declaration) = callable else {
@@ -482,10 +480,9 @@ where
                 if let Some(type_ref) = expression.type_ref.clone() {
                     let layout = self.declarations.insert_layout(&type_ref, self.scope)?;
                     if layout == Layout::Primitive(layout::Primitive::USize) {
-                        self.expression(*pointer, None)?
-                            .map(Box::new)
-                            .map(hir::Expression::Addr)
-                            .map(|pointer| hir::Typed::new(pointer, expression.type_ref).into())
+                        self.expression(*pointer, None)?.boxed().map(|addr| {
+                            hir::Typed::new(hir::Expression::Addr(addr), expression.type_ref)
+                        })
                     } else {
                         return Err(SemanticError::InvalidAddr {
                             found: layout,
@@ -522,8 +519,7 @@ where
                             generics,
                         })),
                         expression.type_ref,
-                    )
-                    .into(),
+                    ),
                 )
             }
             hir::Expression::Store(store) => {
@@ -563,7 +559,7 @@ where
                     &found,
                     self.declarations,
                     self.scope,
-                    &expression.value.expression,
+                    &expression.value.value,
                 )?;
             }
         }

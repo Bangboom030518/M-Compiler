@@ -11,66 +11,66 @@ pub mod inferer;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub statements: Vec<Statement>,
-    pub expression: Option<TypedExpression>,
+    pub expression: Option<Typed<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Assignment {
-    pub left: TypedExpression,
-    pub right: TypedExpression,
+    pub left: Typed<Expression>,
+    pub right: Typed<Expression>,
 }
 
 impl Assignment {
-    pub const fn new(left: TypedExpression, right: TypedExpression) -> Self {
+    pub const fn new(left: Typed<Expression>, right: Typed<Expression>) -> Self {
         Self { left, right }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
-    Expression(TypedExpression),
+    Expression(Typed<Expression>),
     Assignment(Assignment),
-    Let(VariableId, TypedExpression),
+    Let(VariableId, Typed<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryIntrinsic {
-    pub left: TypedExpression,
-    pub right: TypedExpression,
+    pub left: Typed<Expression>,
+    pub right: Typed<Expression>,
     pub operator: IntrinsicOperator,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct If {
-    pub condition: TypedExpression,
+    pub condition: Typed<Expression>,
     pub then_branch: Block,
     pub else_branch: Block,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
-    pub callable: TypedExpression,
-    pub arguments: Vec<TypedExpression>,
+    pub callable: Typed<Expression>,
+    pub arguments: Vec<Typed<Expression>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Constructor(pub Vec<(Offset32, TypedExpression)>);
+pub struct Constructor(pub Vec<(Offset32, Typed<Expression>)>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
-    pub expression: TypedExpression,
+    pub expression: Typed<Expression>,
     pub field: parser::Ident,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Store {
-    pub pointer: TypedExpression,
-    pub expression: TypedExpression,
+    pub pointer: Typed<Expression>,
+    pub expression: Typed<Expression>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Generixed {
-    pub expression: TypedExpression,
+    pub expression: Typed<Expression>,
     pub generics: Vec<GenericArgument>,
 }
 
@@ -83,43 +83,48 @@ pub enum Expression {
     If(Box<If>),
     FieldAccess(Box<FieldAccess>),
     Constructor(Constructor),
-    Addr(Box<TypedExpression>),
+    Addr(Box<Typed<Expression>>),
     Call(Box<Call>),
-    Return(Box<TypedExpression>),
-    Load(Box<TypedExpression>),
+    Return(Box<Typed<Expression>>),
+    Load(Box<Typed<Expression>>),
     Store(Box<Store>),
     LocalAccess(VariableId),
     GlobalAccess(declarations::Id),
     Generixed(Box<Generixed>),
-    AssertType(Box<TypedExpression>),
+    AssertType(Box<Typed<Expression>>),
 }
 
 impl Expression {
-    pub const fn with_type(self, type_ref: TypeReference) -> TypedExpression {
-        TypedExpression {
-            expression: self,
-            type_ref: Some(type_ref),
-        }
+    pub const fn with_type(self, type_ref: TypeReference) -> Typed<Expression> {
+        Typed::new(self, Some(type_ref))
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Typed<T> {
     pub value: T,
     pub type_ref: Option<TypeReference>,
 }
 
-impl From<Typed<Expression>> for TypedExpression {
-    fn from(value: Typed<Expression>) -> Self {
+impl<T> From<T> for Typed<T> {
+    fn from(value: T) -> Self {
         Self {
-            expression: value.value,
-            type_ref: value.type_ref,
+            value,
+            type_ref: None,
         }
     }
 }
 
 impl<T> Typed<T> {
-    pub fn new(value: T, type_ref: Option<TypeReference>) -> Self {
+    pub const fn new(value: T, type_ref: Option<TypeReference>) -> Self {
         Self { value, type_ref }
+    }
+
+    pub fn with_type(self, type_ref: TypeReference) -> Self {
+        Self {
+            type_ref: Some(type_ref),
+            ..self
+        }
     }
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Typed<U> {
@@ -129,35 +134,18 @@ impl<T> Typed<T> {
             type_ref,
         }
     }
-}
 
-#[deprecated = "use Typed<Expression> instead"]
-#[derive(Debug, Clone, PartialEq)]
-pub struct TypedExpression {
-    pub expression: Expression,
-    pub type_ref: Option<TypeReference>,
-}
-
-impl TypedExpression {
-    pub fn with_type(self, type_ref: TypeReference) -> Self {
-        Self {
-            type_ref: Some(type_ref),
-            ..self
-        }
+    pub fn boxed(self) -> Typed<Box<T>> {
+        self.map(Box::new)
     }
 
-    pub fn expect_type(&self) -> Result<&TypeReference, SemanticError> {
+    pub fn expect_type(&self) -> Result<&TypeReference, SemanticError>
+    where
+        Expression: From<T>,
+        T: Clone,
+    {
         self.type_ref
             .as_ref()
-            .ok_or_else(|| SemanticError::UnknownType(self.expression.clone()))
-    }
-}
-
-impl From<Expression> for TypedExpression {
-    fn from(expression: Expression) -> Self {
-        Self {
-            expression,
-            type_ref: None,
-        }
+            .ok_or_else(|| SemanticError::UnknownType(self.value.clone().into()))
     }
 }

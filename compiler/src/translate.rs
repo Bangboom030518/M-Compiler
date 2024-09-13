@@ -1,8 +1,5 @@
-use std::collections::hash_map::Keys;
-
 use crate::declarations::{Declarations, FuncReference, ScopeId};
-use crate::function::{AGGREGATE_PARAM_VARIABLE, SPECIAL_VARIABLES};
-use crate::hir::builder::VariableId;
+use crate::function::AGGREGATE_PARAM_VARIABLE;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -316,10 +313,10 @@ where
 
     fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, SemanticError> {
         let (callable, generics) =
-            if let hir::Expression::Generixed(generixed) = call.callable.expression {
-                (generixed.expression.expression, generixed.generics)
+            if let hir::Expression::Generixed(generixed) = call.callable.value {
+                (generixed.expression.value, generixed.generics)
             } else {
-                (call.callable.expression, Vec::new())
+                (call.callable.value, Vec::new())
             };
 
         let hir::Expression::GlobalAccess(declaration) = callable else {
@@ -410,7 +407,7 @@ where
 
     fn load_primitive(
         &mut self,
-        expression: hir::TypedExpression,
+        expression: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
@@ -441,7 +438,7 @@ where
         if layout != Layout::Primitive(crate::layout::Primitive::USize) {
             return Err(SemanticError::InvalidAddr {
                 found: layout,
-                expression: store.pointer.expression,
+                expression: store.pointer.value,
             });
         }
 
@@ -513,10 +510,10 @@ where
 
     fn expression(
         &mut self,
-        hir::TypedExpression {
-            expression,
+        hir::Typed {
+            value: expression,
             type_ref,
-        }: hir::TypedExpression,
+        }: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout =
             match type_ref.map(|type_id| self.declarations.insert_layout(&type_id, self.scope)) {
