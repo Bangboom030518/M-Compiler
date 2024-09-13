@@ -153,6 +153,7 @@ impl FunctionCompiler {
 }
 
 fn main() {
+    println!("Beginning compilation...");
     #[cfg(debug_assertions)]
     {
         std::fs::write("function-ir.clif", "").unwrap();
