@@ -280,9 +280,9 @@ impl Internal {
             })
             .collect::<Result<_, SemanticError>>()?;
 
-        let mut func = crate::hir::Builder::new(declarations, self, names).build()?;
-        inferer::Inferer::function(
-            &mut func,
+        let func = crate::hir::Builder::new(declarations, self, names).build()?;
+        let func = inferer::Inferer::function(
+            func,
             declarations,
             &mut cranelift_context.module,
             self.scope_id,

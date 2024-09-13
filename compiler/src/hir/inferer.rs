@@ -5,7 +5,7 @@ use crate::layout::{self, Layout};
 use crate::{hir, SemanticError};
 use declarations::TypeReference;
 use parser::expression::IntrinsicOperator;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum EnvironmentState {
@@ -43,6 +43,10 @@ impl<T> EnvironmentStateMonad<T> {
             environment_state: self.environment_state.merge(environment_state),
         }
     }
+
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> EnvironmentStateMonad<U> {
+        self.bind(|value| EnvironmentStateMonad::new(EnvironmentState::default(), f(value)))
+    }
 }
 
 impl EnvironmentState {
@@ -62,7 +66,7 @@ impl EnvironmentState {
 }
 
 pub struct Inferer<'a, M> {
-    variables: &'a mut HashMap<VariableId, Option<TypeReference>>,
+    variables: HashMap<VariableId, Option<TypeReference>>,
     return_type: TypeReference,
     declarations: &'a mut Declarations,
     module: &'a mut M,
@@ -74,27 +78,38 @@ where
     M: cranelift_module::Module,
 {
     pub fn function(
-        function: &mut builder::Function,
+        function: builder::Function,
         declarations: &mut declarations::Declarations,
         context: &mut M,
         scope: ScopeId,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<builder::Function, SemanticError> {
         let mut inferer = Inferer {
-            variables: &mut function.variables,
-            return_type: function.return_type.clone(),
+            variables: function.variables,
+            return_type: function.return_type,
             declarations,
             module: context,
             scope,
         };
 
-        'a: loop {
-            for statement in &mut function.body {
-                if inferer.statement(statement)? == EnvironmentState::Mutated {
-                    continue 'a;
-                }
+        let mut body = VecDeque::from(function.body);
+        let mut state = EnvironmentState::default();
+        let mut inferred = Vec::new();
+
+        while let Some(statement) = body.pop_front() {
+            let statement = inferer.statement(statement)?.unwrap_merge(&mut state);
+            inferred.push(statement);
+            if state == EnvironmentState::Mutated {
+                inferred
+                    .drain(..)
+                    .for_each(|statement| body.push_front(statement));
             }
-            return Ok(());
         }
+
+        return Ok(builder::Function {
+            return_type: inferer.return_type,
+            variables: inferer.variables,
+            body: Vec::from(body),
+        });
     }
 
     fn statement(
@@ -126,15 +141,23 @@ where
                     .get(&variable)
                     .expect("variable doesn't exist!");
 
-                let environment_state = self.expression(expression, variable_type.clone())?;
+                let mut type_ref = None;
+                let statement =
+                    self.expression(expression, variable_type.clone())?
+                        .map(|expression| {
+                            type_ref = expression.type_ref.clone();
+                            hir::Statement::Let(variable, expression)
+                        });
 
                 self.variables
-                    .insert(variable, expression.type_ref.clone())
+                    .insert(variable, type_ref)
                     .expect("variable doesn't exist!");
 
-                Ok(environment_state)
+                Ok(statement)
             }
-            hir::Statement::Expression(expression) => self.expression(expression, None),
+            hir::Statement::Expression(expression) => Ok(self
+                .expression(expression, None)?
+                .map(hir::Statement::Expression)),
         }
     }
 
@@ -154,17 +177,16 @@ where
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        if let Some(expression) = &mut block.expression {
-            environment_state.merge_mut(self.expression(expression, expected_type)?);
-        }
-
         Ok(EnvironmentStateMonad::new(
             environment_state,
             hir::Block {
-                expression: block.expression.map(|expression| {
-                    self.expression(expression, expected_type)
-                        .map(|expression| expression.unwrap_merge(&mut environment_state))
-                }),
+                expression: block
+                    .expression
+                    .map(|expression| {
+                        self.expression(expression, expected_type)
+                            .map(|expression| expression.unwrap_merge(&mut environment_state))
+                    })
+                    .transpose()?,
                 statements,
             },
         ))
@@ -172,23 +194,25 @@ where
 
     fn if_expression(
         &mut self,
-        expression: &mut hir::If,
-        expected_type: Option<TypeReference>,
-    ) -> Result<EnvironmentState, SemanticError> {
-        let hir::If {
+        expression: hir::Typed<hir::If>,
+    ) -> Result<EnvironmentStateMonad<hir::If>, SemanticError> {
+        let hir::Typed { value : hir::If {
             condition,
             then_branch,
             else_branch,
-        } = expression;
-        let mut environment_state = self.expression(condition, None)?;
+        }, type_ref} = expression;
+        let mut state = EnvironmentState::default();
+        let condition = self.expression(condition, None)?.unwrap_merge(&mut state);
         if let Some(type_ref) = &condition.type_ref {
             let layout = self.declarations.insert_layout(type_ref, self.scope)?;
             if Layout::Primitive(layout::Primitive::U8) != layout {
-                // todo!("expected bool, found something else");
+                todo!("expected bool, found something else");
             }
         }
 
-        environment_state.merge_mut(self.block(then_branch, expected_type.clone())?);
+        let mut then_branch = self
+            .block(then_branch, expected_type.clone())?
+            .unwrap_merge(&mut state);
         let mut expected_type = expected_type.or_else(|| {
             then_branch
                 .expression
@@ -196,28 +220,49 @@ where
                 .and_then(|expression| expression.type_ref.clone())
         });
 
-        environment_state.merge_mut(self.block(else_branch, expected_type.clone())?);
+        let else_branch = self
+            .block(else_branch, expected_type.clone())?
+            .unwrap_merge(&mut state);
 
         if let Some(expression) = &else_branch.expression {
             if let Some(type_ref) = expression.type_ref.clone() {
                 if expected_type.is_none() {
                     expected_type = Some(type_ref);
-                    environment_state.merge_mut(self.block(then_branch, expected_type)?);
+                    then_branch = self
+                        .block(then_branch, expected_type)?
+                        .unwrap_merge(&mut state)
                 }
             }
         }
-        Ok(environment_state)
+        Ok(EnvironmentStateMonad::new(
+            state,
+            hir::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        ))
     }
 
+    // TODO: `Typed<>` monad
     fn field_access(
         &mut self,
-        type_ref: &mut Option<TypeReference>,
-        field_access: &mut hir::FieldAccess,
-    ) -> Result<EnvironmentState, SemanticError> {
-        let environment_state = self.expression(&mut field_access.expression, None)?;
+        mut field_access: Typed<hir::FieldAccess>,
+    ) -> Result<EnvironmentStateMonad<hir::Typed<hir::FieldAccess>>, SemanticError> {
+        let mut state = EnvironmentState::default();
+        field_access.expression = self
+            .expression(field_access.expression, None)?
+            .unwrap_merge(&mut state);
+
         let struct_type_id = field_access.expression.type_ref.clone();
         match struct_type_id {
-            None => Ok(environment_state),
+            None => Ok(EnvironmentStateMonad::new(
+                state,
+                hir::Typed {
+                    value: field_access,
+                    type_ref,
+                },
+            )),
             Some(struct_type_id) => match self
                 .declarations
                 .insert_layout(&struct_type_id, self.scope)?
@@ -236,9 +281,16 @@ where
                             &hir::Expression::FieldAccess(Box::new(field_access.clone())),
                         )?;
                     } else {
-                        *type_ref = Some(field.type_id.clone());
+                        type_ref = Some(field.type_id.clone());
                     };
-                    Ok(environment_state)
+
+                    Ok(EnvironmentStateMonad::new(
+                        state,
+                        hir::Typed {
+                            value: field_access,
+                            type_ref,
+                        },
+                    ))
                 }
                 layout => Err(SemanticError::InvalidFieldAccess(layout)),
             },
@@ -267,19 +319,21 @@ where
             .cloned();
 
         let mut inferred_type = None;
-        let environment_state = match &mut expression.expression {
+        // let mut state = EnvironmentState::new();
+        let expression = match expression.expression {
             hir::Expression::FloatConst(_)
             | hir::Expression::IntegerConst(_)
             | hir::Expression::StringConst(_) => {
                 // TODO: assert type here
-                EnvironmentState::NonMutated
+                EnvironmentStateMonad::new(EnvironmentState::default(), expression)
             }
             hir::Expression::LocalAccess(variable) => {
                 let variable_type = self
                     .variables
-                    .get_mut(variable)
+                    .get_mut(&variable)
                     .expect("variable doesn't exist!");
-                if variable_type.is_none() {
+
+                let state = if variable_type.is_none() {
                     if let expected_type @ Some(_) = expected_type.clone() {
                         inferred_type = expected_type.clone();
                         *variable_type = expected_type;
@@ -290,17 +344,24 @@ where
                 } else {
                     inferred_type = variable_type.clone();
                     EnvironmentState::NonMutated
-                }
+                };
+
+                EnvironmentStateMonad::new(state, expression)
             }
-            hir::Expression::FieldAccess(field_access) => {
-                self.field_access(&mut expression.type_ref, field_access)?
-            }
+            hir::Expression::FieldAccess(field_access) => self
+                .field_access(hir::Typed::new(field_access, expression.type_ref))?
+                .map(|field_access| {
+                    field_access
+                        .map(Box::new)
+                        .map(hir::Expression::FieldAccess)
+                        .into()
+                }),
             hir::Expression::Return(inner) => {
                 inner.type_ref = Some(self.return_type.clone());
                 self.expression(inner, Some(self.return_type.clone()))?
             }
             hir::Expression::If(if_expression) => {
-                self.if_expression(if_expression, expected_type.clone())?
+                self.if_expression(*if_expression, expected_type.clone())?.map(hir::)
             }
             hir::Expression::Call(call) => {
                 let (callable, generics) =

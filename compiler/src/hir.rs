@@ -103,6 +103,35 @@ impl Expression {
     }
 }
 
+pub struct Typed<T> {
+    pub value: T,
+    pub type_ref: Option<TypeReference>,
+}
+
+impl From<Typed<Expression>> for TypedExpression {
+    fn from(value: Typed<Expression>) -> Self {
+        Self {
+            expression: value.value,
+            type_ref: value.type_ref,
+        }
+    }
+}
+
+impl<T> Typed<T> {
+    pub fn new(value: T, type_ref: Option<TypeReference>) -> Self {
+        Self { value, type_ref }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Typed<U> {
+        let Typed { value, type_ref } = self;
+        Typed {
+            value: f(value),
+            type_ref,
+        }
+    }
+}
+
+#[deprecated = "use Typed<Expression> instead"]
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedExpression {
     pub expression: Expression,
