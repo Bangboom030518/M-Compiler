@@ -28,7 +28,7 @@ impl<T> EnvironmentStateMonad<T> {
     }
 
     fn unwrap_merge(self, environment_state: &mut EnvironmentState) -> T {
-        environment_state.merge_mut(self.environment_state);
+        *environment_state = environment_state.merge(self.environment_state);
         self.value
     }
 
@@ -59,13 +59,6 @@ impl EnvironmentState {
             _ => Self::Mutated,
         }
     }
-
-    fn merge_mut(&mut self, rhs: Self) {
-        *self = match (*self, rhs) {
-            (Self::NonMutated, Self::NonMutated) => Self::NonMutated,
-            _ => Self::Mutated,
-        };
-    }
 }
 
 pub struct Inferer<'a, M> {
@@ -76,7 +69,7 @@ pub struct Inferer<'a, M> {
     scope: ScopeId,
 }
 
-impl<'a, M> Inferer<'a, M>
+impl<M> Inferer<'_, M>
 where
     M: cranelift_module::Module,
 {
@@ -95,23 +88,22 @@ where
         };
 
         let mut body = VecDeque::from(function.body);
-        let mut state = EnvironmentState::default();
+        let mut state = EnvironmentState::NonMutated;
         let mut inferred = Vec::new();
-
         while let Some(statement) = body.pop_front() {
             let statement = inferer.statement(statement)?.unwrap_merge(&mut state);
             inferred.push(statement);
             if state == EnvironmentState::Mutated {
-                inferred
-                    .drain(..)
-                    .for_each(|statement| body.push_front(statement));
+                body = inferred.drain(..).chain(body.drain(..)).collect();
             }
+
+            state = EnvironmentState::NonMutated;
         }
 
         Ok(builder::Function {
             return_type: inferer.return_type,
             variables: inferer.variables,
-            body: Vec::from(body),
+            body: inferred,
         })
     }
 
@@ -234,10 +226,11 @@ where
                     type_ref = Some(else_type_ref);
                     then_branch = self
                         .block(then_branch, type_ref.clone())?
-                        .unwrap_merge(&mut state)
+                        .unwrap_merge(&mut state);
                 }
             }
         }
+
         Ok(EnvironmentStateMonad::new(
             state,
             hir::Typed::new(
@@ -251,7 +244,6 @@ where
         ))
     }
 
-    // TODO: `Typed<>` monad
     fn field_access(
         &mut self,
         field_access: hir::Typed<hir::FieldAccess>,
@@ -324,8 +316,15 @@ where
             .or(expected_type.as_ref())
             .cloned();
 
+        todo!("replace inferred_type with expression.type_ref and do it carefully");
+        // if let Some(type_ref) = expression.type_ref {
+        // if type_ref != expected_type.unwrap() {
+        // todo!("Mismatched inferences (internal)")
+        // }
+        // }
+
         let mut inferred_type = None;
-        // let mut state = EnvironmentState::new();
+
         let mut expression = match expression.value {
             hir::Expression::FloatConst(_)
             | hir::Expression::IntegerConst(_)
@@ -341,6 +340,7 @@ where
 
                 let state = if variable_type.is_none() {
                     if let expected_type @ Some(_) = expected_type.clone() {
+                        // TODO: is this line necessary??
                         inferred_type = expected_type.clone();
                         *variable_type = expected_type;
                         EnvironmentState::Mutated
@@ -348,7 +348,7 @@ where
                         EnvironmentState::NonMutated
                     }
                 } else {
-                    inferred_type = variable_type.clone();
+                    expression.type_ref = variable_type.clone();
                     EnvironmentState::NonMutated
                 };
 
@@ -408,11 +408,17 @@ where
                     .zip(call.arguments.into_iter())
                     .map(|(type_ref, argument)| {
                         self.expression(argument, Some(type_ref))
-                            .map(|monad| monad.unwrap_merge(&mut environment_state))
+                            .map(|expression| expression.unwrap_merge(&mut environment_state))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                inferred_type = Some(signature.return_type);
+                if let Some(type_ref) = expression.type_ref {
+                    if type_ref != signature.return_type {
+                        todo!("Mismatched inferences (internal)")
+                    }
+                }
+
+                expression.type_ref = Some(signature.return_type);
 
                 EnvironmentStateMonad::new(
                     environment_state,
@@ -463,7 +469,7 @@ where
                     .into_iter()
                     .map(|(offset, expression)| {
                         self.expression(expression, None)
-                            .map(|expression| (offset, expression.unwrap_merge(&mut state)))
+                            .map(|expression| (offset, { expression.unwrap_merge(&mut state) }))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 EnvironmentStateMonad::new(
@@ -551,6 +557,12 @@ where
             }
         };
 
+        // if let Some(type_ref) = expression.value.type_ref {
+        //     if type_ref != expected_type.unwrap() {
+        //         todo!("Mismatched inferences (internal?)")
+        //     }
+        // }
+        // expression.value.type_ref = inferred_type;
         if let (Some(expected), Some(found)) = (expected_type, expression.value.type_ref.clone()) {
             if self.declarations.insert_layout(&expected, self.scope)? == Layout::Void {
                 expression.value.type_ref = Some(expected);

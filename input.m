@@ -11,11 +11,6 @@ type[T] Slice struct
 end
 
 fn puts @extern("puts", fn(USize) UInt32)
-
-// void srand(unsigned int seed)
-fn srand @extern("srand", fn(UInt32) Void)
-// fn rand @extern("rand", fn() UInt32)
-
 fn print_int @extern("print_int", fn(USize) USize)
 fn alloc_rs @extern("alloc_rs", fn(USize) USize)
 fn dealloc_rs @extern("dealloc_rs", fn(USize, USize) USize)
@@ -40,16 +35,13 @@ end
 
 fn UInt8 main()
     let data = slice[UInt8, 4]("Hi!\n")
-
+	print(data)
     let result = if @assert_type(@eq(not_rand(), 100), UInt8)
         @assert_type(1, UInt8)
     else
-		// printf(@addr(@assert_type("%p\n\0", Array[UInt8, 4])), data.ptr)
 		print(data)
         @assert_type(2, UInt8)
     end
-
-	// printf(@addr(@assert_type("%u\n\0", Array[UInt8, 4])), result)
     0
 end
 
