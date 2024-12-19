@@ -316,7 +316,6 @@ where
             .or(expected_type.as_ref())
             .cloned();
 
-        todo!("replace inferred_type with expression.type_ref and do it carefully");
         // if let Some(type_ref) = expression.type_ref {
         // if type_ref != expected_type.unwrap() {
         // todo!("Mismatched inferences (internal)")
@@ -348,7 +347,7 @@ where
                         EnvironmentState::NonMutated
                     }
                 } else {
-                    expression.type_ref = variable_type.clone();
+                    inferred_type = variable_type.clone();
                     EnvironmentState::NonMutated
                 };
 
@@ -412,13 +411,7 @@ where
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
-                if let Some(type_ref) = expression.type_ref {
-                    if type_ref != signature.return_type {
-                        todo!("Mismatched inferences (internal)")
-                    }
-                }
-
-                expression.type_ref = Some(signature.return_type);
+                inferred_type = Some(signature.return_type);
 
                 EnvironmentStateMonad::new(
                     environment_state,
@@ -446,7 +439,7 @@ where
                     && expression.type_ref.is_none()
                     && left.type_ref.is_some()
                 {
-                    expression.type_ref = left.type_ref.clone();
+                    inferred_type = left.type_ref.clone();
                     todo!("can we assign to expression?");
                 }
                 EnvironmentStateMonad::new(
@@ -556,13 +549,15 @@ where
                     .map(|assert_type| hir::Typed::new(assert_type, expression.type_ref).into())
             }
         };
-
-        // if let Some(type_ref) = expression.value.type_ref {
-        //     if type_ref != expected_type.unwrap() {
-        //         todo!("Mismatched inferences (internal?)")
-        //     }
-        // }
-        // expression.value.type_ref = inferred_type;
+        if let (Some(inferred), Some(type_ref)) = (&inferred_type, &expression.value.type_ref) {
+            if type_ref != inferred {
+                dbg!(type_ref, inferred);
+                todo!("Mismatched inferences (internal?)")
+            }
+        }
+        if expression.value.type_ref.is_none() {
+            expression.value.type_ref = inferred_type;
+        }
         if let (Some(expected), Some(found)) = (expected_type, expression.value.type_ref.clone()) {
             if self.declarations.insert_layout(&expected, self.scope)? == Layout::Void {
                 expression.value.type_ref = Some(expected);
