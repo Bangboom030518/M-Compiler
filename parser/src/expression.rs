@@ -134,6 +134,8 @@ pub enum IntrinsicOperator {
     Cmp(CmpOperator),
     Add,
     Sub,
+    Mul,
+    Div,
 }
 
 impl IntrinsicOperator {
@@ -143,6 +145,8 @@ impl IntrinsicOperator {
         let operator = match string {
             "add" => Self::Add,
             "sub" => Self::Sub,
+            "mul" => Self::Mul,
+            "div" => Self::Div,
             "lt" => Self::Cmp(CmpOperator::Lt),
             "gt" => Self::Cmp(CmpOperator::Gt),
             "lte" => Self::Cmp(CmpOperator::Lte),
@@ -205,13 +209,19 @@ impl Parse for IntrinsicCall {
                 let expr = parser.parse()?;
                 let span = expr.span.clone();
                 parser.take_token_if(TokenType::Comma)?;
-                Self::AssertType(Box::new(Expression::IntrinsicCall(Self::Load(Box::new(expr))).spanned(span)), parser.parse()?)
-            },
+                Self::AssertType(
+                    Box::new(Expression::IntrinsicCall(Self::Load(Box::new(expr))).spanned(span)),
+                    parser.parse()?,
+                )
+            }
             "store" => {
                 let pointer = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 let expression = Box::new(parser.parse()?);
-                Self::Store { pointer, expression }
+                Self::Store {
+                    pointer,
+                    expression,
+                }
             }
             token if let Ok(operator) = IntrinsicOperator::from_str(token, parser) => {
                 let left = Box::new(parser.parse()?);

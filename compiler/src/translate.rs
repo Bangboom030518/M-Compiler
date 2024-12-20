@@ -202,24 +202,40 @@ where
         let BranchStatus::Continue(right) = self.load_primitive(binary.right)? else {
             return Ok(BranchStatus::Finished);
         };
-
-        let value = match binary.operator {
-            IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
-            IntrinsicOperator::Sub => self.builder.ins().isub(left, right),
-            IntrinsicOperator::Cmp(operator) => {
-                let Layout::Primitive(primitive) = layout else {
-                    return Err(SemanticError::InvalidIntrinsic);
-                };
-
-                if primitive.is_signed_integer() {
-                    self.builder
-                        .ins()
-                        .icmp(operator.signed_intcc(), left, right)
-                } else if primitive.is_integer() {
-                    self.builder
-                        .ins()
-                        .icmp(operator.unsigned_intcc(), left, right)
-                } else {
+        let Layout::Primitive(primitive) = layout else {
+            return Err(SemanticError::InvalidIntrinsic);
+        };
+        let value = if primitive.is_integer() {
+            match binary.operator {
+                IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
+                IntrinsicOperator::Sub => self.builder.ins().isub(left, right),
+                IntrinsicOperator::Mul => self.builder.ins().imul(left, right),
+                IntrinsicOperator::Div => {
+                    if primitive.is_signed_integer() {
+                        self.builder.ins().sdiv(left, right)
+                    } else {
+                        self.builder.ins().udiv(left, right)
+                    }
+                }
+                IntrinsicOperator::Cmp(operator) => {
+                    if primitive.is_signed_integer() {
+                        self.builder
+                            .ins()
+                            .icmp(operator.signed_intcc(), left, right)
+                    } else {
+                        self.builder
+                            .ins()
+                            .icmp(operator.unsigned_intcc(), left, right)
+                    }
+                }
+            }
+        } else {
+            match binary.operator {
+                IntrinsicOperator::Add => self.builder.ins().fadd(left, right),
+                IntrinsicOperator::Sub => self.builder.ins().fsub(left, right),
+                IntrinsicOperator::Mul => self.builder.ins().fmul(left, right),
+                IntrinsicOperator::Div => self.builder.ins().fdiv(left, right),
+                IntrinsicOperator::Cmp(operator) => {
                     self.builder.ins().fcmp(operator.floatcc(), left, right)
                 }
             }

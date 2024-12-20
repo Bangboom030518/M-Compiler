@@ -11,7 +11,7 @@ type[T] Slice struct
 end
 
 fn puts @extern("puts", fn(USize) UInt32)
-fn print_int @extern("print_int", fn(USize) USize)
+fn print_int @extern("print_int", fn(UInt32) UInt32)
 fn alloc_rs @extern("alloc_rs", fn(USize) USize)
 fn dealloc_rs @extern("dealloc_rs", fn(USize, USize) USize)
 fn copy_rs @extern("copy_rs", fn(USize, USize, USize) Void)
@@ -36,7 +36,6 @@ end
 fn[T] UInt8 eq(T left, T right)
 	@eq(left, right)
 end
-	
 
 fn UInt8 main()
     let data = slice[UInt8, 4]("Hi!\n")

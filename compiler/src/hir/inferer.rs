@@ -462,7 +462,7 @@ where
                     .into_iter()
                     .map(|(offset, expression)| {
                         self.expression(expression, None)
-                            .map(|expression| (offset, { expression.unwrap_merge(&mut state) }))
+                            .map(|expression| (offset, expression.unwrap_merge(&mut state)))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 EnvironmentStateMonad::new(
