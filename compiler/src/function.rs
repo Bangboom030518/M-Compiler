@@ -271,7 +271,6 @@ impl Internal {
                         Offset32::new(0),
                     )
                 };
-
                 builder.declare_var(variable, declarations.isa.pointer_type());
                 builder.def_var(variable, value);
 
@@ -287,6 +286,10 @@ impl Internal {
             self.scope_id,
         )?;
 
+        // let value = builder
+        //     .ins()
+        //     .iconst(declarations.isa.pointer_type(), Imm64::from(i64::from(69)));
+        // builder.ins().return_(&[value]);
         let mut translator = Translator::new(
             builder,
             declarations,

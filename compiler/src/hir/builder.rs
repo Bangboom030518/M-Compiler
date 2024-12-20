@@ -73,7 +73,6 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<_, _>>()?;
-
         Ok(Function {
             return_type: self.return_type,
             variables: self.variables,

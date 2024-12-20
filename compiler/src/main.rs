@@ -3,8 +3,6 @@
 
 // TODO: voidz
 
-use core::alloc;
-use core::arch::global_asm;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::{ConcreteFunction, Declarations, FuncReference};
@@ -175,7 +173,6 @@ fn main() {
             }
         }
     };
-
     let mut flag_builder = settings::builder();
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();

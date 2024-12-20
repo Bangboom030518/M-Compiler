@@ -140,8 +140,6 @@ where
         //             .insert_layout(then_return.expect_type()?, self.scope)?
         //         {
         //             Layout::Primitive(primitive) => {
-        //                 dbg!(&primitive);
-        //                 dbg!(primitive.cranelift_type(self.declarations.isa.pointer_type()))
         //             }
         //             Layout::Struct(_) => todo!("structs in ifs!"),
         //             Layout::Array(_) => todo!("arrays in ifs!"),

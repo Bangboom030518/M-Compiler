@@ -362,8 +362,8 @@ where
                         .into()
                 }),
             hir::Expression::Return(mut inner) => {
-                inner.type_ref = Some(self.return_type.clone());
-                self.expression(*inner, Some(self.return_type.clone()))?
+                let inner = self.expression(*inner, Some(self.return_type.clone()))?;
+                inner.map(|inner| hir::Typed::new(hir::Expression::Return(Box::new(inner)), None))
             }
             hir::Expression::If(if_expression) => self
                 .if_expression(hir::Typed::new(*if_expression, expression.type_ref))?
