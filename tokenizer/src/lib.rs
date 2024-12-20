@@ -61,6 +61,7 @@ define_token_enums!(
     Let,
     End,
     Return,
+    Then,
     Exponent,
     Union,
     Struct,
@@ -263,6 +264,7 @@ impl Tokenizer {
             "let" => Token::Let,
             "return" => Token::Return,
             "end" => Token::End,
+            "then" => Token::Then,
             _ => Token::Ident(ident),
         }
     }

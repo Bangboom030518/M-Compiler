@@ -33,15 +33,16 @@ fn UInt32 not_rand()
     42
 end
 
+fn[T] UInt8 eq(T left, T right)
+	@eq(left, right)
+end
+	
+
 fn UInt8 main()
     let data = slice[UInt8, 4]("Hi!\n")
 	print(data)
-    let result = if @assert_type(@eq(not_rand(), 100), UInt8)
-        @assert_type(1, UInt8)
-    else
-		print(data)
-        @assert_type(2, UInt8)
-    end
+    let result = if eq[UInt32](not_rand(), 42) then 1 else 2 end
+	print_int(result)
     0
 end
 

@@ -4,75 +4,110 @@ function u0:0() -> i8 system_v {
     ss2 = explicit_slot 4
     ss3 = explicit_slot 4
     ss4 = explicit_slot 1
-    ss5 = explicit_slot 1
-    ss6 = explicit_slot 1
-    ss7 = explicit_slot 1
+    ss5 = explicit_slot 8
+    ss6 = explicit_slot 8
+    ss7 = explicit_slot 8
     ss8 = explicit_slot 1
     gv0 = symbol colocated userextname0
     sig0 = (i64, i64) -> i64 system_v
     sig1 = (i64) -> i8 system_v
     sig2 = () -> i32 system_v
-    sig3 = (i64) -> i8 system_v
+    sig3 = (i32, i32) -> i8 system_v
+    sig4 = (i64) -> i64 system_v
     fn0 = colocated u0:7 sig0
     fn1 = colocated u0:8 sig1
-    fn2 = colocated u0:9 sig2
-    fn3 = colocated u0:8 sig3
+    fn2 = colocated u0:10 sig2
+    fn3 = colocated u0:9 sig3
+    fn4 = u0:1 sig4
 
 block0:
     v0 = symbol_value.i64 gv0
     v1 = stack_addr.i64 ss0
     v2 = call fn0(v0, v1)
     v3 = call fn1(v2)
-    v24 = stack_addr.i64 ss1
-    store notrap v3, v24
+    v25 = stack_addr.i64 ss1
+    store notrap v3, v25
     v4 = stack_addr.i64 ss1
     v6 = call fn2()
-    v25 = stack_addr.i64 ss2
-    store notrap v6, v25
+    v26 = stack_addr.i64 ss2
+    store notrap v6, v26
     v7 = stack_addr.i64 ss2
     v8 = load.i32 v7
-    v9 = iconst.i32 100
-    v26 = stack_addr.i64 ss3
-    store notrap v9, v26  ; v9 = 100
+    v9 = iconst.i32 42
+    v27 = stack_addr.i64 ss3
+    store notrap v9, v27  ; v9 = 42
     v10 = stack_addr.i64 ss3
     v11 = load.i32 v10
-    v12 = icmp eq v8, v11
-    v27 = stack_addr.i64 ss4
-    store notrap v12, v27
+    v12 = call fn3(v8, v11)
+    v28 = stack_addr.i64 ss4
+    store notrap v12, v28
     v13 = stack_addr.i64 ss4
     v14 = load.i8 v13
     brif v14, block1, block2
 
 block1:
-    v15 = iconst.i8 1
-    v28 = stack_addr.i64 ss5
-    store notrap v15, v28  ; v15 = 1
+    v15 = iconst.i64 1
+    v29 = stack_addr.i64 ss5
+    store notrap v15, v29  ; v15 = 1
     v16 = stack_addr.i64 ss5
     jump block3(v16)
 
 block2:
-    v17 = call fn3(v2)
-    v29 = stack_addr.i64 ss6
-    store notrap v17, v29
+    v17 = iconst.i64 2
+    v30 = stack_addr.i64 ss6
+    store notrap v17, v30  ; v17 = 2
     v18 = stack_addr.i64 ss6
-    v19 = iconst.i8 2
-    v30 = stack_addr.i64 ss7
-    store notrap v19, v30  ; v19 = 2
-    v20 = stack_addr.i64 ss7
-    jump block3(v20)
+    jump block3(v18)
 
 block3(v5: i64):
-    v21 = iconst.i8 0
-    v31 = stack_addr.i64 ss8
-    store notrap v21, v31  ; v21 = 0
-    v22 = stack_addr.i64 ss8
-    v23 = load.i8 v22
-    return v23
+    v19 = load.i64 v5
+    v20 = call fn4(v19)
+    v31 = stack_addr.i64 ss7
+    store notrap v20, v31
+    v21 = stack_addr.i64 ss7
+    v22 = iconst.i8 0
+    v32 = stack_addr.i64 ss8
+    store notrap v22, v32  ; v22 = 0
+    v23 = stack_addr.i64 ss8
+    v24 = load.i8 v23
+    return v24
+}
+function u0:0() -> i32 system_v {
+    ss0 = explicit_slot 4
+
+block0:
+    v0 = iconst.i32 42
+    v3 = stack_addr.i64 ss0
+    store notrap v0, v3  ; v0 = 42
+    v1 = stack_addr.i64 ss0
+    v2 = load.i32 v1
+    return v2
+}
+function u0:0(i32, i32) -> i8 system_v {
+    ss0 = explicit_slot 4
+    ss1 = explicit_slot 4
+    ss2 = explicit_slot 1
+
+block0(v0: i32, v1: i32):
+    v9 = stack_addr.i64 ss0
+    store notrap v0, v9
+    v2 = stack_addr.i64 ss0
+    v10 = stack_addr.i64 ss1
+    store notrap v1, v10
+    v3 = stack_addr.i64 ss1
+    v4 = load.i32 v2
+    v5 = load.i32 v3
+    v6 = icmp eq v4, v5
+    v11 = stack_addr.i64 ss2
+    store notrap v6, v11
+    v7 = stack_addr.i64 ss2
+    v8 = load.i8 v7
+    return v8
 }
 function u0:0(i64) -> i8 system_v {
     ss0 = explicit_slot 1
     sig0 = (i64, i64) system_v
-    fn0 = u0:4 sig0
+    fn0 = u0:2 sig0
 
 block0(v0: i64):
     v1 = iconst.i64 8
@@ -89,17 +124,6 @@ block0(v0: i64):
     v9 = stack_addr.i64 ss0
     v10 = load.i8 v9
     return v10
-}
-function u0:0() -> i32 system_v {
-    ss0 = explicit_slot 4
-
-block0:
-    v0 = iconst.i32 42
-    v3 = stack_addr.i64 ss0
-    store notrap v0, v3  ; v0 = 42
-    v1 = stack_addr.i64 ss0
-    v2 = load.i32 v1
-    return v2
 }
 function u0:0(i64, i64) -> i64 system_v {
     ss0 = explicit_slot 16

@@ -1,4 +1,5 @@
-use crate::{parser::Parser, Error, Expression, Parse, Statement};
+use crate::parser::Parser;
+use crate::{Error, Expression, Parse, Statement};
 use tokenizer::{AsSpanned, Spanned, TokenType};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,7 +13,7 @@ impl Parse for If {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let start = parser.take_token_if(TokenType::If)?.start();
         let condition = Box::new(parser.parse()?);
-
+        parser.take_token_if(TokenType::Then)?;
         let mut true_branch = Vec::new();
         while let Ok(expression) = parser.parse() {
             true_branch.push(expression);
