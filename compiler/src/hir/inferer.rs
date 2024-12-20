@@ -550,10 +550,12 @@ where
             }
         };
         if let (Some(inferred), Some(type_ref)) = (&inferred_type, &expression.value.type_ref) {
-            if type_ref != inferred {
-                dbg!(type_ref, inferred);
-                todo!("Mismatched inferences (internal?)")
-            }
+            inferred.assert_equivalent(
+                type_ref,
+                self.declarations,
+                self.scope,
+                &expression.value.value,
+            )?;
         }
         if expression.value.type_ref.is_none() {
             expression.value.type_ref = inferred_type;

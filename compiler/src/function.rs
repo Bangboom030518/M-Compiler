@@ -224,7 +224,6 @@ impl Internal {
         builder.append_block_params_for_function_params(entry_block);
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
-
         // TODO: `to_vec()`?
         let mut block_params = builder.block_params(entry_block).to_vec();
 
