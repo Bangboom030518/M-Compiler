@@ -193,6 +193,10 @@ fn main() {
         0
     }
 
+    extern "C" fn print_float(f: f32) {
+        println!("{f}");
+    }
+
     unsafe extern "C" fn print_str(str_ptr: *const u8, length: usize) {
         std::io::stdout()
             .lock()
@@ -220,6 +224,7 @@ fn main() {
     }
 
     builder.symbol("print_int", print_int as *const u8);
+    builder.symbol("print_float", print_float as *const u8);
     builder.symbol("alloc_rs", alloc_rs as *const u8);
     builder.symbol("dealloc_rs", dealloc_rs as *const u8);
     builder.symbol("copy_rs", copy_rs as *const u8);
