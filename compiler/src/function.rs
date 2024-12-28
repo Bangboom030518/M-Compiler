@@ -1,5 +1,7 @@
+use std::iter;
+
 use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
-use crate::hir::inferer;
+use crate::hir::{self, inferer};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
 use crate::{CraneliftContext, SemanticError};
@@ -8,6 +10,12 @@ use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
 use isa::CallConv;
 use tokenizer::{AsSpanned, Spanned};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallContext<'a> {
+    pub arguments: &'a Vec<hir::Typed<hir::Expression>>,
+    pub call_expression: hir::Typed<hir::Expression>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MSignature {
@@ -23,6 +31,7 @@ impl MSignature {
         return_type: &Spanned<parser::Type>,
         declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
+        call_context: Option<CallContext>,
         scope: ScopeId,
         module: &impl Module,
         call_conv: Option<CallConv>,
@@ -34,8 +43,25 @@ impl MSignature {
 
         let parameters = parameters
             .iter()
-            .map(|r#type| declarations.lookup_type(&r#type.value, scope))
+            .map(|parameter| declarations.lookup_type(&parameter.value, scope))
             .collect::<Result<Vec<_>, SemanticError>>()?;
+        let return_type = declarations.lookup_type(&return_type.value, scope)?;
+
+        if let Some(call_context) = call_context {
+            for (parameter, argument) in iter::zip(&parameters, call_context.arguments) {
+                if let Some(type_ref) = &argument.type_ref {
+                    parameter.assert_equivalent(&type_ref, declarations, scope, &argument.value)?;
+                }
+            }
+            if let Some(type_ref) = &call_context.call_expression.type_ref {
+                declarations.assert_equivalent(
+                    &return_type,
+                    &type_ref,
+                    scope,
+                    &call_context.call_expression.value,
+                )?;
+            }
+        }
 
         signature.params = parameters
             .iter()
@@ -53,7 +79,6 @@ impl MSignature {
             })
             .collect::<Result<_, _>>()?;
 
-        let return_type = declarations.lookup_type(&return_type.value, scope)?;
         signature.returns = match declarations.insert_layout(&return_type, scope)? {
             Layout::Primitive(primitive) => {
                 vec![AbiParam::new(
@@ -98,6 +123,7 @@ impl External {
             &function.return_type,
             declarations,
             function.name,
+            None,
             scope_id,
             module,
             Some(CallConv::for_libcall(
@@ -142,6 +168,7 @@ impl Internal {
         declarations: &mut Declarations,
         module: &mut impl Module,
         generic_arguments: Vec<GenericArgument>,
+        call_context: Option<CallContext>,
         parameter_scope: ScopeId,
         argument_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
@@ -152,23 +179,25 @@ impl Internal {
             argument_scope,
         )?;
 
-        let parameters: (Vec<_>, Vec<_>) = function
+        let (parameter_names, parameter_types): (Vec<_>, Vec<_>) = function
             .parameters
             .into_iter()
             .map(|parameter| (parameter.value.0.name, parameter.value.0.r#type))
             .unzip();
 
+        let parameter_types = &parameter_types
+            .into_iter()
+            .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let signature = MSignature::new(
-            &parameters
-                .1
-                .into_iter()
-                .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
-                .collect::<Result<Vec<_>, _>>()?,
+            parameter_types,
             &function
                 .return_type
                 .ok_or(SemanticError::MissingReturnType)?,
             declarations,
             function.name,
+            call_context,
             scope,
             module,
             None,
@@ -199,15 +228,15 @@ impl Internal {
 
         Ok(Self {
             signature,
-            parameter_names: parameters.0,
+            parameter_names,
             scope_id: scope,
             body,
             id,
-            generics: generic_arguments, // generic_arguments,
+            generics: generic_arguments,
         })
     }
 
-    pub fn compile(
+    pub(crate) fn compile(
         &self,
         declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
@@ -286,10 +315,6 @@ impl Internal {
             self.scope_id,
         )?;
 
-        // let value = builder
-        //     .ins()
-        //     .iconst(declarations.isa.pointer_type(), Imm64::from(i64::from(69)));
-        // builder.ins().return_(&[value]);
         let mut translator = Translator::new(
             builder,
             declarations,

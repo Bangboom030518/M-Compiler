@@ -1,5 +1,5 @@
 use crate::declarations::{Declarations, FuncReference, ScopeId};
-use crate::function::AGGREGATE_PARAM_VARIABLE;
+use crate::function::{self, AGGREGATE_PARAM_VARIABLE};
 use crate::layout::{Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -132,33 +132,9 @@ where
         self.builder
             .append_block_param(merge_block, self.declarations.isa.pointer_type());
 
-        // if let Some(then_return) = &then_branch.expression {
-        //     self.builder.append_block_param(
-        //         merge_block,
-        //         match self
-        //             .declarations
-        //             .insert_layout(then_return.expect_type()?, self.scope)?
-        //         {
-        //             Layout::Primitive(primitive) => {
-        //             }
-        //             Layout::Struct(_) => todo!("structs in ifs!"),
-        //             Layout::Array(_) => todo!("arrays in ifs!"),
-        //         },
-        //     );
-        // } else {
-        //     todo!("void ifs")
-        // }
-
         let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
         };
-
-        // let condition = self.builder.ins().load(
-        //     condition_layout.cranelift_type(&self.declarations.isa),
-        //     MemFlags::new(),
-        //     condition,
-        //     Offset32::new(0),
-        // );
 
         self.builder
             .ins()
@@ -341,10 +317,13 @@ where
             id: declaration,
             generics,
         };
-
-        let function =
-            self.declarations
-                .insert_function(reference.clone(), &mut self.context, self.scope)?;
+        // TODO: should we pass call context here?
+        let function = self.declarations.insert_function(
+            reference.clone(),
+            &mut self.context,
+            None,
+            self.scope,
+        )?;
 
         self.function_compiler.push(reference);
 

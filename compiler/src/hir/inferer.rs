@@ -1,7 +1,7 @@
 use super::builder::{self, VariableId};
 use crate::declarations::{self, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
-use crate::{hir, SemanticError};
+use crate::{function, hir, SemanticError};
 use declarations::TypeReference;
 use parser::expression::IntrinsicOperator;
 use std::collections::{HashMap, VecDeque};
@@ -383,6 +383,13 @@ where
                 let hir::Expression::GlobalAccess(declaration) = callable else {
                     todo!("func refs!")
                 };
+                let call_context = function::CallContext {
+                    arguments: &call.arguments,
+                    call_expression: hir::Typed {
+                        value: hir::Expression::Call(call.clone()),
+                        type_ref: expected_type.clone(),
+                    },
+                };
                 let signature = self
                     .declarations
                     .insert_function(
@@ -391,6 +398,7 @@ where
                             generics,
                         },
                         self.module,
+                        Some(call_context),
                         self.scope,
                     )?
                     .signature()

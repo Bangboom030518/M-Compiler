@@ -1,3 +1,4 @@
+use crate::hir::{self, Typed};
 use crate::layout::{self, Array, Layout};
 use crate::{function, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -5,6 +6,7 @@ use cranelift::codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Module};
 use parser::Ident;
 use std::collections::HashMap;
+use std::iter;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
@@ -24,7 +26,10 @@ pub struct TypeReference {
 
 impl TypeReference {
     pub fn resolve(&self, declarations: &Declarations) -> Self {
-        match declarations.get(self.id) {
+        let Ok(declaration) = declarations.get(self.id) else {
+            return self.clone();
+        };
+        match declaration {
             Declaration::Function(_) => todo!(),
             Declaration::Length(_) => todo!(),
             Declaration::Type(_) => {
@@ -48,7 +53,11 @@ impl TypeReference {
             Declaration::TypeAlias(r#type) => r#type.resolve(declarations),
         }
     }
+    pub fn is_initialised(&self, declarations: &Declarations) -> bool {
+        declarations.is_initialised(self.id)
+    }
 
+    // TODO: move to `Declarations`
     pub fn assert_equivalent(
         &self,
         other: &TypeReference,
@@ -56,6 +65,16 @@ impl TypeReference {
         scope: ScopeId,
         expression: &crate::hir::Expression,
     ) -> Result<(), SemanticError> {
+        if !self.is_initialised(declarations) {
+            if other.is_initialised(declarations) {
+                declarations.initialise(self.id, Declaration::TypeAlias(other.clone()));
+            } else {
+                return Err(SemanticError::UnknownType(todo!()));
+            };
+        }
+        if !other.is_initialised(declarations) {
+            declarations.initialise(other.id, Declaration::TypeAlias(self.clone()));
+        }
         let left = self.resolve(declarations);
         let right = other.resolve(declarations);
         if left == right {
@@ -164,8 +183,6 @@ enum Declaration {
     Function(GenericFunction),
     TypeAlias(TypeReference),
     Length(u128),
-    // LengthGeneric(usize),
-    // TypeGeneric(usize),
 }
 
 impl Declaration {
@@ -213,7 +230,7 @@ impl Length {
                     SemanticError::DeclarationNotFound(todo!("'{name}' not found error"))
                 })?;
 
-                declarations.get(id).expect_length()
+                declarations.get(id)?.expect_length()
             }
         }
     }
@@ -358,6 +375,10 @@ impl Declarations {
         Ok(declarations)
     }
 
+    pub fn is_initialised(&self, id: Id) -> bool {
+        self.declarations.get(id.0).expect("`Id` exists").is_some()
+    }
+
     pub fn resolve_generics(
         &mut self,
         generics: &[Spanned<parser::GenericArgument>],
@@ -374,7 +395,7 @@ impl Declarations {
                         .lookup(r#type.name.value.as_ref(), scope)
                         .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
 
-                    let value = match self.get(id) {
+                    let value = match self.get(id)? {
                         Declaration::Length(_) => {
                             if r#type.generics.value.0.is_empty() {
                                 GenericArgument::Length(Length::Generic(
@@ -400,11 +421,43 @@ impl Declarations {
             .collect()
     }
 
+    pub fn assert_equivalent(
+        &mut self,
+        left: &TypeReference,
+        right: &TypeReference,
+        scope: ScopeId,
+        expression: &crate::hir::Expression,
+    ) -> Result<(), SemanticError> {
+        if !self.is_initialised(left.id) {
+            if self.is_initialised(right.id) {
+                self.initialise(left.id, Declaration::TypeAlias(right.clone()));
+            } else {
+                return Err(SemanticError::UnknownType(todo!()));
+            };
+        }
+        if !self.is_initialised(right.id) {
+            self.initialise(right.id, Declaration::TypeAlias(left.clone()));
+        }
+        let left = left.resolve(self);
+        let right = right.resolve(self);
+        if left == right {
+            Ok(())
+        } else {
+            let left = self.insert_layout(&left, scope)?;
+            let right = self.insert_layout(&right, scope)?;
+
+            Err(SemanticError::MismatchedTypes {
+                expected: left,
+                found: right,
+                expression: expression.clone(),
+            })
+        }
+    }
+
     pub fn insert_layout(
         &mut self,
         type_reference: &TypeReference,
         argument_scope: ScopeId,
-        // function_generics: &[GenericArgument],
     ) -> Result<Layout, SemanticError> {
         // TODO: clones
         if let Some(layout) = self.layouts.get(type_reference) {
@@ -412,7 +465,7 @@ impl Declarations {
         }
 
         // TODO: clone
-        let r#type = match self.get(type_reference.id).clone() {
+        let r#type = match self.get(type_reference.id)?.clone() {
             Declaration::Type(r#type) => r#type,
             Declaration::TypeAlias(reference) => {
                 return self.insert_layout(&reference, argument_scope)
@@ -469,7 +522,8 @@ impl Declarations {
                 Primitive::Void => Layout::Void,
                 Primitive::Array(length, element_type) => {
                     let element_type = resolve_type(&element_type, self, scope)?;
-                    let element_type = match self.get(element_type.id) {
+                    // TODO: handle error below properly?
+                    let element_type = match self.get(element_type.id)? {
                         Declaration::Type(_) => element_type,
                         Declaration::TypeAlias(reference) => reference.clone(),
                         Declaration::Function(_) => return Err(SemanticError::InvalidFunction),
@@ -504,34 +558,38 @@ impl Declarations {
         parameter_scope: ScopeId,
         argument_scope: ScopeId,
     ) -> Result<ScopeId, SemanticError> {
-        if arguments.len() != parameters.value.generics.len() {
-            return Err(SemanticError::GenericParametersMismatch);
-        }
+        let generics = if arguments.is_empty() {
+            parameters
+                .value
+                .generics
+                .into_iter()
+                .map(|parameter| (parameter.value.ident().value.0, self.create_uninitialised()))
+                .collect()
+        } else {
+            if arguments.len() != parameters.value.generics.len() {
+                return Err(SemanticError::GenericParametersMismatch);
+            }
 
-        let generics = parameters
-            .value
-            .generics
-            .into_iter()
-            .zip(arguments)
-            .map(|(parameter, argument)| match (parameter.value, argument) {
-                (
-                    parser::top_level::GenericParameter::Type { name },
-                    GenericArgument::Type(type_ref),
-                ) => Ok((
-                    name.value.0,
-                    self.create(Declaration::TypeAlias(type_ref.clone())),
-                )),
-                (
-                    parser::top_level::GenericParameter::Length { name },
-                    GenericArgument::Length(length),
-                ) => {
-                    let length = length.resolve(self, argument_scope)?;
-                    Ok((name.value.0, self.create(Declaration::Length(length))))
-                }
-                _ => todo!("mismatched generics"),
-            })
-            .collect::<Result<_, SemanticError>>()?;
-
+            iter::zip(parameters.value.generics, arguments)
+                .map(|(parameter, argument)| match (parameter.value, argument) {
+                    (
+                        parser::top_level::GenericParameter::Type { name },
+                        GenericArgument::Type(type_ref),
+                    ) => Ok((
+                        name.value.0,
+                        self.create(Declaration::TypeAlias(type_ref.clone())),
+                    )),
+                    (
+                        parser::top_level::GenericParameter::Length { name },
+                        GenericArgument::Length(length),
+                    ) => {
+                        let length = length.resolve(self, argument_scope)?;
+                        Ok((name.value.0, self.create(Declaration::Length(length))))
+                    }
+                    _ => Err(SemanticError::GenericParametersMismatch),
+                })
+                .collect::<Result<_, SemanticError>>()?
+        };
         Ok(self.create_scope(TopLevelScope {
             declarations: generics,
             parent: Some(parameter_scope),
@@ -553,19 +611,28 @@ impl Declarations {
         self.declarations[index] = Some(declaration);
     }
 
+    /// Gets the declaration at `Id`, returning `None` if the declaration is uninitialised
+    ///
+    /// # Panics
+    /// If the declaration at `Id` does not exist
     #[must_use]
-    fn get(&self, Id(id): Id) -> &Declaration {
+    fn get(&self, Id(id): Id) -> Result<&Declaration, SemanticError> {
         self.declarations
             .get(id)
-            .unwrap_or_else(|| panic!("🎉 declaration `{id}` doesn't exist 🎉"))
+            .expect("`Id` exists")
             .as_ref()
-            .unwrap_or_else(|| panic!("🎉 declaration `{id}` was uninitialised 🎉"))
+            .ok_or(SemanticError::UninitialisedType)
+    }
+
+    pub fn generic_function(&self, id: Id) -> Result<&GenericFunction, SemanticError> {
+        self.get(id)?.expect_function()
     }
 
     pub fn insert_function(
         &mut self,
         func_reference: FuncReference,
         context: &mut impl Module,
+        call_context: Option<function::CallContext>,
         argument_scope: ScopeId,
     ) -> Result<ConcreteFunction, SemanticError> {
         // TODO: `.clone()`s
@@ -573,7 +640,7 @@ impl Declarations {
             return Ok(function.clone());
         }
 
-        let Ok(generic_function) = self.get(func_reference.id).expect_function() else {
+        let Ok(generic_function) = self.generic_function(func_reference.id) else {
             return Err(SemanticError::InvalidType);
         };
 
@@ -588,6 +655,7 @@ impl Declarations {
                     self,
                     context,
                     func_reference.generics.clone(),
+                    call_context,
                     *parameter_scope,
                     argument_scope,
                 )?)

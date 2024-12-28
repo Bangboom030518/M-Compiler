@@ -92,6 +92,8 @@ pub enum SemanticError {
     GenericParametersMismatch,
     #[error("Tried to put generics somewhere they don't belong.")]
     UnexpectedGenerics,
+    #[error("Tried to use a type that hasn't been figured out yet. Don't know if this is your fault or ours tbh, sorry :(")]
+    UninitialisedType,
 }
 
 struct FunctionCompiler {
@@ -156,7 +158,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../binomial-dist.m");
+    let input = include_str!("../../input.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {
@@ -198,7 +200,7 @@ fn main() {
     }
 
     unsafe extern "C" fn print_str(str_ptr: *const u8, length: usize) {
-        std::io::stdout()
+        let _ = std::io::stdout()
             .lock()
             .write(unsafe { std::slice::from_raw_parts(str_ptr, length) });
     }
@@ -259,6 +261,7 @@ fn main() {
                 generics: Vec::new(),
             },
             &mut context.module,
+            None,
             declarations::TOP_LEVEL_SCOPE,
         )
         .expect("🎉 uh oh!")
