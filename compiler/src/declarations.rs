@@ -1,4 +1,5 @@
-use crate::hir::{self, Typed};
+use crate::hir::inferer::EnvironmentState;
+use crate::hir::{self, inferer, Typed};
 use crate::layout::{self, Array, Layout};
 use crate::{function, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -26,7 +27,7 @@ pub struct TypeReference {
 
 impl TypeReference {
     pub fn resolve(&self, declarations: &Declarations) -> Self {
-        let Ok(declaration) = declarations.get(self.id) else {
+        let Some(declaration) = declarations.get(self.id) else {
             return self.clone();
         };
         match declaration {
@@ -55,40 +56,6 @@ impl TypeReference {
     }
     pub fn is_initialised(&self, declarations: &Declarations) -> bool {
         declarations.is_initialised(self.id)
-    }
-
-    // TODO: move to `Declarations`
-    pub fn assert_equivalent(
-        &self,
-        other: &TypeReference,
-        declarations: &mut Declarations,
-        scope: ScopeId,
-        expression: &crate::hir::Expression,
-    ) -> Result<(), SemanticError> {
-        if !self.is_initialised(declarations) {
-            if other.is_initialised(declarations) {
-                declarations.initialise(self.id, Declaration::TypeAlias(other.clone()));
-            } else {
-                return Err(SemanticError::UnknownType(todo!()));
-            };
-        }
-        if !other.is_initialised(declarations) {
-            declarations.initialise(other.id, Declaration::TypeAlias(self.clone()));
-        }
-        let left = self.resolve(declarations);
-        let right = other.resolve(declarations);
-        if left == right {
-            Ok(())
-        } else {
-            let left = declarations.insert_layout(&left, scope)?;
-            let right = declarations.insert_layout(&right, scope)?;
-
-            Err(SemanticError::MismatchedTypes {
-                expected: left,
-                found: right,
-                expression: expression.clone(),
-            })
-        }
     }
 }
 
@@ -230,7 +197,10 @@ impl Length {
                     SemanticError::DeclarationNotFound(todo!("'{name}' not found error"))
                 })?;
 
-                declarations.get(id)?.expect_length()
+                declarations
+                    .get(id)
+                    .ok_or(SemanticError::UninitialisedType)?
+                    .expect_length()
             }
         }
     }
@@ -395,7 +365,10 @@ impl Declarations {
                         .lookup(r#type.name.value.as_ref(), scope)
                         .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
 
-                    let value = match self.get(id)? {
+                    let value = match self
+                        .get(id)
+                        .unwrap_or_else(|| todo!("handle uninitialised types"))
+                    {
                         Declaration::Length(_) => {
                             if r#type.generics.value.0.is_empty() {
                                 GenericArgument::Length(Length::Generic(
@@ -427,45 +400,63 @@ impl Declarations {
         right: &TypeReference,
         scope: ScopeId,
         expression: &crate::hir::Expression,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<inferer::EnvironmentState, SemanticError> {
+        let mut state = inferer::EnvironmentState::NonMutated;
         if !self.is_initialised(left.id) {
             if self.is_initialised(right.id) {
                 self.initialise(left.id, Declaration::TypeAlias(right.clone()));
+                state = EnvironmentState::Mutated;
             } else {
-                return Err(SemanticError::UnknownType(todo!()));
+                return Err(SemanticError::UnknownType(expression.clone()));
             };
         }
         if !self.is_initialised(right.id) {
             self.initialise(right.id, Declaration::TypeAlias(left.clone()));
+            state = EnvironmentState::Mutated;
         }
         let left = left.resolve(self);
         let right = right.resolve(self);
         if left == right {
-            Ok(())
+            Ok(state)
         } else {
             let left = self.insert_layout(&left, scope)?;
             let right = self.insert_layout(&right, scope)?;
 
             Err(SemanticError::MismatchedTypes {
-                expected: left,
-                found: right,
+                expected: left.unwrap(),
+                found: right.unwrap(),
                 expression: expression.clone(),
             })
         }
+    }
+
+    // # Errors
+    // if type is uninitialised
+    pub fn insert_layout_initialised(
+        &mut self,
+        type_reference: &TypeReference,
+        argument_scope: ScopeId,
+    ) -> Result<Layout, SemanticError> {
+        self.insert_layout(type_reference, argument_scope)
+            .map(|layout| layout.ok_or(SemanticError::UninitialisedType))?
     }
 
     pub fn insert_layout(
         &mut self,
         type_reference: &TypeReference,
         argument_scope: ScopeId,
-    ) -> Result<Layout, SemanticError> {
+    ) -> Result<Option<Layout>, SemanticError> {
         // TODO: clones
         if let Some(layout) = self.layouts.get(type_reference) {
-            return Ok(layout.clone());
+            return Ok(Some(layout.clone()));
         }
 
+        let Some(layout) = self.get(type_reference.id).cloned() else {
+            return Ok(None);
+        };
+
         // TODO: clone
-        let r#type = match self.get(type_reference.id)?.clone() {
+        let r#type = match layout {
             Declaration::Type(r#type) => r#type,
             Declaration::TypeAlias(reference) => {
                 return self.insert_layout(&reference, argument_scope)
@@ -497,7 +488,9 @@ impl Declarations {
                             ),
                         },
                     );
-                    let layout = self.insert_layout(&field, scope)?;
+                    let Some(layout) = self.insert_layout(&field, scope)? else {
+                        return Ok(None);
+                    };
                     offset += layout.size(&self.isa);
                 }
                 Layout::Struct(layout::Struct {
@@ -521,16 +514,22 @@ impl Declarations {
                 Primitive::USize => Layout::Primitive(layout::Primitive::USize),
                 Primitive::Void => Layout::Void,
                 Primitive::Array(length, element_type) => {
-                    let element_type = resolve_type(&element_type, self, scope)?;
-                    // TODO: handle error below properly?
-                    let element_type = match self.get(element_type.id)? {
-                        Declaration::Type(_) => element_type,
-                        Declaration::TypeAlias(reference) => reference.clone(),
-                        Declaration::Function(_) => return Err(SemanticError::InvalidFunction),
-                        Declaration::Length(_) => return Err(SemanticError::InvalidLengthGeneric),
-                    };
+                    let mut element_type = resolve_type(&element_type, self, scope)?;
+                    if let Some(layout) = self.get(element_type.id) {
+                        element_type = match layout {
+                            Declaration::Type(_) => element_type,
+                            Declaration::TypeAlias(reference) => reference.clone(),
+                            Declaration::Function(_) => return Err(SemanticError::InvalidFunction),
+                            Declaration::Length(_) => {
+                                return Err(SemanticError::InvalidLengthGeneric)
+                            }
+                        };
+                    }
 
-                    let size = self.insert_layout(&element_type, scope)?.size(&self.isa);
+                    let size = self
+                        .insert_layout(&element_type, scope)?
+                        .unwrap_or_else(|| todo!("uninitialised layout"))
+                        .size(&self.isa);
 
                     Layout::Array(Array {
                         length: length.resolve(self, scope)?,
@@ -542,7 +541,7 @@ impl Declarations {
         };
 
         self.layouts.insert(type_reference.clone(), layout.clone());
-        Ok(layout)
+        Ok(Some(layout))
     }
 
     pub fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
@@ -616,16 +615,8 @@ impl Declarations {
     /// # Panics
     /// If the declaration at `Id` does not exist
     #[must_use]
-    fn get(&self, Id(id): Id) -> Result<&Declaration, SemanticError> {
-        self.declarations
-            .get(id)
-            .expect("`Id` exists")
-            .as_ref()
-            .ok_or(SemanticError::UninitialisedType)
-    }
-
-    pub fn generic_function(&self, id: Id) -> Result<&GenericFunction, SemanticError> {
-        self.get(id)?.expect_function()
+    fn get(&self, Id(id): Id) -> Option<&Declaration> {
+        self.declarations.get(id).expect("`Id` exists").as_ref()
     }
 
     pub fn insert_function(
@@ -640,9 +631,10 @@ impl Declarations {
             return Ok(function.clone());
         }
 
-        let Ok(generic_function) = self.generic_function(func_reference.id) else {
-            return Err(SemanticError::InvalidType);
-        };
+        let generic_function = self
+            .get(func_reference.id)
+            .ok_or(SemanticError::UninitialisedType)?
+            .expect_function()?;
 
         let function = match generic_function {
             GenericFunction::Internal {

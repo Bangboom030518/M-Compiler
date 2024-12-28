@@ -1,13 +1,15 @@
 use super::builder::{self, VariableId};
-use crate::declarations::{self, Declarations, FuncReference, ScopeId};
+use crate::declarations::{self, ConcreteFunction, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
 use crate::{function, hir, SemanticError};
 use declarations::TypeReference;
 use parser::expression::IntrinsicOperator;
 use std::collections::{HashMap, VecDeque};
+use std::iter;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum EnvironmentState {
+#[must_use]
+pub enum EnvironmentState {
     #[default]
     NonMutated,
     Mutated,
@@ -58,6 +60,10 @@ impl EnvironmentState {
             (Self::NonMutated, Self::NonMutated) => Self::NonMutated,
             _ => Self::Mutated,
         }
+    }
+
+    fn merge_into(self, rhs: &mut Self) {
+        *rhs = rhs.merge(self);
     }
 }
 
@@ -200,9 +206,10 @@ where
         let mut state = EnvironmentState::default();
         let condition = self.expression(condition, None)?.unwrap_merge(&mut state);
         if let Some(type_ref) = &condition.type_ref {
-            let layout = self.declarations.insert_layout(type_ref, self.scope)?;
-            if Layout::Primitive(layout::Primitive::U8) != layout {
-                todo!("expected bool, found something else");
+            if let Some(layout) = self.declarations.insert_layout(type_ref, self.scope)? {
+                if Layout::Primitive(layout::Primitive::U8) != layout {
+                    todo!("expected bool, found something else");
+                }
             }
         }
 
@@ -269,6 +276,7 @@ where
             Some(struct_type_id) => match self
                 .declarations
                 .insert_layout(&struct_type_id, self.scope)?
+                .unwrap_or_else(|| todo!("uninitialised layout"))
             {
                 Layout::Struct(layout) => {
                     let fields = layout.fields;
@@ -277,9 +285,9 @@ where
                         .ok_or(SemanticError::NonExistentField)?;
 
                     if let Some(ref type_ref) = type_ref {
-                        type_ref.assert_equivalent(
+                        self.declarations.assert_equivalent(
+                            type_ref,
                             &field.type_id,
-                            self.declarations,
                             self.scope,
                             &hir::Expression::FieldAccess(Box::new(field_access.clone())),
                         )?;
@@ -300,6 +308,43 @@ where
         }
     }
 
+    pub fn infer_generics_on_function(
+        &mut self,
+        expected_type: &Option<TypeReference>,
+        call: hir::Call,
+        func_reference: FuncReference,
+    ) -> Result<EnvironmentState, SemanticError> {
+        let ConcreteFunction::Internal(function) =
+            self.declarations
+                .insert_function(func_reference, self.module, None, self.scope)?
+        else {
+            return Ok(EnvironmentState::NonMutated);
+        };
+        let mut state = EnvironmentState::NonMutated;
+        for (parameter, argument) in iter::zip(&function.signature.parameters, &call.arguments) {
+            dbg!();
+            if let Some(type_ref) = &argument.type_ref {
+                // TODO: is it the right scope?
+                dbg!();
+                self.declarations
+                    .assert_equivalent(parameter, type_ref, self.scope, &argument.value)?
+                    .merge_into(&mut state);
+            }
+        }
+
+        if let Some(type_ref) = expected_type {
+            self.declarations
+                .assert_equivalent(
+                    &function.signature.return_type,
+                    type_ref,
+                    self.scope,
+                    &hir::Expression::Call(Box::new(call)),
+                )?
+                .merge_into(&mut state);
+        }
+        Ok(state)
+    }
+
     fn expression(
         &mut self,
         mut expression: hir::Typed<hir::Expression>,
@@ -307,7 +352,12 @@ where
     ) -> Result<EnvironmentStateMonad<hir::Typed<hir::Expression>>, SemanticError> {
         if let (Some(expected), Some(found)) = (expected_type.clone(), expression.type_ref.clone())
         {
-            expected.assert_equivalent(&found, self.declarations, self.scope, &expression.value)?;
+            self.declarations.assert_equivalent(
+                &found,
+                &expected,
+                self.scope,
+                &expression.value,
+            )?;
         }
 
         expression.type_ref = expression
@@ -315,12 +365,6 @@ where
             .as_ref()
             .or(expected_type.as_ref())
             .cloned();
-
-        // if let Some(type_ref) = expression.type_ref {
-        // if type_ref != expected_type.unwrap() {
-        // todo!("Mismatched inferences (internal)")
-        // }
-        // }
 
         let mut inferred_type = None;
 
@@ -383,24 +427,22 @@ where
                 let hir::Expression::GlobalAccess(declaration) = callable else {
                     todo!("func refs!")
                 };
+
                 let call_context = function::CallContext {
                     arguments: &call.arguments,
-                    call_expression: hir::Typed {
-                        value: hir::Expression::Call(call.clone()),
-                        type_ref: expected_type.clone(),
-                    },
+                    call_expression: hir::Typed::new(
+                        hir::Expression::Call(call.clone()),
+                        expected_type.clone(),
+                    ),
+                };
+                dbg!(&call_context.arguments);
+                let func_reference = FuncReference {
+                    id: declaration,
+                    generics,
                 };
                 let signature = self
                     .declarations
-                    .insert_function(
-                        FuncReference {
-                            id: declaration,
-                            generics,
-                        },
-                        self.module,
-                        Some(call_context),
-                        self.scope,
-                    )?
+                    .insert_function(func_reference.clone(), self.module, None, self.scope)?
                     .signature()
                     .clone();
 
@@ -421,9 +463,15 @@ where
 
                 inferred_type = Some(signature.return_type);
 
+                dbg!(&self.infer_generics_on_function(
+                    &expected_type,
+                    *call.clone(),
+                    func_reference
+                )?)
+                .merge_into(&mut environment_state);
                 EnvironmentStateMonad::new(
                     environment_state,
-                    hir::Typed::new(hir::Expression::Call(call), expression.type_ref).into(),
+                    hir::Typed::new(hir::Expression::Call(call), expression.type_ref),
                 )
             }
             hir::Expression::BinaryIntrinsic(binary) => {
@@ -485,16 +533,23 @@ where
             hir::Expression::Addr(pointer) => {
                 // TODO: move to translate
                 if let Some(type_ref) = expression.type_ref.clone() {
-                    let layout = self.declarations.insert_layout(&type_ref, self.scope)?;
-                    if layout == Layout::Primitive(layout::Primitive::USize) {
-                        self.expression(*pointer, None)?.boxed().map(|addr| {
-                            hir::Typed::new(hir::Expression::Addr(addr), expression.type_ref)
-                        })
+                    if let Some(layout) = self.declarations.insert_layout(&type_ref, self.scope)? {
+                        if layout == Layout::Primitive(layout::Primitive::USize) {
+                            self.expression(*pointer, None)?.boxed().map(|addr| {
+                                hir::Typed::new(hir::Expression::Addr(addr), expression.type_ref)
+                            })
+                        } else {
+                            return Err(SemanticError::InvalidAddr {
+                                found: layout,
+                                expression: hir::Expression::Addr(pointer),
+                            });
+                        }
                     } else {
-                        return Err(SemanticError::InvalidAddr {
-                            found: layout,
-                            expression: hir::Expression::Addr(pointer),
-                        });
+                        EnvironmentStateMonad::new(
+                            EnvironmentState::default(),
+                            hir::Typed::new(hir::Expression::Addr(pointer), expression.type_ref)
+                                .into(),
+                        )
                     }
                 } else {
                     EnvironmentStateMonad::new(
@@ -558,9 +613,9 @@ where
             }
         };
         if let (Some(inferred), Some(type_ref)) = (&inferred_type, &expression.value.type_ref) {
-            inferred.assert_equivalent(
+            self.declarations.assert_equivalent(
+                inferred,
                 type_ref,
-                self.declarations,
                 self.scope,
                 &expression.value.value,
             )?;
@@ -568,17 +623,21 @@ where
         if expression.value.type_ref.is_none() {
             expression.value.type_ref = inferred_type;
         }
-        if let (Some(expected), Some(found)) = (expected_type, expression.value.type_ref.clone()) {
-            if self.declarations.insert_layout(&expected, self.scope)? == Layout::Void {
-                expression.value.type_ref = Some(expected);
-            } else {
-                expected.assert_equivalent(
-                    &found,
-                    self.declarations,
-                    self.scope,
-                    &expression.value.value,
-                )?;
+        if let (Some(expected), Some(mut found)) =
+            (expected_type, expression.value.type_ref.clone())
+        {
+            if let Some(expected_layout) = self.declarations.insert_layout(&expected, self.scope)? {
+                if expected_layout == Layout::Void {
+                    expression.value.type_ref = Some(expected.clone());
+                    found = expected.clone();
+                }
             }
+            self.declarations.assert_equivalent(
+                &expected,
+                &found,
+                self.scope,
+                &expression.value.value,
+            )?;
         }
 
         Ok(expression)

@@ -173,6 +173,7 @@ impl<'a> Builder<'a> {
         let Layout::Struct(layout) = self
             .declarations
             .insert_layout(&type_ref, self.top_level_scope)?
+            .unwrap_or_else(|| todo!("uninitialised layout"))
         else {
             return Err(SemanticError::InvalidConstructor);
         };

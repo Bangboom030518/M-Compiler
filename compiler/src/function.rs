@@ -46,17 +46,19 @@ impl MSignature {
             .map(|parameter| declarations.lookup_type(&parameter.value, scope))
             .collect::<Result<Vec<_>, SemanticError>>()?;
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
-
         if let Some(call_context) = call_context {
             for (parameter, argument) in iter::zip(&parameters, call_context.arguments) {
+                dbg!();
                 if let Some(type_ref) = &argument.type_ref {
-                    parameter.assert_equivalent(&type_ref, declarations, scope, &argument.value)?;
+                    // TODO: is it the right scope?
+                    dbg!();
+                    declarations.assert_equivalent(parameter, type_ref, scope, &argument.value)?;
                 }
             }
             if let Some(type_ref) = &call_context.call_expression.type_ref {
                 declarations.assert_equivalent(
                     &return_type,
-                    &type_ref,
+                    type_ref,
                     scope,
                     &call_context.call_expression.value,
                 )?;
@@ -66,7 +68,9 @@ impl MSignature {
         signature.params = parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations.insert_layout(type_ref, scope)?;
+                let layout = declarations
+                    .insert_layout(type_ref, scope)?
+                    .unwrap_or_else(|| todo!("uninitialised layout"));
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -79,7 +83,10 @@ impl MSignature {
             })
             .collect::<Result<_, _>>()?;
 
-        signature.returns = match declarations.insert_layout(&return_type, scope)? {
+        signature.returns = match declarations
+            .insert_layout(&return_type, scope)?
+            .unwrap_or_else(|| todo!("uninitialised layout"))
+        {
             Layout::Primitive(primitive) => {
                 vec![AbiParam::new(
                     primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -257,7 +264,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout(&self.signature.return_type, self.scope_id)?
+            .insert_layout_initialised(&self.signature.return_type, self.scope_id)?
             .is_aggregate()
         {
             let param = block_params
@@ -278,7 +285,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout(type_ref, self.scope_id)?;
+                let layout = declarations.insert_layout_initialised(type_ref, self.scope_id)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {

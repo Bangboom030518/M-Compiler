@@ -64,7 +64,7 @@ where
 
                 let layout = self
                     .declarations
-                    .insert_layout(assignment.right.expect_type()?, self.scope)?;
+                    .insert_layout_initialised(assignment.right.expect_type()?, self.scope)?;
 
                 let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -85,13 +85,8 @@ where
                 }
             }
             hir::Statement::Let(variable, expression) => {
-                self.builder.declare_var(
-                    variable.into(),
-                    self.declarations.isa.pointer_type(),
-                    // self.declarations
-                    //     .insert_layout(expression.expect_type()?, self.scope)?
-                    //     .cranelift_type(&self.declarations.isa),
-                );
+                self.builder
+                    .declare_var(variable.into(), self.declarations.isa.pointer_type());
                 let BranchStatus::Continue(expression) = self.expression(expression)? else {
                     return Ok(BranchStatus::Finished);
                 };
@@ -230,7 +225,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let struct_layout = self
             .declarations
-            .insert_layout(access.expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(access.expression.expect_type()?, self.scope)?;
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
@@ -283,7 +278,7 @@ where
         for (offset, expression) in constructor.0 {
             let layout = self
                 .declarations
-                .insert_layout(expression.expect_type()?, self.scope)?;
+                .insert_layout_initialised(expression.expect_type()?, self.scope)?;
 
             let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -338,7 +333,7 @@ where
 
         let return_layout = self
             .declarations
-            .insert_layout(&function.signature().return_type, self.scope)?;
+            .insert_layout_initialised(&function.signature().return_type, self.scope)?;
 
         if return_layout.is_aggregate() {
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
@@ -404,7 +399,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .insert_layout(expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(expression.expect_type()?, self.scope)?;
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
@@ -427,7 +422,7 @@ where
     fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .insert_layout(store.pointer.expect_type()?, self.scope)?;
+            .insert_layout_initialised(store.pointer.expect_type()?, self.scope)?;
         if layout != Layout::Primitive(crate::layout::Primitive::USize) {
             return Err(SemanticError::InvalidAddr {
                 found: layout,
@@ -437,7 +432,7 @@ where
 
         let layout = self
             .declarations
-            .insert_layout(store.expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(store.expression.expect_type()?, self.scope)?;
 
         if layout.is_aggregate() {
             todo!("store aggregates")
@@ -474,7 +469,8 @@ where
 
         if array.length != bytes.len() as u128
             || !matches!(
-                self.declarations.insert_layout(&array.item, self.scope)?,
+                self.declarations
+                    .insert_layout_initialised(&array.item, self.scope)?,
                 Layout::Primitive(Primitive::U8)
             )
         {
@@ -508,11 +504,13 @@ where
             type_ref,
         }: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout =
-            match type_ref.map(|type_id| self.declarations.insert_layout(&type_id, self.scope)) {
-                Some(result) => Ok(result?),
-                None => Err(SemanticError::UnknownType(expression.clone())),
-            };
+        let layout = match type_ref.map(|type_id| {
+            self.declarations
+                .insert_layout_initialised(&type_id, self.scope)
+        }) {
+            Some(result) => Ok(result?),
+            None => Err(SemanticError::UnknownType(expression.clone())),
+        };
 
         let value = match expression {
             hir::Expression::IntegerConst(int) => {
@@ -589,7 +587,9 @@ where
                         expression.clone(),
                     )))?;
 
-                let layout = self.declarations.insert_layout(&layout, self.scope)?;
+                let layout = self
+                    .declarations
+                    .insert_layout_initialised(&layout, self.scope)?;
 
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {
                     return Ok(BranchStatus::Finished);
