@@ -308,43 +308,6 @@ where
         }
     }
 
-    pub fn infer_generics_on_function(
-        &mut self,
-        expected_type: &Option<TypeReference>,
-        call: hir::Call,
-        func_reference: FuncReference,
-    ) -> Result<EnvironmentState, SemanticError> {
-        let ConcreteFunction::Internal(function) =
-            self.declarations
-                .insert_function(func_reference, self.module, None, self.scope)?
-        else {
-            return Ok(EnvironmentState::NonMutated);
-        };
-        let mut state = EnvironmentState::NonMutated;
-        for (parameter, argument) in iter::zip(&function.signature.parameters, &call.arguments) {
-            dbg!();
-            if let Some(type_ref) = &argument.type_ref {
-                // TODO: is it the right scope?
-                dbg!();
-                self.declarations
-                    .assert_equivalent(parameter, type_ref, self.scope, &argument.value)?
-                    .merge_into(&mut state);
-            }
-        }
-
-        if let Some(type_ref) = expected_type {
-            self.declarations
-                .assert_equivalent(
-                    &function.signature.return_type,
-                    type_ref,
-                    self.scope,
-                    &hir::Expression::Call(Box::new(call)),
-                )?
-                .merge_into(&mut state);
-        }
-        Ok(state)
-    }
-
     fn expression(
         &mut self,
         mut expression: hir::Typed<hir::Expression>,
@@ -399,12 +362,7 @@ where
             }
             hir::Expression::FieldAccess(field_access) => self
                 .field_access(hir::Typed::new(*field_access, expression.type_ref))?
-                .map(|field_access| {
-                    field_access
-                        .map(Box::new)
-                        .map(hir::Expression::FieldAccess)
-                        .into()
-                }),
+                .map(|field_access| field_access.map(Box::new).map(hir::Expression::FieldAccess)),
             hir::Expression::Return(mut inner) => {
                 let inner = self.expression(*inner, Some(self.return_type.clone()))?;
                 inner.map(|inner| hir::Typed::new(hir::Expression::Return(Box::new(inner)), None))
@@ -413,6 +371,15 @@ where
                 .if_expression(hir::Typed::new(*if_expression, expression.type_ref))?
                 .map(|if_expression| if_expression.map(Box::new).map(hir::Expression::If)),
             hir::Expression::Call(mut call) => {
+                let mut environment_state = EnvironmentState::NonMutated;
+                call.arguments = call
+                    .arguments
+                    .into_iter()
+                    .map(|argument| {
+                        self.expression(argument, None)
+                            .map(|expression| expression.unwrap_merge(&mut environment_state))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let (callable, generics) =
                     if let hir::Expression::Generixed(generixed) = &call.callable.value {
                         let hir::Generixed {
@@ -442,14 +409,18 @@ where
                 };
                 let signature = self
                     .declarations
-                    .insert_function(func_reference.clone(), self.module, None, self.scope)?
+                    .insert_function(
+                        func_reference.clone(),
+                        self.module,
+                        Some(call_context),
+                        self.scope,
+                    )?
                     .signature()
                     .clone();
 
                 if signature.parameters.len() != call.arguments.len() {
                     return Err(SemanticError::InvalidNumberOfArguments);
                 }
-                let mut environment_state = EnvironmentState::NonMutated;
 
                 call.arguments = signature
                     .parameters
@@ -463,12 +434,6 @@ where
 
                 inferred_type = Some(signature.return_type);
 
-                dbg!(&self.infer_generics_on_function(
-                    &expected_type,
-                    *call.clone(),
-                    func_reference
-                )?)
-                .merge_into(&mut environment_state);
                 EnvironmentStateMonad::new(
                     environment_state,
                     hir::Typed::new(hir::Expression::Call(call), expression.type_ref),

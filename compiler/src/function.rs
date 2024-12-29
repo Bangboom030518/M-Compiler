@@ -71,6 +71,7 @@ impl MSignature {
                 let layout = declarations
                     .insert_layout(type_ref, scope)?
                     .unwrap_or_else(|| todo!("uninitialised layout"));
+
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
                         primitive.cranelift_type(declarations.isa.pointer_type()),
