@@ -1,8 +1,6 @@
 #![warn(clippy::pedantic, clippy::nursery)]
 #![feature(iter_collect_into)]
 
-// TODO: voidz
-
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::{ConcreteFunction, Declarations, FuncReference};
@@ -78,9 +76,7 @@ pub enum SemanticError {
         found: Layout,
         expression: hir::Expression,
     },
-    #[error(
-        "Actions have consequences! You used an intrinsic wrong and now you're on your own :)"
-    )]
+    #[error("Actions have consequences! You used an intrinsic wrong and now you're on your own.")]
     InvalidIntrinsic,
     #[error("Used a string where a byte array wasn't expected (javascript developer 🤨)")]
     InvalidStringConst { expected: Layout },
@@ -94,6 +90,8 @@ pub enum SemanticError {
     UnexpectedGenerics,
     #[error("Tried to use a type that hasn't been figured out yet. Don't know if this is your fault or ours tbh, sorry :(")]
     UninitialisedType,
+    #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
+    StructTooChonky,
 }
 
 struct FunctionCompiler {

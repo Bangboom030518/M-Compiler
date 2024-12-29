@@ -1,5 +1,5 @@
 use crate::parser::Parser;
-use crate::{Error, GenericArgument, Ident, Parse, Type};
+use crate::{Error, Ident, Parse, Type};
 use control_flow::If;
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
@@ -117,15 +117,15 @@ impl CmpOperator {
     }
 
     #[must_use]
-    pub fn floatcc(self) -> cranelift::prelude::FloatCC {
+    pub const fn floatcc(self) -> cranelift::prelude::FloatCC {
         use cranelift::prelude::FloatCC;
         match self {
             Self::Eq => FloatCC::Equal,
             Self::Ne => FloatCC::NotEqual,
-            Self::Gt => todo!(),
-            Self::Gte => todo!(),
-            Self::Lt => todo!(),
-            Self::Lte => todo!(),
+            Self::Gt => FloatCC::GreaterThan,
+            Self::Gte => FloatCC::GreaterThanOrEqual,
+            Self::Lt => FloatCC::LessThan,
+            Self::Lte => FloatCC::LessThanOrEqual,
         }
     }
 }

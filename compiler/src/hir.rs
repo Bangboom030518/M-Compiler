@@ -95,12 +95,12 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub const fn with_type(self, type_ref: TypeReference) -> Typed<Expression> {
+    pub const fn with_type(self, type_ref: TypeReference) -> Typed<Self> {
         Typed::new(self, Some(type_ref))
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Typed<T> {
     pub value: T,
     pub type_ref: Option<TypeReference>,
@@ -128,10 +128,9 @@ impl<T> Typed<T> {
     }
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Typed<U> {
-        let Typed { value, type_ref } = self;
         Typed {
-            value: f(value),
-            type_ref,
+            value: f(self.value),
+            type_ref: self.type_ref,
         }
     }
 

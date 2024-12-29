@@ -1,11 +1,10 @@
 use super::builder::{self, VariableId};
-use crate::declarations::{self, ConcreteFunction, Declarations, FuncReference, ScopeId};
+use crate::declarations::{self, Declarations, FuncReference, ScopeId};
 use crate::layout::{self, Layout};
 use crate::{function, hir, SemanticError};
 use declarations::TypeReference;
 use parser::expression::IntrinsicOperator;
 use std::collections::{HashMap, VecDeque};
-use std::iter;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[must_use]
@@ -285,12 +284,14 @@ where
                         .ok_or(SemanticError::NonExistentField)?;
 
                     if let Some(ref type_ref) = type_ref {
-                        self.declarations.assert_equivalent(
-                            type_ref,
-                            &field.type_id,
-                            self.scope,
-                            &hir::Expression::FieldAccess(Box::new(field_access.clone())),
-                        )?;
+                        self.declarations
+                            .assert_equivalent(
+                                type_ref,
+                                &field.type_id,
+                                self.scope,
+                                &hir::Expression::FieldAccess(Box::new(field_access.clone())),
+                            )?
+                            .merge_into(&mut state);
                     } else {
                         type_ref = Some(field.type_id.clone());
                     };
@@ -402,7 +403,6 @@ where
                         expected_type.clone(),
                     ),
                 };
-                dbg!(&call_context.arguments);
                 let func_reference = FuncReference {
                     id: declaration,
                     generics,
@@ -472,8 +472,7 @@ where
                             operator,
                         })),
                         expression.type_ref,
-                    )
-                    .into(),
+                    ),
                 )
             }
             hir::Expression::Constructor(constructor) => {

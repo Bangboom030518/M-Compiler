@@ -160,24 +160,10 @@ impl Declaration {
         }
     }
 
-    pub const fn expect_type(&self) -> Result<&Type, SemanticError> {
-        match self {
-            Self::Type(ty) => Ok(ty),
-            _ => Err(SemanticError::InvalidType),
-        }
-    }
-
     pub const fn expect_length(&self) -> Result<u128, SemanticError> {
         match self {
             Self::Length(generic) => Ok(*generic),
             _ => Err(SemanticError::InvalidLengthGeneric),
-        }
-    }
-
-    pub fn expect_type_alias(&self) -> Result<TypeReference, SemanticError> {
-        match self {
-            Self::TypeAlias(generic) => Ok(generic.clone()),
-            _ => Err(SemanticError::InvalidTypeGeneric),
         }
     }
 }
@@ -226,6 +212,12 @@ impl GenericArgument {
             Self::Length(_) => Err(SemanticError::InvalidLengthGeneric),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenericKind {
+    Length,
+    Type,
 }
 
 pub struct Declarations {
@@ -446,7 +438,6 @@ impl Declarations {
         type_reference: &TypeReference,
         argument_scope: ScopeId,
     ) -> Result<Option<Layout>, SemanticError> {
-        // TODO: clones
         if let Some(layout) = self.layouts.get(type_reference) {
             return Ok(Some(layout.clone()));
         }
@@ -455,7 +446,6 @@ impl Declarations {
             return Ok(None);
         };
 
-        // TODO: clone
         let r#type = match layout {
             Declaration::Type(r#type) => r#type,
             Declaration::TypeAlias(reference) => {
@@ -484,13 +474,14 @@ impl Declarations {
                         layout::Field {
                             type_id: field.clone(),
                             offset: Offset32::new(
-                                i32::try_from(offset).expect("struct offset exceded `i32::MAX`"),
+                                i32::try_from(offset)
+                                    .map_err(|_| SemanticError::StructTooChonky)?,
                             ),
                         },
                     );
-                    let Some(layout) = self.insert_layout(&field, scope)? else {
-                        return Ok(None);
-                    };
+                    let layout = self
+                        .insert_layout(&field, scope)?
+                        .unwrap_or_else(|| todo!("uninitialised layout"));
                     offset += layout.size(&self.isa);
                 }
                 Layout::Struct(layout::Struct {

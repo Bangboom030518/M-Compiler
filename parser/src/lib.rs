@@ -127,8 +127,7 @@ impl Parse for Type {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let name = parser.parse()?;
         let generics = if parser.peek_token_if(TokenType::OpenSquareParen).is_ok() {
-            let generics = parser.parse()?;
-            generics
+            parser.parse()?
         } else {
             GenericArguments::default().spanned(parser.empty_span())
         };
@@ -188,18 +187,16 @@ impl Parse for Statement {
     }
 }
 
-#[cfg(ignore)]
 #[test]
 fn test_let() {
     let source = r"let a = 1";
     let mut parser = Parser::from(Tokenizer::from(source));
-    let r#let = parser.parse::<Statement>().unwrap();
-    assert_matches!(
-        r#let,
+    assert_eq!(
+        parser.parse::<Statement>().unwrap(),
         Statement::Let(Let {
-            ident: Ident { ident, .. },
-            expression: Expression::Literal(Literal::Integer(int)),
-            ..
-         }) if ident == String::from("a") && int == 1
+            ident: Ident(String::from("a")).spanned(4..5),
+            expression: Expression::Literal(Literal::Integer(1)).spanned(8..9),
+        })
+        .spanned(0..9)
     );
 }

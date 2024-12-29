@@ -1,5 +1,5 @@
 use crate::declarations::{Declarations, FuncReference, ScopeId};
-use crate::function::{self, AGGREGATE_PARAM_VARIABLE};
+use crate::function::AGGREGATE_PARAM_VARIABLE;
 use crate::layout::{Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;

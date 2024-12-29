@@ -39,16 +39,11 @@ impl Parse for If {
     }
 }
 
-#[cfg(ignore)]
 #[test]
 fn test_if() {
-    use tokenizer::despan_vec;
-
-    let source = r"if 1
-    2
-else
-    3
-end";
+    use crate::Literal;
+    use tokenizer::{despan_vec, Tokenizer};
+    let source = r"if 1 then 2 else 3 end";
     let expr = Parser::from(Tokenizer::from(source))
         .parse::<If>()
         .unwrap()
