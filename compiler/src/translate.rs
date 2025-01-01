@@ -1,6 +1,6 @@
 use crate::declarations::{Declarations, FuncReference, ScopeId};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
-use crate::layout::{Layout, Primitive};
+use crate::layout::{self, Layout, Primitive};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
@@ -120,6 +120,13 @@ where
             else_branch,
         }: hir::If,
     ) -> Result<BranchStatus<Value>, SemanticError> {
+        let condition_type = self
+            .declarations
+            .insert_layout_initialised(&condition.type_ref, self.scope)?;
+        if condition_type != Layout::Primitive(layout::Primitive::U8) {
+            return Err(SemanticError::ExpectedBool);
+        }
+
         let then_block = self.builder.create_block();
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
@@ -259,14 +266,14 @@ where
         constructor: hir::Constructor,
         layout: &Layout,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let Layout::Struct(layout) = layout else {
+        let Layout::Struct(struct_layout) = layout else {
             return Err(SemanticError::InvalidConstructor);
         };
 
         let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
             kind: StackSlotKind::ExplicitSlot,
             align_shift: 0,
-            size: layout.size,
+            size: struct_layout.size,
         });
 
         let addr = self.builder.ins().stack_addr(
@@ -275,10 +282,15 @@ where
             Offset32::new(0),
         );
 
-        for (offset, expression) in constructor.0 {
+        for (field, expression) in constructor.0 {
+            let offset = struct_layout
+                .fields
+                .get(&field)
+                .expect("field doesn't exist")
+                .offset;
             let layout = self
                 .declarations
-                .insert_layout_initialised(expression.expect_type()?, self.scope)?;
+                .insert_layout_initialised(&expression.type_ref, self.scope)?;
 
             let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -421,7 +433,7 @@ where
     fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .insert_layout_initialised(store.pointer.expect_type()?, self.scope)?;
+            .insert_layout_initialised(&store.pointer.type_ref, self.scope)?;
         if layout != Layout::Primitive(crate::layout::Primitive::USize) {
             return Err(SemanticError::InvalidAddr {
                 found: layout,
@@ -431,7 +443,7 @@ where
 
         let layout = self
             .declarations
-            .insert_layout_initialised(store.expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(&store.expression.type_ref, self.scope)?;
 
         if layout.is_aggregate() {
             todo!("store aggregates")
@@ -503,13 +515,9 @@ where
             type_ref,
         }: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let layout = match type_ref.map(|type_id| {
-            self.declarations
-                .insert_layout_initialised(&type_id, self.scope)
-        }) {
-            Some(result) => Ok(result?),
-            None => Err(SemanticError::UnknownType(expression.clone())),
-        };
+        let layout = self
+            .declarations
+            .insert_layout_initialised(&type_ref, self.scope);
 
         let value = match expression {
             hir::Expression::IntegerConst(int) => {
@@ -579,16 +587,9 @@ where
             }
             hir::Expression::Constructor(constructor) => self.constructor(constructor, &layout?)?,
             hir::Expression::Return(expression) => {
-                let layout = expression
-                    .type_ref
-                    .clone()
-                    .ok_or(SemanticError::UnknownType(hir::Expression::Return(
-                        expression.clone(),
-                    )))?;
-
                 let layout = self
                     .declarations
-                    .insert_layout_initialised(&layout, self.scope)?;
+                    .insert_layout_initialised(&expression.type_ref, self.scope)?;
 
                 let BranchStatus::Continue(value) = self.load_primitive(*expression)? else {
                     return Ok(BranchStatus::Finished);

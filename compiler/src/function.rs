@@ -1,10 +1,9 @@
 use std::iter;
 
 use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
-use crate::hir::{self, inferer};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
-use crate::{CraneliftContext, SemanticError};
+use crate::{hir, CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
@@ -46,21 +45,16 @@ impl MSignature {
             .map(|parameter| declarations.lookup_type(&parameter.value, scope))
             .collect::<Result<Vec<_>, SemanticError>>()?;
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
+        // TODO: is this repeated logic from hir::builder's call expr handling?
         if let Some(call_context) = call_context {
             for (parameter, argument) in iter::zip(&parameters, call_context.arguments) {
                 // TODO: is it the right scope?
-                declarations.assert_equivalent(
-                    parameter,
-                    &argument.type_ref,
-                    scope,
-                    &argument.value,
-                )?;
+                declarations.check_expression_type(argument, parameter, scope)?;
             }
-            declarations.assert_equivalent(
+            declarations.check_expression_type(
+                &call_context.call_expression,
                 &return_type,
-                &call_context.call_expression.type_ref,
                 scope,
-                &call_context.call_expression.value,
             )?;
         }
 
@@ -314,13 +308,9 @@ impl Internal {
             })
             .collect::<Result<_, SemanticError>>()?;
 
-        let func = crate::hir::Builder::new(declarations, self, names).build()?;
-        let func = inferer::Inferer::function(
-            func,
-            declarations,
-            &mut cranelift_context.module,
-            self.scope_id,
-        )?;
+        let func =
+            crate::hir::Builder::new(declarations, self, names, &mut cranelift_context.module)
+                .build()?;
 
         let mut translator = Translator::new(
             builder,

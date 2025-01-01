@@ -92,6 +92,8 @@ pub enum SemanticError {
     UninitialisedType,
     #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
     StructTooChonky,
+    #[error("Expected a bool, but found something else. Your guess is as good as mine as to what that is.")]
+    ExpectedBool,
 }
 
 struct FunctionCompiler {

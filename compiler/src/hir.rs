@@ -6,7 +6,6 @@ use cranelift::codegen::ir::immediates::Offset32;
 use parser::expression::IntrinsicOperator;
 
 pub mod builder;
-pub mod inferer;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
@@ -54,7 +53,7 @@ pub struct Call {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Constructor(pub Vec<Typed<Expression>>);
+pub struct Constructor(pub Vec<(String, Typed<Expression>)>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {

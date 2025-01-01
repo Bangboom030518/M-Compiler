@@ -1,5 +1,4 @@
-use crate::hir::inferer::EnvironmentState;
-use crate::hir::{self, inferer, Typed};
+use crate::hir::{self, Typed};
 use crate::layout::{self, Array, Layout};
 use crate::{function, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
@@ -395,7 +394,16 @@ impl Declarations {
             .collect()
     }
 
-    pub fn assert_equivalent(
+    pub fn check_expression_type(
+        &mut self,
+        expression: &Typed<hir::Expression>,
+        expected: &TypeReference,
+        scope: ScopeId,
+    ) -> Result<(), SemanticError> {
+        self.assert_equivalent(expected, &expression.type_ref, scope, &expression.value)
+    }
+
+    fn assert_equivalent(
         &mut self,
         expected: &TypeReference,
         found: &TypeReference,
@@ -475,7 +483,7 @@ impl Declarations {
                     layout_fields.insert(
                         name.value.0.clone(),
                         layout::Field {
-                            type_id: field.clone(),
+                            type_ref: field.clone(),
                             offset: Offset32::new(
                                 i32::try_from(offset)
                                     .map_err(|_| SemanticError::StructTooChonky)?,
