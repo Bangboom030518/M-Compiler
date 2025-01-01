@@ -410,24 +410,24 @@ impl Declarations {
         scope: ScopeId,
         expression: &crate::hir::Expression,
     ) -> Result<(), SemanticError> {
-        if !self.is_initialised(expected.id) {
-            if self.is_initialised(found.id) {
-                self.initialise(expected.id, Declaration::TypeAlias(found.clone()));
-            } else {
-                return Err(SemanticError::UnknownType(expression.clone()));
-            };
-        }
         if !self.is_initialised(found.id) {
             self.initialise(found.id, Declaration::TypeAlias(expected.clone()));
+        } else if !self.is_initialised(expected.id) {
+            self.initialise(expected.id, Declaration::TypeAlias(found.clone()));
         }
+        dbg!((expected, found));
         let expected = expected.resolve(self);
         let found = found.resolve(self);
         if expected == found {
             Ok(())
         } else {
+            let expected = self.insert_layout(&expected, scope)?;
+            let found = self.insert_layout(&found, scope)?;
+            dbg!(&expected);
+            dbg!(&found);
             Err(SemanticError::MismatchedTypes {
-                expected: self.insert_layout(&expected, scope)?.unwrap(),
-                found: self.insert_layout(&found, scope)?.unwrap(),
+                expected: expected.unwrap(),
+                found: found.unwrap(),
                 expression: expression.clone(),
             })
         }

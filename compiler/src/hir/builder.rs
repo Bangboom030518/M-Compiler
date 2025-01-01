@@ -133,7 +133,7 @@ where
     }
 
     fn lookup_ident(
-        &self,
+        &mut self,
         ident: Spanned<&parser::Ident>,
     ) -> Result<Typed<Expression>, SemanticError> {
         for scope in self.local_scopes.iter().rev() {
@@ -155,10 +155,7 @@ where
             .lookup(ident.value.as_ref(), self.top_level_scope)
             .ok_or_else(|| SemanticError::DeclarationNotFound(ident.map(Clone::clone)))?;
 
-        Ok(Typed::new(
-            Expression::GlobalAccess(global),
-            todo!("global expr types"),
-        ))
+        Ok(Expression::GlobalAccess(global).typed(self.declarations))
     }
 
     fn block(
@@ -294,6 +291,72 @@ where
             .typed(self.declarations)),
         }
     }
+
+    fn call(
+        &mut self,
+        call: &parser::expression::Call,
+    ) -> Result<Typed<Expression>, SemanticError> {
+        let callable = self.expression(call.callable.as_ref().as_ref())?;
+        let arguments: Vec<_> = call
+            .arguments
+            .iter()
+            .map(|argument| self.expression(argument.as_ref()))
+            .map_ok(super::Typed::<Expression>::from)
+            .collect::<Result<_, _>>()?;
+        let call_expression = hir::Expression::Call(Box::new(hir::Call {
+            callable: callable.clone(),
+            arguments: arguments.clone(),
+        }))
+        .typed(self.declarations);
+
+        let (callable, generics) = if let hir::Expression::Generixed(generixed) = &callable.value {
+            let hir::Generixed {
+                expression,
+                generics,
+            } = generixed.as_ref();
+            (expression.value.clone(), generics.clone())
+        } else {
+            (callable.value.clone(), Vec::new())
+        };
+
+        let hir::Expression::GlobalAccess(declaration) = callable else {
+            todo!("func refs!")
+        };
+        // TODO: do we need `CallContext`?
+        let call_context = function::CallContext {
+            arguments: &arguments,
+            call_expression: call_expression.clone(),
+        };
+        let func_reference = FuncReference {
+            id: declaration,
+            generics,
+        };
+        let signature = self
+            .declarations
+            .insert_function(
+                func_reference,
+                self.module,
+                Some(call_context),
+                self.top_level_scope,
+            )?
+            .signature()
+            .clone();
+
+        if signature.parameters.len() != call.arguments.len() {
+            return Err(SemanticError::InvalidNumberOfArguments);
+        }
+        for (parameter, argument) in iter::zip(signature.parameters, &arguments) {
+            self.declarations
+                .check_expression_type(argument, &parameter, self.top_level_scope)?;
+        }
+        self.declarations.check_expression_type(
+            &call_expression,
+            &signature.return_type,
+            self.top_level_scope,
+        )?;
+        Ok(call_expression)
+    }
+
     fn expression(
         &mut self,
         expression: Spanned<&parser::Expression>,
@@ -319,73 +382,7 @@ where
                 Ok(hir::Expression::Return(Box::new(inner)).typed(self.declarations))
             }
             parser::Expression::Ident(ident) => self.lookup_ident(ident.spanned(expression.span)),
-            parser::Expression::Call(call) => {
-                /*
-                 */
-                let callable = self.expression(call.callable.as_ref().as_ref())?;
-                let arguments: Vec<_> = call
-                    .arguments
-                    .iter()
-                    .map(|argument| self.expression(argument.as_ref()))
-                    .map_ok(super::Typed::<Expression>::from)
-                    .collect::<Result<_, _>>()?;
-                let call_expression = hir::Expression::Call(Box::new(hir::Call {
-                    callable: callable.clone(),
-                    arguments: arguments.clone(),
-                }))
-                .typed(self.declarations);
-
-                let (callable, generics) =
-                    if let hir::Expression::Generixed(generixed) = &callable.value {
-                        let hir::Generixed {
-                            expression,
-                            generics,
-                        } = generixed.as_ref();
-                        (expression.value.clone(), generics.clone())
-                    } else {
-                        (callable.value.clone(), Vec::new())
-                    };
-
-                let hir::Expression::GlobalAccess(declaration) = callable else {
-                    todo!("func refs!")
-                };
-                // TODO: do we need `CallContext`?
-                let call_context = function::CallContext {
-                    arguments: &arguments,
-                    call_expression: call_expression.clone(),
-                };
-                let func_reference = FuncReference {
-                    id: declaration,
-                    generics,
-                };
-                let signature = self
-                    .declarations
-                    .insert_function(
-                        func_reference.clone(),
-                        self.module,
-                        Some(call_context),
-                        self.top_level_scope,
-                    )?
-                    .signature()
-                    .clone();
-
-                if signature.parameters.len() != call.arguments.len() {
-                    return Err(SemanticError::InvalidNumberOfArguments);
-                }
-                for (parameter, argument) in iter::zip(signature.parameters, &arguments) {
-                    self.declarations.check_expression_type(
-                        argument,
-                        &parameter,
-                        self.top_level_scope,
-                    )?;
-                }
-                self.declarations.check_expression_type(
-                    &call_expression,
-                    &signature.return_type,
-                    self.top_level_scope,
-                )?;
-                Ok(call_expression)
-            }
+            parser::Expression::Call(call) => self.call(call),
             parser::Expression::If(If {
                 condition,
                 then_branch,
