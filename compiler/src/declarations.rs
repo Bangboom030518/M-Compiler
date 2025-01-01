@@ -388,35 +388,32 @@ impl Declarations {
 
     pub fn assert_equivalent(
         &mut self,
-        left: &TypeReference,
-        right: &TypeReference,
+        expected: &TypeReference,
+        found: &TypeReference,
         scope: ScopeId,
         expression: &crate::hir::Expression,
     ) -> Result<inferer::EnvironmentState, SemanticError> {
         let mut state = inferer::EnvironmentState::NonMutated;
-        if !self.is_initialised(left.id) {
-            if self.is_initialised(right.id) {
-                self.initialise(left.id, Declaration::TypeAlias(right.clone()));
+        if !self.is_initialised(expected.id) {
+            if self.is_initialised(found.id) {
+                self.initialise(expected.id, Declaration::TypeAlias(found.clone()));
                 state = EnvironmentState::Mutated;
             } else {
                 return Err(SemanticError::UnknownType(expression.clone()));
             };
         }
-        if !self.is_initialised(right.id) {
-            self.initialise(right.id, Declaration::TypeAlias(left.clone()));
+        if !self.is_initialised(found.id) {
+            self.initialise(found.id, Declaration::TypeAlias(expected.clone()));
             state = EnvironmentState::Mutated;
         }
-        let left = left.resolve(self);
-        let right = right.resolve(self);
-        if left == right {
+        let expected = expected.resolve(self);
+        let found = found.resolve(self);
+        if expected == found {
             Ok(state)
         } else {
-            let left = self.insert_layout(&left, scope)?;
-            let right = self.insert_layout(&right, scope)?;
-
             Err(SemanticError::MismatchedTypes {
-                expected: left.unwrap(),
-                found: right.unwrap(),
+                expected: self.insert_layout(&expected, scope)?.unwrap(),
+                found: self.insert_layout(&found, scope)?.unwrap(),
                 expression: expression.clone(),
             })
         }
