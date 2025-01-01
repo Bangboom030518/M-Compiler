@@ -1,4 +1,4 @@
-use super::Store;
+use super::{Store, Typed};
 use crate::declarations::{Declarations, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::layout::Layout;
@@ -28,7 +28,7 @@ impl From<VariableId> for Variable {
 #[derive(Clone)]
 pub struct Function {
     pub return_type: declarations::TypeReference,
-    pub variables: HashMap<VariableId, Option<TypeReference>>,
+    pub variables: HashMap<VariableId, TypeReference>,
     pub body: Vec<hir::Statement>,
 }
 
@@ -36,7 +36,7 @@ pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
     top_level_scope: ScopeId,
     return_type: TypeReference,
-    variables: HashMap<VariableId, Option<TypeReference>>,
+    variables: HashMap<VariableId, TypeReference>,
     local_scopes: Vec<HashMap<String, Variable>>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
@@ -51,8 +51,8 @@ impl<'a> Builder<'a> {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
         let new_variable_index = parameters.len() + crate::function::SPECIAL_VARIABLES.len();
-        for (ident, variable, type_id) in parameters {
-            variables.insert(variable.into(), Some(type_id));
+        for (ident, variable, type_ref) in parameters {
+            variables.insert(variable.into(), type_ref);
             scope.insert(ident.value.0, variable);
         }
 
@@ -103,7 +103,8 @@ impl<'a> Builder<'a> {
                     .last_mut()
                     .expect("Must always have a scope")
                     .insert(statement.ident.value.0.clone(), variable);
-                self.variables.insert(variable.into(), None);
+                self.variables
+                    .insert(variable.into(), self.declarations.create_type_ref());
 
                 Ok(hir::Statement::Let(
                     variable.into(),
@@ -179,39 +180,42 @@ impl<'a> Builder<'a> {
         };
 
         // TODO: Make sure all fields are present
-        Ok(Expression::Constructor(hir::Constructor(
-            constructor
-                .fields
-                .iter()
-                .map(|(ident, expression)| {
-                    layout
-                        .fields
-                        .get(ident.value.as_ref())
-                        .ok_or(SemanticError::NonExistentField)
-                        .and_then(|field| {
-                            self.expression(expression.as_ref()).map(|expression| {
-                                (field.offset, expression.with_type(field.type_id.clone()))
+        Ok(Typed::new(
+            Expression::Constructor(hir::Constructor(
+                constructor
+                    .fields
+                    .iter()
+                    .map(|(ident, expression)| {
+                        layout
+                            .fields
+                            .get(ident.value.as_ref())
+                            .ok_or(SemanticError::NonExistentField)
+                            .and_then(|field| {
+                                self.expression(expression.as_ref()).map(|expression| {
+                                    (field.offset, expression(field.type_id.clone()))
+                                })
                             })
-                        })
-                })
-                .collect::<Result<_, SemanticError>>()?,
+                    })
+                    .collect::<Result<_, SemanticError>>()?,
+            )),
+            type_ref,
         ))
-        .with_type(type_ref))
     }
 
     fn expression(
         &mut self,
         expression: Spanned<&parser::Expression>,
-    ) -> Result<hir::Typed<Expression>, SemanticError> {
+    ) -> Result<Typed<Expression>, SemanticError> {
         match expression.value {
-            parser::Expression::Literal(literal) => match literal {
-                parser::Literal::Integer(int) => Ok(Expression::IntegerConst(*int).into()),
-                parser::Literal::Float(float) => Ok(Expression::FloatConst(*float).into()),
-                parser::Literal::String(string) => {
-                    Ok(Expression::StringConst(string.clone()).into())
-                }
-                parser::Literal::Char(_) => todo!("char literals"),
-            },
+            parser::Expression::Literal(literal) => {
+                let expression = match literal {
+                    parser::Literal::Integer(int) => Expression::IntegerConst(*int),
+                    parser::Literal::Float(float) => Expression::FloatConst(*float),
+                    parser::Literal::String(string) => Expression::StringConst(string.clone()),
+                    parser::Literal::Char(_) => todo!("char literals"),
+                };
+                Ok(Typed::new(expression, self.declarations.create_type_ref()))
+            }
             parser::Expression::IntrinsicCall(intrinsic) => match intrinsic {
                 IntrinsicCall::Binary(left, right, operator) => {
                     Ok(Expression::BinaryIntrinsic(Box::new(BinaryIntrinsic {
@@ -219,7 +223,7 @@ impl<'a> Builder<'a> {
                         right: self.expression(right.as_ref().as_ref())?,
                         operator: *operator,
                     }))
-                    .into())
+                    .typed(self.declarations))
                 }
                 IntrinsicCall::AssertType(expression, r#type) => {
                     let type_ref = self
@@ -237,7 +241,7 @@ impl<'a> Builder<'a> {
                 IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
                     self.expression(expression.as_ref().as_ref())?,
                 ))
-                .into()),
+                .with_type(self.declarations.create_type_ref())),
                 IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
                     self.expression(expression.as_ref().as_ref())?,
                 ))

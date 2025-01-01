@@ -14,6 +14,15 @@ use tokenizer::Spanned;
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
+impl Id {
+    pub fn to_type_ref(self) -> TypeReference {
+        TypeReference {
+            id: self,
+            generics: Vec::new(),
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct ScopeId(usize);
 
@@ -392,24 +401,21 @@ impl Declarations {
         found: &TypeReference,
         scope: ScopeId,
         expression: &crate::hir::Expression,
-    ) -> Result<inferer::EnvironmentState, SemanticError> {
-        let mut state = inferer::EnvironmentState::NonMutated;
+    ) -> Result<(), SemanticError> {
         if !self.is_initialised(expected.id) {
             if self.is_initialised(found.id) {
                 self.initialise(expected.id, Declaration::TypeAlias(found.clone()));
-                state = EnvironmentState::Mutated;
             } else {
                 return Err(SemanticError::UnknownType(expression.clone()));
             };
         }
         if !self.is_initialised(found.id) {
             self.initialise(found.id, Declaration::TypeAlias(expected.clone()));
-            state = EnvironmentState::Mutated;
         }
         let expected = expected.resolve(self);
         let found = found.resolve(self);
         if expected == found {
-            Ok(state)
+            Ok(())
         } else {
             Err(SemanticError::MismatchedTypes {
                 expected: self.insert_layout(&expected, scope)?.unwrap(),
@@ -592,6 +598,10 @@ impl Declarations {
     pub fn create_uninitialised(&mut self) -> Id {
         self.declarations.push(None);
         Id(self.declarations.len() - 1)
+    }
+
+    pub fn create_type_ref(&mut self) -> TypeReference {
+        self.create_uninitialised().to_type_ref()
     }
 
     fn initialise(&mut self, Id(index): Id, declaration: Declaration) {

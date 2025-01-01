@@ -67,7 +67,7 @@ impl EnvironmentState {
 }
 
 pub struct Inferer<'a, M> {
-    variables: HashMap<VariableId, Option<TypeReference>>,
+    variables: HashMap<VariableId, TypeReference>,
     return_type: TypeReference,
     declarations: &'a mut Declarations,
     module: &'a mut M,
@@ -121,13 +121,13 @@ where
                 let mut environment_state = EnvironmentState::default();
 
                 let right = self
-                    .expression(right, left.type_ref.clone())?
+                    .expression(right, Some(left.type_ref.clone()))?
                     .unwrap_merge(&mut environment_state);
                 let left = self
-                    .expression(left, right.type_ref.clone())?
+                    .expression(left, Some(right.type_ref.clone()))?
                     .unwrap_merge(&mut environment_state);
                 let right = self
-                    .expression(right, left.type_ref.clone())?
+                    .expression(right, Some(left.type_ref.clone()))?
                     .unwrap_merge(&mut environment_state);
 
                 Ok(EnvironmentStateMonad {
@@ -142,15 +142,18 @@ where
                     .expect("variable doesn't exist!");
 
                 let mut type_ref = None;
-                let statement =
-                    self.expression(expression, variable_type.clone())?
-                        .map(|expression| {
-                            type_ref = expression.type_ref.clone();
-                            hir::Statement::Let(variable, expression)
-                        });
+                let statement = self
+                    .expression(expression, Some(variable_type.clone()))?
+                    .map(|expression| {
+                        type_ref = Some(expression.type_ref.clone());
+                        hir::Statement::Let(variable, expression)
+                    });
 
                 self.variables
-                    .insert(variable, type_ref)
+                    .insert(
+                        variable,
+                        type_ref.unwrap_or_else(|| self.declarations.create_type_ref()),
+                    )
                     .expect("variable doesn't exist!");
 
                 Ok(statement)
@@ -192,71 +195,13 @@ where
         ))
     }
 
-    fn if_expression(
-        &mut self,
-        expression: hir::Typed<hir::If>,
-    ) -> Result<EnvironmentStateMonad<hir::Typed<hir::If>>, SemanticError> {
-        let hir::If {
-            condition,
-            then_branch,
-            else_branch,
-        } = expression.value;
-        let type_ref = expression.type_ref;
-        let mut state = EnvironmentState::default();
-        let condition = self.expression(condition, None)?.unwrap_merge(&mut state);
-        if let Some(type_ref) = &condition.type_ref {
-            if let Some(layout) = self.declarations.insert_layout(type_ref, self.scope)? {
-                if Layout::Primitive(layout::Primitive::U8) != layout {
-                    todo!("expected bool, found something else");
-                }
-            }
-        }
-
-        let mut then_branch = self
-            .block(then_branch, type_ref.clone())?
-            .unwrap_merge(&mut state);
-        let mut type_ref = type_ref.or_else(|| {
-            then_branch
-                .expression
-                .as_ref()
-                .and_then(|expression| expression.type_ref.clone())
-        });
-
-        let else_branch = self
-            .block(else_branch, type_ref.clone())?
-            .unwrap_merge(&mut state);
-
-        if let Some(expression) = &else_branch.expression {
-            if let Some(else_type_ref) = expression.type_ref.clone() {
-                if type_ref.is_none() {
-                    type_ref = Some(else_type_ref);
-                    then_branch = self
-                        .block(then_branch, type_ref.clone())?
-                        .unwrap_merge(&mut state);
-                }
-            }
-        }
-
-        Ok(EnvironmentStateMonad::new(
-            state,
-            hir::Typed::new(
-                hir::If {
-                    condition,
-                    then_branch,
-                    else_branch,
-                },
-                type_ref,
-            ),
-        ))
-    }
-
     fn field_access(
         &mut self,
         field_access: hir::Typed<hir::FieldAccess>,
     ) -> Result<EnvironmentStateMonad<hir::Typed<hir::FieldAccess>>, SemanticError> {
         let hir::Typed {
             value: mut field_access,
-            mut type_ref,
+            type_ref,
         } = field_access;
         let mut state = EnvironmentState::default();
         field_access.expression = self
@@ -264,7 +209,10 @@ where
             .unwrap_merge(&mut state);
 
         let struct_type_id = field_access.expression.type_ref.clone();
-        match struct_type_id {
+        match self
+            .declarations
+            .insert_layout(&struct_type_id, self.scope)?
+        {
             None => Ok(EnvironmentStateMonad::new(
                 state,
                 hir::Typed {
@@ -272,29 +220,19 @@ where
                     type_ref,
                 },
             )),
-            Some(struct_type_id) => match self
-                .declarations
-                .insert_layout(&struct_type_id, self.scope)?
-                .unwrap_or_else(|| todo!("uninitialised layout"))
-            {
+            Some(layout) => match layout {
                 Layout::Struct(layout) => {
                     let fields = layout.fields;
                     let field = fields
                         .get(field_access.field.as_ref())
                         .ok_or(SemanticError::NonExistentField)?;
 
-                    if let Some(ref type_ref) = type_ref {
-                        self.declarations
-                            .assert_equivalent(
-                                type_ref,
-                                &field.type_id,
-                                self.scope,
-                                &hir::Expression::FieldAccess(Box::new(field_access.clone())),
-                            )?
-                            .merge_into(&mut state);
-                    } else {
-                        type_ref = Some(field.type_id.clone());
-                    };
+                    self.declarations.assert_equivalent(
+                        &type_ref,
+                        &field.type_id,
+                        self.scope,
+                        &hir::Expression::FieldAccess(Box::new(field_access.clone())),
+                    )?;
 
                     Ok(EnvironmentStateMonad::new(
                         state,
@@ -314,21 +252,14 @@ where
         mut expression: hir::Typed<hir::Expression>,
         expected_type: Option<TypeReference>,
     ) -> Result<EnvironmentStateMonad<hir::Typed<hir::Expression>>, SemanticError> {
-        if let (Some(expected), Some(found)) = (expected_type.clone(), expression.type_ref.clone())
-        {
+        if let Some(expected) = expected_type.clone() {
             self.declarations.assert_equivalent(
-                &found,
                 &expected,
+                &expression.type_ref,
                 self.scope,
                 &expression.value,
             )?;
         }
-
-        expression.type_ref = expression
-            .type_ref
-            .as_ref()
-            .or(expected_type.as_ref())
-            .cloned();
 
         let mut inferred_type = None;
 
@@ -345,32 +276,82 @@ where
                     .get_mut(&variable)
                     .expect("variable doesn't exist!");
 
-                let state = if variable_type.is_none() {
-                    if let expected_type @ Some(_) = expected_type.clone() {
-                        // TODO: is this line necessary??
-                        inferred_type = expected_type.clone();
-                        *variable_type = expected_type;
-                        EnvironmentState::Mutated
-                    } else {
-                        EnvironmentState::NonMutated
-                    }
-                } else {
-                    inferred_type = variable_type.clone();
-                    EnvironmentState::NonMutated
-                };
+                self.declarations.assert_equivalent(
+                    &variable_type,
+                    &expression.type_ref,
+                    self.scope,
+                    &expression.value,
+                )?;
 
-                EnvironmentStateMonad::new(state, expression)
+                EnvironmentStateMonad::new(EnvironmentState::NonMutated, expression)
             }
             hir::Expression::FieldAccess(field_access) => self
                 .field_access(hir::Typed::new(*field_access, expression.type_ref))?
                 .map(|field_access| field_access.map(Box::new).map(hir::Expression::FieldAccess)),
             hir::Expression::Return(mut inner) => {
                 let inner = self.expression(*inner, Some(self.return_type.clone()))?;
-                inner.map(|inner| hir::Typed::new(hir::Expression::Return(Box::new(inner)), None))
+                inner.map(|inner| {
+                    hir::Typed::new(
+                        hir::Expression::Return(Box::new(inner)),
+                        self.declarations.create_type_ref(),
+                    )
+                })
             }
-            hir::Expression::If(if_expression) => self
-                .if_expression(hir::Typed::new(*if_expression, expression.type_ref))?
-                .map(|if_expression| if_expression.map(Box::new).map(hir::Expression::If)),
+            // hir::Expression::If(if_expression) => self
+            //     .if_expression(hir::Typed::new(*if_expression, expression.type_ref))?
+            //     .map(|if_expression| if_expression.map(Box::new).map(hir::Expression::If)),
+            hir::Expression::If(if_expression) => {
+                let mut state = EnvironmentState::default();
+                let condition = self
+                    .expression(if_expression.condition, None)?
+                    .unwrap_merge(&mut state);
+                if let Some(layout) = self
+                    .declarations
+                    .insert_layout(&condition.type_ref, self.scope)?
+                {
+                    if Layout::Primitive(layout::Primitive::U8) != layout {
+                        todo!("expected bool, found something else");
+                    }
+                }
+
+                let mut then_branch = self
+                    .block(if_expression.then_branch, Some(expression.type_ref.clone()))?
+                    .unwrap_merge(&mut state);
+
+                if let Some(sub_expression) = then_branch.expression {
+                    self.declarations.assert_equivalent(
+                        &sub_expression.type_ref,
+                        &expression.type_ref,
+                        self.scope,
+                        &expression.value,
+                    )?;
+                }
+
+                let else_branch = self
+                    .block(if_expression.else_branch, Some(expression.type_ref.clone()))?
+                    .unwrap_merge(&mut state);
+
+                if let Some(sub_expression) = &else_branch.expression {
+                    self.declarations.assert_equivalent(
+                        &sub_expression.type_ref,
+                        &expression.type_ref,
+                        self.scope,
+                        &expression.value,
+                    )?;
+                }
+
+                EnvironmentStateMonad::new(
+                    state,
+                    hir::Typed::new(
+                        hir::Expression::If(Box::new(hir::If {
+                            condition,
+                            then_branch,
+                            else_branch,
+                        })),
+                        expression.type_ref,
+                    ),
+                )
+            }
             hir::Expression::Call(mut call) => {
                 let mut environment_state = EnvironmentState::NonMutated;
                 call.arguments = call
@@ -398,10 +379,7 @@ where
 
                 let call_context = function::CallContext {
                     arguments: &call.arguments,
-                    call_expression: hir::Typed::new(
-                        hir::Expression::Call(call.clone()),
-                        expected_type.clone(),
-                    ),
+                    call_expression: expression.clone(),
                 };
                 let func_reference = FuncReference {
                     id: declaration,
@@ -447,20 +425,20 @@ where
                     operator,
                 } = *binary;
                 left = self
-                    .expression(left, right.type_ref.clone())?
+                    .expression(left, Some(right.type_ref.clone()))?
                     .unwrap_merge(&mut state);
                 right = self
-                    .expression(right, left.type_ref.clone())?
+                    .expression(right, Some(left.type_ref.clone()))?
                     .unwrap_merge(&mut state);
                 left = self
-                    .expression(left, right.type_ref.clone())?
+                    .expression(left, Some(right.type_ref.clone()))?
                     .unwrap_merge(&mut state);
 
                 if !matches!(binary.operator, IntrinsicOperator::Cmp(_))
                     && expression.type_ref.is_none()
                     && left.type_ref.is_some()
                 {
-                    inferred_type = left.type_ref.clone();
+                    inferred_type = Some(left.type_ref.clone());
                     todo!("can we assign to expression?");
                 }
                 EnvironmentStateMonad::new(
@@ -569,36 +547,25 @@ where
                 )
             }
             hir::Expression::AssertType(inner) => {
-                let type_ref = Some(inner.type_ref.clone().expect("assert_type to have a type"));
+                let type_ref = Some(inner.type_ref.clone());
                 self.expression(*inner, type_ref)?
                     .map(Box::new)
                     .map(hir::Expression::AssertType)
                     .map(|assert_type| hir::Typed::new(assert_type, expression.type_ref).into())
             }
         };
-        if let (Some(inferred), Some(type_ref)) = (&inferred_type, &expression.value.type_ref) {
+        if let Some(inferred) = &inferred_type {
             self.declarations.assert_equivalent(
-                inferred,
-                type_ref,
+                &inferred,
+                &expression.value.type_ref,
                 self.scope,
                 &expression.value.value,
             )?;
         }
-        if expression.value.type_ref.is_none() {
-            expression.value.type_ref = inferred_type;
-        }
-        if let (Some(expected), Some(mut found)) =
-            (expected_type, expression.value.type_ref.clone())
-        {
-            if let Some(expected_layout) = self.declarations.insert_layout(&expected, self.scope)? {
-                if expected_layout == Layout::Void {
-                    expression.value.type_ref = Some(expected.clone());
-                    found = expected.clone();
-                }
-            }
+        if let Some(expected) = &expected_type {
             self.declarations.assert_equivalent(
                 &expected,
-                &found,
+                &expression.value.type_ref,
                 self.scope,
                 &expression.value.value,
             )?;

@@ -1,4 +1,4 @@
-use crate::declarations::{self, GenericArgument, TypeReference};
+use crate::declarations::{self, Declarations, GenericArgument, TypeReference};
 use crate::SemanticError;
 pub use builder::Builder;
 use builder::VariableId;
@@ -54,7 +54,7 @@ pub struct Call {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Constructor(pub Vec<(Offset32, Typed<Expression>)>);
+pub struct Constructor(pub Vec<Typed<Expression>>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
@@ -95,36 +95,20 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub const fn with_type(self, type_ref: TypeReference) -> Typed<Self> {
-        Typed::new(self, Some(type_ref))
+    pub fn typed(self, declarations: &mut Declarations) -> Typed<Self> {
+        Typed::new(self, declarations.create_type_ref())
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Typed<T> {
     pub value: T,
-    pub type_ref: Option<TypeReference>,
-}
-
-impl<T> From<T> for Typed<T> {
-    fn from(value: T) -> Self {
-        Self {
-            value,
-            type_ref: None,
-        }
-    }
+    pub type_ref: TypeReference,
 }
 
 impl<T> Typed<T> {
-    pub const fn new(value: T, type_ref: Option<TypeReference>) -> Self {
+    pub const fn new(value: T, type_ref: TypeReference) -> Self {
         Self { value, type_ref }
-    }
-
-    pub fn with_type(self, type_ref: TypeReference) -> Self {
-        Self {
-            type_ref: Some(type_ref),
-            ..self
-        }
     }
 
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Typed<U> {
@@ -136,15 +120,5 @@ impl<T> Typed<T> {
 
     pub fn boxed(self) -> Typed<Box<T>> {
         self.map(Box::new)
-    }
-
-    pub fn expect_type(&self) -> Result<&TypeReference, SemanticError>
-    where
-        Expression: From<T>,
-        T: Clone,
-    {
-        self.type_ref
-            .as_ref()
-            .ok_or_else(|| SemanticError::UnknownType(self.value.clone().into()))
     }
 }

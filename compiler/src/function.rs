@@ -48,19 +48,20 @@ impl MSignature {
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
         if let Some(call_context) = call_context {
             for (parameter, argument) in iter::zip(&parameters, call_context.arguments) {
-                if let Some(type_ref) = &argument.type_ref {
-                    // TODO: is it the right scope?
-                    declarations.assert_equivalent(parameter, type_ref, scope, &argument.value)?;
-                }
-            }
-            if let Some(type_ref) = &call_context.call_expression.type_ref {
+                // TODO: is it the right scope?
                 declarations.assert_equivalent(
-                    &return_type,
-                    type_ref,
+                    parameter,
+                    &argument.type_ref,
                     scope,
-                    &call_context.call_expression.value,
+                    &argument.value,
                 )?;
             }
+            declarations.assert_equivalent(
+                &return_type,
+                &call_context.call_expression.type_ref,
+                scope,
+                &call_context.call_expression.value,
+            )?;
         }
 
         signature.params = parameters

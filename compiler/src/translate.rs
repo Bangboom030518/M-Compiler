@@ -64,7 +64,7 @@ where
 
                 let layout = self
                     .declarations
-                    .insert_layout_initialised(assignment.right.expect_type()?, self.scope)?;
+                    .insert_layout_initialised(&assignment.right.type_ref, self.scope)?;
 
                 let size = self.iconst(layout.size(&self.declarations.isa));
 
@@ -225,7 +225,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let struct_layout = self
             .declarations
-            .insert_layout_initialised(access.expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(&access.expression.type_ref, self.scope)?;
 
         let BranchStatus::Continue(value) = self.expression(access.expression)? else {
             return Ok(BranchStatus::Finished);
@@ -324,7 +324,6 @@ where
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
-            expression.expect_type()?;
             let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
                 return Ok(BranchStatus::Finished);
             };
@@ -399,7 +398,7 @@ where
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let layout = self
             .declarations
-            .insert_layout_initialised(expression.expect_type()?, self.scope)?;
+            .insert_layout_initialised(&expression.type_ref, self.scope)?;
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
