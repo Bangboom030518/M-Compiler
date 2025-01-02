@@ -26,33 +26,28 @@ impl From<VariableId> for Variable {
     }
 }
 
-#[derive(Clone)]
-pub struct Function {
-    pub return_type: declarations::TypeReference,
-    pub variables: HashMap<VariableId, TypeReference>,
-    pub body: Vec<hir::Statement>,
+struct StructConstraint {
+    struct_type: TypeReference,
+    field: String,
+    expression: hir::Typed<hir::Expression>,
 }
 
-pub struct Builder<'a, M> {
+pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
     top_level_scope: ScopeId,
     return_type: TypeReference,
     variables: HashMap<VariableId, TypeReference>,
     local_scopes: Vec<HashMap<String, Variable>>,
+    struct_constraints: Vec<StructConstraint>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
-    module: &'a mut M,
 }
 
-impl<'a, M> Builder<'a, M>
-where
-    M: cranelift_module::Module,
-{
+impl<'a> Builder<'a> {
     pub fn new(
         declarations: &'a mut Declarations,
         function: &'a function::Internal,
         parameters: Vec<(Spanned<parser::Ident>, Variable, TypeReference)>,
-        module: &'a mut M,
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
@@ -70,21 +65,48 @@ where
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
-            module,
+            struct_constraints: Vec::new(),
         }
     }
 
-    pub fn build(mut self) -> Result<Function, SemanticError> {
+    pub fn build_body(mut self) -> Result<Vec<hir::Statement>, SemanticError> {
         let body = self
             .body
             .iter()
             .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<_, _>>()?;
-        Ok(Function {
-            return_type: self.return_type,
-            variables: self.variables,
-            body,
-        })
+        let mut constraints = self.struct_constraints;
+        while !constraints.is_empty() {
+            let mut completed = Vec::with_capacity(constraints.len());
+            for (index, constraint) in constraints.iter().enumerate() {
+                let struct_type = self
+                    .declarations
+                    .insert_layout(&constraint.struct_type, self.top_level_scope)?;
+                let Some(struct_type) = struct_type else {
+                    continue;
+                };
+                let struct_type = struct_type.expect_struct()?;
+                let field = struct_type
+                    .fields
+                    .get(&constraint.field)
+                    .ok_or_else(|| SemanticError::NonExistentField)?;
+
+                self.declarations.check_expression_type(
+                    &constraint.expression,
+                    &field.type_ref,
+                    self.top_level_scope,
+                )?;
+
+                completed.push(index);
+            }
+            if completed.is_empty() {
+                break;
+            }
+            for index in completed.into_iter().rev() {
+                constraints.remove(index);
+            }
+        }
+        Ok(body)
     }
 
     fn create_variable(&mut self) -> Variable {
@@ -195,41 +217,27 @@ where
         &mut self,
         constructor: &parser::expression::Constructor,
     ) -> Result<hir::Typed<Expression>, SemanticError> {
-        let type_ref = self
+        let struct_type = self
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self
-            .declarations
-            .insert_layout(&type_ref, self.top_level_scope)?
-            .unwrap_or_else(|| todo!("uninitialised layout"))
-        else {
-            return Err(SemanticError::InvalidConstructor);
-        };
+        let fields = constructor
+            .fields
+            .iter()
+            .map(|(ident, expression)| {
+                let expression = self.expression(expression.as_ref())?;
+                self.struct_constraints.push(StructConstraint {
+                    struct_type: struct_type.clone(),
+                    field: ident.value.0.clone(),
+                    expression: expression.clone(),
+                });
+                Ok((ident.value.0.clone(), expression))
+            })
+            .collect::<Result<_, SemanticError>>()?;
 
-        // TODO: Make sure all fields are present
         Ok(Typed::new(
-            Expression::Constructor(hir::Constructor(
-                constructor
-                    .fields
-                    .iter()
-                    .map(|(ident, expression)| {
-                        let field = layout
-                            .fields
-                            .get(&ident.value.0)
-                            .ok_or(SemanticError::NonExistentField)?;
-
-                        let expression = self.expression(expression.as_ref())?;
-                        self.declarations.check_expression_type(
-                            &expression,
-                            &field.type_ref,
-                            self.top_level_scope,
-                        )?;
-                        Ok((ident.value.0.clone(), expression))
-                    })
-                    .collect::<Result<_, SemanticError>>()?,
-            )),
-            type_ref,
+            Expression::Constructor(hir::Constructor(fields)),
+            struct_type,
         ))
     }
 
@@ -408,36 +416,18 @@ where
             }
             parser::Expression::Constructor(constructor) => self.constructor(constructor),
             parser::Expression::FieldAccess(field_access) => {
-                let expression = self.expression(field_access.expression.as_ref())?;
+                let struct_expression = self.expression(field_access.expression.as_ref())?;
                 let field = &field_access.ident.value;
                 let field_access = Expression::FieldAccess(Box::new(hir::FieldAccess {
-                    expression: expression.clone(),
+                    expression: struct_expression.clone(),
                     field: field.clone(),
                 }))
                 .typed(self.declarations);
-                let struct_layout = self
-                    .declarations
-                    .insert_layout(&expression.type_ref, self.top_level_scope)?;
-                match struct_layout {
-                    Some(layout) => match layout {
-                        Layout::Struct(layout) => {
-                            let fields = layout.fields;
-                            let field = fields
-                                .get(&field.0)
-                                .ok_or(SemanticError::NonExistentField)?;
-
-                            self.declarations.check_expression_type(
-                                &field_access,
-                                &field.type_ref,
-                                self.top_level_scope,
-                            )?;
-                        }
-                        layout => {
-                            return Err(SemanticError::InvalidFieldAccess(layout));
-                        }
-                    },
-                    None => todo!("lazy resolve structs"),
-                }
+                self.struct_constraints.push(StructConstraint {
+                    struct_type: struct_expression.type_ref,
+                    field: field.0.clone(),
+                    expression: field_access.clone(),
+                });
                 Ok(field_access)
             }
             parser::Expression::Generixed(generixed) => {

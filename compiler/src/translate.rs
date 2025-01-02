@@ -266,9 +266,7 @@ where
         constructor: hir::Constructor,
         layout: &Layout,
     ) -> Result<BranchStatus<Value>, SemanticError> {
-        let Layout::Struct(struct_layout) = layout else {
-            return Err(SemanticError::InvalidConstructor);
-        };
+        let struct_layout = layout.expect_struct()?;
 
         let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
             kind: StackSlotKind::ExplicitSlot,

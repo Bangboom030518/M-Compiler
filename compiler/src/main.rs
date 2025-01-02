@@ -41,8 +41,6 @@ pub enum SemanticError {
     UnexpectedNumberLiteral,
     #[error("Integer literal too thicc, phatt and chonky")]
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
-    #[error("Type resolution failed to infer the type")]
-    UnknownType(hir::Expression),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
     #[error("Declaration not found: '{}'", 0.0)]
@@ -63,8 +61,6 @@ pub enum SemanticError {
         found: Layout,
         expression: hir::Expression,
     },
-    #[error("Tried to construct something other than a struct")]
-    InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
     MissingStructField,
     #[error("Was stoopid and tried to access the field of a non-struct type")]
@@ -88,12 +84,14 @@ pub enum SemanticError {
     GenericParametersMismatch,
     #[error("Tried to put generics somewhere they don't belong.")]
     UnexpectedGenerics,
-    #[error("Tried to use a type that hasn't been figured out yet. Don't know if this is your fault or ours tbh, sorry :(")]
+    #[error("Type resolution couldn't figure out type")]
     UninitialisedType,
     #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
     StructTooChonky,
     #[error("Expected a bool, but found something else. Your guess is as good as mine as to what that is.")]
     ExpectedBool,
+    #[error("Expected a type to be a struct based on usage")]
+    ExpectedStruct,
 }
 
 struct FunctionCompiler {
@@ -138,7 +136,7 @@ impl FunctionCompiler {
                 declarations.concrete_functions.insert(func_ref, function);
                 continue;
             };
-            // TODO: `.clone()`
+
             internal.compile(declarations, context, self)?;
 
             declarations
@@ -164,7 +162,9 @@ fn main() {
         Err(error) => {
             use parser::ParseError;
             match error {
-                ParseError::UnexpectedIdentifier { expected, found } => todo!("unexpected ident"),
+                ParseError::UnexpectedIdentifier { expected, found } => {
+                    todo!("unexpected ident; expected '{expected:?}', found '{found:?}")
+                }
                 ParseError::UnexpectedToken { expected, found } => panic!(
                     "expected: {expected:?}, found: {:?} in '{}'",
                     found.value,
@@ -179,7 +179,7 @@ fn main() {
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
-        panic!("host machine is not supported: {}", msg);
+        panic!("host machine is not supported: {msg}");
     });
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
@@ -293,8 +293,6 @@ fn main() {
     else {
         panic!("main should not be extern")
     };
-
-    dbg!(&main.id);
 
     let code = context
         .module

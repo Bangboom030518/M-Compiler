@@ -115,7 +115,7 @@ impl MSignature {
 pub struct External {
     pub symbol_name: Spanned<String>,
     pub signature: MSignature,
-    pub id: Option<FuncId>,
+    pub id: FuncId,
 }
 
 impl External {
@@ -123,11 +123,11 @@ impl External {
         function: parser::top_level::ExternFunction,
         declarations: &mut Declarations,
         scope: ScopeId,
-        module: &impl Module,
+        module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let call_conv =
             CallConv::for_libcall(module.isa().flags(), module.isa().default_call_conv());
-        let signature = MSignature::new(
+        let mut signature = MSignature::new(
             &function.parameters,
             &function.return_type,
             declarations,
@@ -136,28 +136,16 @@ impl External {
             Some(call_conv),
             Linkage::Import,
         )?;
+        let cranelift_signature = &signature.cranelift_signature(module, declarations)?;
+        let id = module
+            .declare_function(&function.symbol.value, Linkage::Import, cranelift_signature)
+            .expect("internal module error");
 
         Ok(Self {
             symbol_name: function.symbol,
             signature,
-            id: None,
+            id,
         })
-    }
-
-    pub fn id(
-        &mut self,
-        module: &mut impl Module,
-        declarations: &mut Declarations,
-    ) -> Result<FuncId, SemanticError> {
-        if let Some(id) = self.id {
-            return Ok(id);
-        }
-        let signature = &self.signature.cranelift_signature(module, declarations)?;
-        let id = module
-            .declare_function(&self.symbol_name.value, Linkage::Import, signature)
-            .expect("internal module error");
-        self.id = Some(id);
-        Ok(id)
     }
 }
 
@@ -327,9 +315,7 @@ impl Internal {
             })
             .collect::<Result<_, SemanticError>>()?;
 
-        let func =
-            crate::hir::Builder::new(declarations, self, names, &mut cranelift_context.module)
-                .build()?;
+        let body = crate::hir::Builder::new(declarations, self, names).build_body()?;
         let id = self.id(&mut cranelift_context.module, declarations)?;
 
         let mut translator = Translator::new(
@@ -340,7 +326,7 @@ impl Internal {
             self.signature.scope,
         );
 
-        for statement in func.body {
+        for statement in body {
             if translator.statement(statement)? == BranchStatus::Finished {
                 break;
             }
@@ -351,9 +337,7 @@ impl Internal {
         cranelift_context
             .module
             .define_function(id, &mut cranelift_context.context)
-            .unwrap_or_else(|error: cranelift_module::ModuleError| {
-                todo!("handle me properly: {error:?}")
-            });
+            .unwrap_or_else(|error| panic!("internal cranelift error: '{error}'"));
 
         #[cfg(debug_assertions)]
         {

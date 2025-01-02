@@ -1,4 +1,5 @@
 use crate::declarations::{self};
+use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
@@ -38,6 +39,13 @@ impl Layout {
             Self::Struct(Struct { size, .. }) => *size,
             Self::Array(array) => array.size,
             Self::Void => 0,
+        }
+    }
+
+    pub fn expect_struct(&self) -> Result<&Struct, SemanticError> {
+        match self {
+            Self::Struct(struct_layout) => Ok(struct_layout),
+            _ => Err(SemanticError::ExpectedStruct),
         }
     }
 

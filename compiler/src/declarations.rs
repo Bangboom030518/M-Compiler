@@ -14,7 +14,7 @@ use tokenizer::Spanned;
 pub struct Id(usize);
 
 impl Id {
-    pub fn to_type_ref(self) -> TypeReference {
+    pub const fn to_type_ref(self) -> TypeReference {
         TypeReference {
             id: self,
             generics: Vec::new(),
@@ -144,13 +144,6 @@ impl ConcreteFunction {
             Self::External(function) => &function.signature,
         }
     }
-
-    pub fn signature_mut(&mut self) -> &mut function::MSignature {
-        match self {
-            Self::Internal(function) => &mut function.signature,
-            Self::External(function) => &mut function.signature,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -223,14 +216,8 @@ impl GenericArgument {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GenericKind {
-    Length,
-    Type,
-}
-
 pub struct Declarations {
-    declarations: Vec<Option<Declaration>>,
+    store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
     layouts: HashMap<TypeReference, Layout>,
     pub concrete_functions: HashMap<FuncReference, ConcreteFunction>,
@@ -244,7 +231,7 @@ impl Declarations {
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
         let mut declarations = Self {
-            declarations: Vec::new(),
+            store: Vec::new(),
             scopes: Vec::new(),
             isa: Arc::clone(isa),
             layouts: HashMap::new(),
@@ -347,7 +334,7 @@ impl Declarations {
     }
 
     pub fn is_initialised(&self, id: Id) -> bool {
-        self.declarations.get(id.0).expect("`Id` exists").is_some()
+        self.store.get(id.0).expect("`Id` exists").is_some()
     }
 
     pub fn resolve_generics(
@@ -598,14 +585,14 @@ impl Declarations {
     }
 
     fn create(&mut self, declaration: Declaration) -> Id {
-        let id = self.declarations.len();
-        self.declarations.push(Some(declaration));
+        let id = self.store.len();
+        self.store.push(Some(declaration));
         Id(id)
     }
 
     pub fn create_uninitialised(&mut self) -> Id {
-        self.declarations.push(None);
-        Id(self.declarations.len() - 1)
+        self.store.push(None);
+        Id(self.store.len() - 1)
     }
 
     pub fn create_type_ref(&mut self) -> TypeReference {
@@ -613,7 +600,7 @@ impl Declarations {
     }
 
     fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
-        self.declarations[index] = Some(declaration);
+        self.store[index] = Some(declaration);
     }
 
     /// Gets the declaration at `Id`, returning `None` if the declaration is uninitialised
@@ -622,7 +609,7 @@ impl Declarations {
     /// If the declaration at `Id` does not exist
     #[must_use]
     fn get(&self, Id(id): Id) -> Option<&Declaration> {
-        self.declarations.get(id).expect("`Id` exists").as_ref()
+        self.store.get(id).expect("`Id` exists").as_ref()
     }
 
     pub fn get_func_id(
@@ -632,7 +619,6 @@ impl Declarations {
         module: &mut impl Module,
     ) -> Result<FuncId, SemanticError> {
         let mut function = self.insert_function(func_reference.clone(), scope)?;
-        dbg!(&function.signature().name.value);
         let id = match &mut function {
             ConcreteFunction::Internal(function) => {
                 if let Some(id) = function.id {
@@ -642,14 +628,7 @@ impl Declarations {
                 function.id = Some(id);
                 id
             }
-            ConcreteFunction::External(function) => {
-                if let Some(id) = function.id {
-                    return Ok(id);
-                }
-                let id = function.signature.declare(module, self)?;
-                function.id = Some(id);
-                id
-            }
+            ConcreteFunction::External(function) => function.id,
         };
         self.concrete_functions.insert(func_reference, function);
         Ok(id)
