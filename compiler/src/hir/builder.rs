@@ -1,7 +1,6 @@
 use super::{Store, Typed};
 use crate::declarations::{Declarations, FuncReference, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
-use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
 use cranelift::prelude::*;
 use itertools::Itertools;

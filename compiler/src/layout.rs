@@ -42,7 +42,7 @@ impl Layout {
         }
     }
 
-    pub fn expect_struct(&self) -> Result<&Struct, SemanticError> {
+    pub const fn expect_struct(&self) -> Result<&Struct, SemanticError> {
         match self {
             Self::Struct(struct_layout) => Ok(struct_layout),
             _ => Err(SemanticError::ExpectedStruct),

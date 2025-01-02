@@ -131,7 +131,6 @@ pub enum GenericFunction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[deprecated]
 pub enum ConcreteFunction {
     Internal(function::Internal),
     External(function::External),
@@ -220,7 +219,7 @@ pub struct Declarations {
     store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
     layouts: HashMap<TypeReference, Layout>,
-    pub concrete_functions: HashMap<FuncReference, ConcreteFunction>,
+    concrete_functions: HashMap<FuncReference, ConcreteFunction>,
     pub isa: Arc<dyn TargetIsa>,
 }
 
@@ -643,7 +642,6 @@ impl Declarations {
         func_reference: FuncReference,
         argument_scope: ScopeId,
     ) -> Result<ConcreteFunction, SemanticError> {
-        // TODO: `.clone()`s
         if let Some(function) = self.concrete_functions.get(&func_reference) {
             return Ok(function.clone());
         }

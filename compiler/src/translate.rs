@@ -499,10 +499,7 @@ where
             .ins()
             .global_value(self.declarations.isa.pointer_type(), value);
 
-        Ok(BranchStatus::Continue(
-            // self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
-            value,
-        ))
+        Ok(BranchStatus::Continue(value))
     }
 
     fn expression(

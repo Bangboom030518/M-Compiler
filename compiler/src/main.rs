@@ -126,20 +126,14 @@ impl FunctionCompiler {
             }
 
             let function = declarations
-                .concrete_functions
-                .remove(&func_ref)
+                .get_function(&func_ref)
                 .expect("function not found");
 
             let ConcreteFunction::Internal(internal) = function else {
-                declarations.concrete_functions.insert(func_ref, function);
                 continue;
             };
 
-            internal.compile(declarations, context, self)?;
-
-            declarations
-                .concrete_functions
-                .insert(func_ref.clone(), ConcreteFunction::Internal(internal));
+            internal.clone().compile(declarations, context, self)?;
 
             self.compiled.insert(func_ref);
         }
