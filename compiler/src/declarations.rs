@@ -410,12 +410,13 @@ impl Declarations {
         scope: ScopeId,
         expression: &crate::hir::Expression,
     ) -> Result<(), SemanticError> {
+        let expected = expected.resolve(self);
+        let found = found.resolve(self);
         if !self.is_initialised(found.id) {
             self.initialise(found.id, Declaration::TypeAlias(expected.clone()));
         } else if !self.is_initialised(expected.id) {
             self.initialise(expected.id, Declaration::TypeAlias(found.clone()));
         }
-        dbg!((expected, found));
         let expected = expected.resolve(self);
         let found = found.resolve(self);
         if expected == found {
