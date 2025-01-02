@@ -225,21 +225,10 @@ impl Internal {
         })
     }
 
-    fn id(
-        &mut self,
-        module: &mut impl Module,
-        declarations: &mut Declarations,
-    ) -> Result<FuncId, SemanticError> {
-        if let Some(id) = self.id {
-            return Ok(id);
-        }
-        let id = self.signature.declare(module, declarations)?;
-        self.id = Some(id);
-        Ok(id)
-    }
-
+    /// # Panics
+    /// if the function has not yet been declared
     pub fn compile(
-        &mut self,
+        &self,
         declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
         function_compiler: &mut crate::FunctionCompiler,
@@ -251,7 +240,7 @@ impl Internal {
         let signature = self
             .signature
             .clone()
-            .cranelift_signature(&cranelift_context.module, declarations)
+            .signature
             .expect("signature not generated");
 
         builder.func.signature = signature;
@@ -316,7 +305,7 @@ impl Internal {
             .collect::<Result<_, SemanticError>>()?;
 
         let body = crate::hir::Builder::new(declarations, self, names).build_body()?;
-        let id = self.id(&mut cranelift_context.module, declarations)?;
+        let id = self.id.expect("function not declared");
 
         let mut translator = Translator::new(
             builder,

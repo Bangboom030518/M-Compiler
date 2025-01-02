@@ -359,10 +359,11 @@ where
 
         let func_id = self
             .declarations
-            .get_func_id(reference, self.scope, self.module)?;
+            .declare_function(reference, self.scope, self.module)?;
         let func_ref = self.module.declare_func_in_func(func_id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
+
         if return_layout == Layout::Void {
             // TODO: What????
             let value = self

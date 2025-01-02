@@ -100,12 +100,9 @@ struct FunctionCompiler {
 }
 
 impl FunctionCompiler {
-    fn new(id: declarations::Id) -> Self {
+    fn new(entry_function: FuncReference) -> Self {
         Self {
-            to_compile: vec![FuncReference {
-                id,
-                generics: Vec::new(),
-            }],
+            to_compile: vec![entry_function],
             compiled: HashSet::new(),
         }
     }
@@ -127,12 +124,13 @@ impl FunctionCompiler {
             if self.compiled.contains(&func_ref) {
                 continue;
             }
+
             let function = declarations
                 .concrete_functions
                 .remove(&func_ref)
                 .expect("function not found");
 
-            let ConcreteFunction::Internal(mut internal) = function else {
+            let ConcreteFunction::Internal(internal) = function else {
                 declarations.concrete_functions.insert(func_ref, function);
                 continue;
             };
@@ -233,70 +231,33 @@ fn main() {
     builder.symbol("print_str", print_str as *const u8);
 
     let mut module = cranelift_jit::JITModule::new(builder);
-    let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {
-        Ok(declarations) => declarations,
-        Err(error) => match error {
-            SemanticError::DeclarationNotFound(ident) => {
-                panic!(
-                    "ident not found '{}': '{}'",
-                    ident.value,
-                    input
-                        .get((ident.span.start - 5)..(ident.span.end + 5))
-                        .unwrap()
-                )
-            }
-            error => todo!("handle meee: {error}"),
-        },
-    };
+    let mut declarations = declarations::Declarations::new(declarations, &isa, &mut module)
+        .unwrap_or_else(|error| panic!("{error}"));
 
     let mut context = CraneliftContext::new(module);
-    let main_id = declarations
+    let main_ref = declarations
         .lookup("main", declarations::TOP_LEVEL_SCOPE)
-        .expect("no main!");
+        .expect("no main function");
+    let main_ref = declarations::FuncReference {
+        id: main_ref,
+        generics: Vec::new(),
+    };
 
-    declarations
-        .insert_function(
-            declarations::FuncReference {
-                id: main_id,
-                generics: Vec::new(),
-            },
+    let main_func_id = declarations
+        .declare_function(
+            main_ref.clone(),
             declarations::TOP_LEVEL_SCOPE,
+            &mut context.module,
         )
         .unwrap();
 
-    match FunctionCompiler::new(main_id).compile_all(&mut declarations, &mut context) {
-        Ok(()) => {}
-        Err(error) => match error {
-            SemanticError::DeclarationNotFound(ident) => {
-                panic!(
-                    "ident not found '{}': '{}'",
-                    ident.value,
-                    input
-                        .get((ident.span.start - 5)..(ident.span.end + 5))
-                        .unwrap()
-                )
-            }
-            error => todo!("handle meee: {error}"),
-        },
-    }
+    FunctionCompiler::new(main_ref)
+        .compile_all(&mut declarations, &mut context)
+        .unwrap_or_else(|error| panic!("{error}"));
 
     context.module.finalize_definitions().unwrap();
-    let ConcreteFunction::Internal(main) = declarations
-        .insert_function(
-            declarations::FuncReference {
-                id: main_id,
-                generics: Vec::new(),
-            },
-            declarations::TOP_LEVEL_SCOPE,
-        )
-        .unwrap()
-    else {
-        panic!("main should not be extern")
-    };
 
-    let code = context
-        .module
-        .get_finalized_function(main.id.expect("function not compiled"));
+    let code = context.module.get_finalized_function(main_func_id);
     println!("Compilation finished! Running compiled function...");
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
     unsafe { main() };

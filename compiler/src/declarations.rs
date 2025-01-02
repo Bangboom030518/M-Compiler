@@ -612,7 +612,7 @@ impl Declarations {
         self.store.get(id).expect("`Id` exists").as_ref()
     }
 
-    pub fn get_func_id(
+    pub fn declare_function(
         &mut self,
         func_reference: FuncReference,
         scope: ScopeId,
