@@ -134,12 +134,12 @@ impl FunctionCompiler {
                 .remove(&func_ref)
                 .expect("function not found");
 
-            let ConcreteFunction::Internal(internal) = function else {
+            let ConcreteFunction::Internal(mut internal) = function else {
                 declarations.concrete_functions.insert(func_ref, function);
                 continue;
             };
             // TODO: `.clone()`
-            internal.clone().compile(declarations, context, self)?;
+            internal.compile(declarations, context, self)?;
 
             declarations
                 .concrete_functions
@@ -254,7 +254,7 @@ fn main() {
         .lookup("main", declarations::TOP_LEVEL_SCOPE)
         .expect("no main!");
 
-    let ConcreteFunction::Internal(main) = declarations
+    declarations
         .insert_function(
             declarations::FuncReference {
                 id: main_id,
@@ -262,10 +262,7 @@ fn main() {
             },
             declarations::TOP_LEVEL_SCOPE,
         )
-        .expect("🎉 uh oh!")
-    else {
-        panic!("main should not be extern")
-    };
+        .unwrap();
 
     match FunctionCompiler::new(main_id).compile_all(&mut declarations, &mut context) {
         Ok(()) => {}
@@ -292,12 +289,12 @@ fn main() {
             },
             declarations::TOP_LEVEL_SCOPE,
         )
-        .expect("🎉 uh oh!")
+        .unwrap()
     else {
         panic!("main should not be extern")
     };
 
-    dbg!(&main);
+    dbg!(&main.id);
 
     let code = context
         .module

@@ -1,9 +1,7 @@
-use std::iter;
-
 use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
-use crate::{hir, CraneliftContext, SemanticError};
+use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
@@ -118,8 +116,6 @@ pub struct External {
     pub symbol_name: Spanned<String>,
     pub signature: MSignature,
     pub id: Option<FuncId>,
-    pub call_conv: CallConv,
-    pub scope: ScopeId,
 }
 
 impl External {
@@ -127,7 +123,7 @@ impl External {
         function: parser::top_level::ExternFunction,
         declarations: &mut Declarations,
         scope: ScopeId,
-        module: &mut impl Module,
+        module: &impl Module,
     ) -> Result<Self, SemanticError> {
         let call_conv =
             CallConv::for_libcall(module.isa().flags(), module.isa().default_call_conv());
@@ -145,8 +141,6 @@ impl External {
             symbol_name: function.symbol,
             signature,
             id: None,
-            call_conv,
-            scope,
         })
     }
 
@@ -170,7 +164,6 @@ impl External {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Internal {
     pub body: Vec<Spanned<parser::Statement>>,
-    pub scope: ScopeId,
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: Option<FuncId>,
@@ -189,7 +182,6 @@ impl Internal {
         parameter_scope: ScopeId,
         argument_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
-        dbg!(&function.name);
         let scope = declarations.create_generic_scope(
             function.generic_parameters,
             &generic_arguments,
@@ -239,7 +231,6 @@ impl Internal {
         Ok(Self {
             signature,
             parameter_names,
-            scope,
             body,
             id: None,
             generics: generic_arguments,
@@ -285,7 +276,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout_initialised(&self.signature.return_type, self.scope)?
+            .insert_layout_initialised(&self.signature.return_type, self.signature.scope)?
             .is_aggregate()
         {
             let param = block_params
@@ -306,7 +297,8 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout_initialised(type_ref, self.scope)?;
+                let layout =
+                    declarations.insert_layout_initialised(type_ref, self.signature.scope)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -345,7 +337,7 @@ impl Internal {
             declarations,
             &mut cranelift_context.module,
             function_compiler,
-            self.scope,
+            self.signature.scope,
         );
 
         for statement in func.body {

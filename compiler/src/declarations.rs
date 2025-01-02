@@ -131,7 +131,7 @@ pub enum GenericFunction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[deprecated = "all functions are basically the same"]
+#[deprecated]
 pub enum ConcreteFunction {
     Internal(function::Internal),
     External(function::External),
@@ -149,38 +149,6 @@ impl ConcreteFunction {
         match self {
             Self::Internal(function) => &mut function.signature,
             Self::External(function) => &mut function.signature,
-        }
-    }
-
-    pub const fn scope(&self) -> ScopeId {
-        match self {
-            Self::Internal(function) => function.scope,
-            Self::External(function) => function.scope,
-        }
-    }
-
-    pub fn id(
-        &mut self,
-        module: &mut impl Module,
-        declarations: &mut Declarations,
-    ) -> Result<FuncId, SemanticError> {
-        match self {
-            Self::Internal(function) => {
-                if let Some(id) = function.id {
-                    return Ok(id);
-                }
-                let id = function.signature.declare(module, declarations)?;
-                function.id = Some(id);
-                Ok(id)
-            }
-            Self::External(function) => {
-                if let Some(id) = function.id {
-                    return Ok(id);
-                }
-                let id = function.signature.declare(module, declarations)?;
-                function.id = Some(id);
-                Ok(id)
-            }
         }
     }
 }
@@ -263,10 +231,10 @@ pub enum GenericKind {
 
 pub struct Declarations {
     declarations: Vec<Option<Declaration>>,
-    pub scopes: Vec<TopLevelScope>,
-    pub isa: Arc<dyn TargetIsa>,
-    pub layouts: HashMap<TypeReference, Layout>,
+    scopes: Vec<TopLevelScope>,
+    layouts: HashMap<TypeReference, Layout>,
     pub concrete_functions: HashMap<FuncReference, ConcreteFunction>,
+    pub isa: Arc<dyn TargetIsa>,
 }
 
 impl Declarations {
@@ -655,6 +623,40 @@ impl Declarations {
     #[must_use]
     fn get(&self, Id(id): Id) -> Option<&Declaration> {
         self.declarations.get(id).expect("`Id` exists").as_ref()
+    }
+
+    pub fn get_func_id(
+        &mut self,
+        func_reference: FuncReference,
+        scope: ScopeId,
+        module: &mut impl Module,
+    ) -> Result<FuncId, SemanticError> {
+        let mut function = self.insert_function(func_reference.clone(), scope)?;
+        dbg!(&function.signature().name.value);
+        let id = match &mut function {
+            ConcreteFunction::Internal(function) => {
+                if let Some(id) = function.id {
+                    return Ok(id);
+                }
+                let id = function.signature.declare(module, self)?;
+                function.id = Some(id);
+                id
+            }
+            ConcreteFunction::External(function) => {
+                if let Some(id) = function.id {
+                    return Ok(id);
+                }
+                let id = function.signature.declare(module, self)?;
+                function.id = Some(id);
+                id
+            }
+        };
+        self.concrete_functions.insert(func_reference, function);
+        Ok(id)
+    }
+
+    pub fn get_function(&self, func_reference: &FuncReference) -> Option<&ConcreteFunction> {
+        self.concrete_functions.get(func_reference)
     }
 
     pub fn insert_function(

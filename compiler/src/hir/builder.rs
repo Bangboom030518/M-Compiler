@@ -64,7 +64,7 @@ where
 
         Self {
             declarations,
-            top_level_scope: function.scope,
+            top_level_scope: function.signature.scope,
             variables,
             new_variable_index,
             return_type: function.signature.return_type.clone(),

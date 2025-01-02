@@ -325,11 +325,11 @@ where
             generics,
         };
 
-        let mut function = self
+        let function = self
             .declarations
             .insert_function(reference.clone(), self.scope)?;
 
-        self.function_compiler.push(reference);
+        self.function_compiler.push(reference.clone());
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
@@ -359,7 +359,9 @@ where
             arguments.push(addr);
         }
 
-        let func_id = function.id(self.module, self.declarations)?;
+        let func_id = self
+            .declarations
+            .get_func_id(reference, self.scope, self.module)?;
         let func_ref = self.module.declare_func_in_func(func_id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
