@@ -260,16 +260,12 @@ fn main() {
                 id: main_id,
                 generics: Vec::new(),
             },
-            &mut context.module,
-            None,
             declarations::TOP_LEVEL_SCOPE,
         )
         .expect("🎉 uh oh!")
     else {
         panic!("main should not be extern")
     };
-
-    // let function_compiler = FunctionCompiler::new(main_id);
 
     match FunctionCompiler::new(main_id).compile_all(&mut declarations, &mut context) {
         Ok(()) => {}
@@ -287,32 +283,25 @@ fn main() {
         },
     }
 
-    // let main_function = declarations
-    //     .concrete_functions
-    //     .values()
-    //     .find(|function| &function.signature().name.value.0 == "main")
-    //     .expect("no main function!");
-
-    // let mut functions = HashMap::new();
-    // for declaration in declarations.declarations.clone().into_iter().flatten() {
-    //     let declarations::Declaration::Function(declarations::GenericFunction::Internal {..}) =
-    //         declaration
-    //     else {
-    //         continue;
-    //     };
-
-    //     let name = function.signature.name.value.to_string();
-    //     let id = function
-    //         .compile(&mut declarations, &mut context)
-    //         .expect("TODO");
-
-    //     functions.insert(name, id);
-    // }
-
     context.module.finalize_definitions().unwrap();
-    let function = main.id;
+    let ConcreteFunction::Internal(main) = declarations
+        .insert_function(
+            declarations::FuncReference {
+                id: main_id,
+                generics: Vec::new(),
+            },
+            declarations::TOP_LEVEL_SCOPE,
+        )
+        .expect("🎉 uh oh!")
+    else {
+        panic!("main should not be extern")
+    };
 
-    let code = context.module.get_finalized_function(function);
+    dbg!(&main);
+
+    let code = context
+        .module
+        .get_finalized_function(main.id.expect("function not compiled"));
     println!("Compilation finished! Running compiled function...");
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
     unsafe { main() };

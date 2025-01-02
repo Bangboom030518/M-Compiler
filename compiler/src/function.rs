@@ -10,18 +10,15 @@ use cranelift_module::{FuncId, Linkage, Module};
 use isa::CallConv;
 use tokenizer::{AsSpanned, Spanned};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CallContext<'a> {
-    pub arguments: &'a Vec<hir::Typed<hir::Expression>>,
-    pub call_expression: hir::Typed<hir::Expression>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MSignature {
     pub parameters: Vec<TypeReference>,
     pub return_type: TypeReference,
-    pub signature: Signature,
     pub name: Spanned<parser::Ident>,
+    pub linkage: Linkage,
+    pub call_conv: Option<CallConv>,
+    pub signature: Option<Signature>,
+    pub scope: ScopeId,
 }
 
 impl MSignature {
@@ -30,40 +27,44 @@ impl MSignature {
         return_type: &Spanned<parser::Type>,
         declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
-        call_context: Option<CallContext>,
         scope: ScopeId,
-        module: &impl Module,
         call_conv: Option<CallConv>,
+        linkage: Linkage,
     ) -> Result<Self, SemanticError> {
-        let mut signature = module.make_signature();
-        if let Some(call_conv) = call_conv {
-            signature.call_conv = call_conv;
-        }
-
         let parameters = parameters
             .iter()
             .map(|parameter| declarations.lookup_type(&parameter.value, scope))
             .collect::<Result<Vec<_>, SemanticError>>()?;
         let return_type = declarations.lookup_type(&return_type.value, scope)?;
-        // TODO: is this repeated logic from hir::builder's call expr handling?
-        if let Some(call_context) = call_context {
-            for (parameter, argument) in iter::zip(&parameters, call_context.arguments) {
-                // TODO: is it the right scope?
-                declarations.check_expression_type(argument, parameter, scope)?;
-            }
-            declarations.check_expression_type(
-                &call_context.call_expression,
-                &return_type,
-                scope,
-            )?;
+
+        Ok(Self {
+            parameters,
+            return_type,
+            name,
+            call_conv,
+            linkage,
+            scope,
+            signature: None,
+        })
+    }
+    fn cranelift_signature(
+        &mut self,
+        module: &impl Module,
+        declarations: &mut Declarations,
+    ) -> Result<Signature, SemanticError> {
+        if let Some(signature) = &self.signature {
+            return Ok(signature.clone());
+        }
+        let mut signature = module.make_signature();
+        if let Some(call_conv) = self.call_conv {
+            signature.call_conv = call_conv;
         }
 
-        signature.params = parameters
+        signature.params = self
+            .parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations
-                    .insert_layout(type_ref, scope)?
-                    .unwrap_or_else(|| todo!("uninitialised layout"));
+                let layout = declarations.insert_layout_initialised(type_ref, self.scope)?;
 
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
@@ -76,11 +77,9 @@ impl MSignature {
                 }
             })
             .collect::<Result<_, _>>()?;
+        let return_type = declarations.insert_layout_initialised(&self.return_type, self.scope)?;
 
-        signature.returns = match declarations
-            .insert_layout(&return_type, scope)?
-            .unwrap_or_else(|| todo!("uninitialised layout"))
-        {
+        signature.returns = match return_type {
             Layout::Primitive(primitive) => {
                 vec![AbiParam::new(
                     primitive.cranelift_type(declarations.isa.pointer_type()),
@@ -96,12 +95,21 @@ impl MSignature {
             Layout::Void => Vec::new(),
         };
 
-        Ok(Self {
-            parameters,
-            return_type,
-            signature,
-            name,
-        })
+        self.signature = Some(signature.clone());
+
+        Ok(signature)
+    }
+
+    pub fn declare(
+        &mut self,
+        module: &mut impl Module,
+        declarations: &mut Declarations,
+    ) -> Result<FuncId, SemanticError> {
+        let signature = &self.cranelift_signature(module, declarations)?;
+        let id = module
+            .declare_function(&self.name.value.0, self.linkage, signature)
+            .expect("internal module error");
+        Ok(id)
     }
 }
 
@@ -109,53 +117,63 @@ impl MSignature {
 pub struct External {
     pub symbol_name: Spanned<String>,
     pub signature: MSignature,
-    pub id: FuncId,
+    pub id: Option<FuncId>,
+    pub call_conv: CallConv,
+    pub scope: ScopeId,
 }
 
 impl External {
     pub fn new(
         function: parser::top_level::ExternFunction,
         declarations: &mut Declarations,
-        scope_id: ScopeId,
+        scope: ScopeId,
         module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
+        let call_conv =
+            CallConv::for_libcall(module.isa().flags(), module.isa().default_call_conv());
         let signature = MSignature::new(
             &function.parameters,
             &function.return_type,
             declarations,
             function.name,
-            None,
-            scope_id,
-            module,
-            Some(CallConv::for_libcall(
-                module.isa().flags(),
-                module.isa().default_call_conv(),
-            )),
+            scope,
+            Some(call_conv),
+            Linkage::Import,
         )?;
-
-        let id = module
-            .declare_function(
-                &function.symbol.value,
-                Linkage::Import,
-                &signature.signature,
-            )
-            .expect("internal module error");
 
         Ok(Self {
             symbol_name: function.symbol,
             signature,
-            id,
+            id: None,
+            call_conv,
+            scope,
         })
+    }
+
+    pub fn id(
+        &mut self,
+        module: &mut impl Module,
+        declarations: &mut Declarations,
+    ) -> Result<FuncId, SemanticError> {
+        if let Some(id) = self.id {
+            return Ok(id);
+        }
+        let signature = &self.signature.cranelift_signature(module, declarations)?;
+        let id = module
+            .declare_function(&self.symbol_name.value, Linkage::Import, signature)
+            .expect("internal module error");
+        self.id = Some(id);
+        Ok(id)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Internal {
     pub body: Vec<Spanned<parser::Statement>>,
-    pub scope_id: ScopeId,
+    pub scope: ScopeId,
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
-    pub id: FuncId,
+    pub id: Option<FuncId>,
     pub generics: Vec<GenericArgument>,
 }
 
@@ -167,12 +185,11 @@ impl Internal {
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
-        module: &mut impl Module,
         generic_arguments: Vec<GenericArgument>,
-        call_context: Option<CallContext>,
         parameter_scope: ScopeId,
         argument_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
+        dbg!(&function.name);
         let scope = declarations.create_generic_scope(
             function.generic_parameters,
             &generic_arguments,
@@ -190,18 +207,18 @@ impl Internal {
             .into_iter()
             .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
             .collect::<Result<Vec<_>, _>>()?;
+        let return_type = function
+            .return_type
+            .ok_or(SemanticError::MissingReturnType)?;
 
         let signature = MSignature::new(
             parameter_types,
-            &function
-                .return_type
-                .ok_or(SemanticError::MissingReturnType)?,
+            &return_type,
             declarations,
             function.name,
-            call_context,
             scope,
-            module,
             None,
+            Linkage::Export,
         )?;
 
         let mut body = function.body;
@@ -219,26 +236,31 @@ impl Internal {
             }
         }
 
-        let id = module
-            .declare_function(
-                signature.name.value.as_ref(),
-                cranelift_module::Linkage::Export,
-                &signature.signature,
-            )
-            .expect("Internal Module Error!");
-
         Ok(Self {
             signature,
             parameter_names,
-            scope_id: scope,
+            scope,
             body,
-            id,
+            id: None,
             generics: generic_arguments,
         })
     }
 
-    pub(crate) fn compile(
-        &self,
+    fn id(
+        &mut self,
+        module: &mut impl Module,
+        declarations: &mut Declarations,
+    ) -> Result<FuncId, SemanticError> {
+        if let Some(id) = self.id {
+            return Ok(id);
+        }
+        let id = self.signature.declare(module, declarations)?;
+        self.id = Some(id);
+        Ok(id)
+    }
+
+    pub fn compile(
+        &mut self,
         declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
         function_compiler: &mut crate::FunctionCompiler,
@@ -247,8 +269,13 @@ impl Internal {
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
         );
+        let signature = self
+            .signature
+            .clone()
+            .cranelift_signature(&cranelift_context.module, declarations)
+            .expect("signature not generated");
 
-        builder.func.signature = self.signature.signature.clone();
+        builder.func.signature = signature;
 
         let entry_block = builder.create_block();
         builder.append_block_params_for_function_params(entry_block);
@@ -258,7 +285,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout_initialised(&self.signature.return_type, self.scope_id)?
+            .insert_layout_initialised(&self.signature.return_type, self.scope)?
             .is_aggregate()
         {
             let param = block_params
@@ -279,7 +306,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout = declarations.insert_layout_initialised(type_ref, self.scope_id)?;
+                let layout = declarations.insert_layout_initialised(type_ref, self.scope)?;
                 let size = layout.size(&declarations.isa);
 
                 let value = if layout.is_aggregate() {
@@ -311,13 +338,14 @@ impl Internal {
         let func =
             crate::hir::Builder::new(declarations, self, names, &mut cranelift_context.module)
                 .build()?;
+        let id = self.id(&mut cranelift_context.module, declarations)?;
 
         let mut translator = Translator::new(
             builder,
             declarations,
             &mut cranelift_context.module,
             function_compiler,
-            self.scope_id,
+            self.scope,
         );
 
         for statement in func.body {
@@ -330,7 +358,7 @@ impl Internal {
 
         cranelift_context
             .module
-            .define_function(self.id, &mut cranelift_context.context)
+            .define_function(id, &mut cranelift_context.context)
             .unwrap_or_else(|error: cranelift_module::ModuleError| {
                 todo!("handle me properly: {error:?}")
             });

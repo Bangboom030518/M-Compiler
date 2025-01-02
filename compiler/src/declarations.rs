@@ -131,6 +131,7 @@ pub enum GenericFunction {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[deprecated = "all functions are basically the same"]
 pub enum ConcreteFunction {
     Internal(function::Internal),
     External(function::External),
@@ -144,10 +145,42 @@ impl ConcreteFunction {
         }
     }
 
-    pub const fn id(&self) -> FuncId {
+    pub fn signature_mut(&mut self) -> &mut function::MSignature {
         match self {
-            Self::Internal(function) => function.id,
-            Self::External(function) => function.id,
+            Self::Internal(function) => &mut function.signature,
+            Self::External(function) => &mut function.signature,
+        }
+    }
+
+    pub const fn scope(&self) -> ScopeId {
+        match self {
+            Self::Internal(function) => function.scope,
+            Self::External(function) => function.scope,
+        }
+    }
+
+    pub fn id(
+        &mut self,
+        module: &mut impl Module,
+        declarations: &mut Declarations,
+    ) -> Result<FuncId, SemanticError> {
+        match self {
+            Self::Internal(function) => {
+                if let Some(id) = function.id {
+                    return Ok(id);
+                }
+                let id = function.signature.declare(module, declarations)?;
+                function.id = Some(id);
+                Ok(id)
+            }
+            Self::External(function) => {
+                if let Some(id) = function.id {
+                    return Ok(id);
+                }
+                let id = function.signature.declare(module, declarations)?;
+                function.id = Some(id);
+                Ok(id)
+            }
         }
     }
 }
@@ -424,8 +457,6 @@ impl Declarations {
         } else {
             let expected = self.insert_layout(&expected, scope)?;
             let found = self.insert_layout(&found, scope)?;
-            dbg!(&expected);
-            dbg!(&found);
             Err(SemanticError::MismatchedTypes {
                 expected: expected.unwrap(),
                 found: found.unwrap(),
@@ -629,8 +660,6 @@ impl Declarations {
     pub fn insert_function(
         &mut self,
         func_reference: FuncReference,
-        context: &mut impl Module,
-        call_context: Option<function::CallContext>,
         argument_scope: ScopeId,
     ) -> Result<ConcreteFunction, SemanticError> {
         // TODO: `.clone()`s
@@ -652,9 +681,7 @@ impl Declarations {
                     // TODO: `function.clone()`
                     function.clone(),
                     self,
-                    context,
                     func_reference.generics.clone(),
-                    call_context,
                     *parameter_scope,
                     argument_scope,
                 )?)

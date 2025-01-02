@@ -16,7 +16,7 @@ pub enum BranchStatus<T> {
 pub struct Translator<'a, M> {
     builder: cranelift::prelude::FunctionBuilder<'a>,
     declarations: &'a mut Declarations,
-    context: &'a mut M,
+    module: &'a mut M,
     scope: ScopeId,
     function_compiler: &'a mut crate::FunctionCompiler,
 }
@@ -39,7 +39,7 @@ where
         Self {
             builder,
             declarations,
-            context,
+            module: context,
             scope,
             function_compiler,
         }
@@ -324,13 +324,10 @@ where
             id: declaration,
             generics,
         };
-        // TODO: should we pass call context here?
-        let function = self.declarations.insert_function(
-            reference.clone(),
-            &mut self.context,
-            None,
-            self.scope,
-        )?;
+
+        let mut function = self
+            .declarations
+            .insert_function(reference.clone(), self.scope)?;
 
         self.function_compiler.push(reference);
 
@@ -362,9 +359,8 @@ where
             arguments.push(addr);
         }
 
-        let func_ref = self
-            .context
-            .declare_func_in_func(function.id(), self.builder.func);
+        let func_id = function.id(self.module, self.declarations)?;
+        let func_ref = self.module.declare_func_in_func(func_id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
         if return_layout == Layout::Void {
@@ -372,7 +368,7 @@ where
             let value = self
                 .builder
                 .ins()
-                .iconst(self.context.isa().pointer_type(), 0);
+                .iconst(self.module.isa().pointer_type(), 0);
 
             Ok(BranchStatus::Continue(value))
         } else {
@@ -467,7 +463,7 @@ where
         layout: &Layout,
     ) -> Result<BranchStatus<Value>, SemanticError> {
         let data = self
-            .context
+            .module
             .declare_anonymous_data(false, false)
             .expect("Internal Module Error");
 
@@ -492,10 +488,10 @@ where
 
         let mut desc = cranelift_module::DataDescription::new();
         desc.define(bytes.into_boxed_slice());
-        self.context
+        self.module
             .define_data(data, &desc)
             .expect("Internal Module Error :(");
-        let value = self.context.declare_data_in_func(data, self.builder.func);
+        let value = self.module.declare_data_in_func(data, self.builder.func);
 
         let value = self
             .builder

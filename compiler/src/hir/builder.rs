@@ -64,7 +64,7 @@ where
 
         Self {
             declarations,
-            top_level_scope: function.scope_id,
+            top_level_scope: function.scope,
             variables,
             new_variable_index,
             return_type: function.signature.return_type.clone(),
@@ -322,32 +322,22 @@ where
         let hir::Expression::GlobalAccess(declaration) = callable else {
             todo!("func refs!")
         };
-        // TODO: do we need `CallContext`?
-        let call_context = function::CallContext {
-            arguments: &arguments,
-            call_expression: call_expression.clone(),
-        };
         let func_reference = FuncReference {
             id: declaration,
             generics,
         };
-        let signature = self
+        let signature = &self
             .declarations
-            .insert_function(
-                func_reference,
-                self.module,
-                Some(call_context),
-                self.top_level_scope,
-            )?
+            .insert_function(func_reference, self.top_level_scope)?
             .signature()
             .clone();
 
         if signature.parameters.len() != call.arguments.len() {
             return Err(SemanticError::InvalidNumberOfArguments);
         }
-        for (parameter, argument) in iter::zip(signature.parameters, &arguments) {
+        for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
             self.declarations
-                .check_expression_type(argument, &parameter, self.top_level_scope)?;
+                .check_expression_type(argument, parameter, self.top_level_scope)?;
         }
         self.declarations.check_expression_type(
             &call_expression,
