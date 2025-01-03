@@ -92,6 +92,15 @@ pub enum SemanticError {
     ExpectedBool,
     #[error("Expected a type to be a struct based on usage")]
     ExpectedStruct,
+    #[deprecated = "figure out the span you wally!"]
+    #[error("Ident not found '{0}'")]
+    IdentNotFoundNoSpan(String),
+    #[error("Attempted to use an array length greater than 2^32-1 (`u32::MAX`). That's one heckin' chonka.")]
+    LengthTooBig,
+    #[error("Expected a type to be an array based on usage")]
+    ExpectedArray,
+    #[error("Expected array of length {expected}, found array of length {found}")]
+    LengthMismatch { expected: u128, found: u128 },
 }
 
 struct FunctionCompiler {
@@ -148,7 +157,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../input.m");
+    let input = include_str!("../../input-cp.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {

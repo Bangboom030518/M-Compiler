@@ -1,4 +1,4 @@
-use crate::declarations::{self};
+use crate::declarations::{self, Declarations, ScopeId};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
@@ -19,9 +19,22 @@ pub struct Struct {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Array {
-    pub length: u128,
-    pub size: u32,
-    pub item: declarations::TypeReference,
+    pub length: declarations::Id,
+    pub element_type: declarations::TypeReference,
+}
+
+impl Array {
+    pub fn size(
+        &self,
+        declarations: &mut declarations::Declarations,
+    ) -> Result<u32, SemanticError> {
+        let element_type = declarations
+            .insert_layout_initialised(&self.element_type, declarations::random_scope())?;
+        let length = declarations.get_length(self.length)?;
+        let length = u32::try_from(length).map_err(|_| SemanticError::LengthTooBig)?;
+        let size = element_type.size(declarations)? * length;
+        Ok(size * length)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,19 +46,30 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub fn size(&self, isa: &Arc<dyn TargetIsa>) -> u32 {
-        match self {
-            Self::Primitive(primitive) => primitive.size(u32::from(isa.pointer_bytes())),
+    pub fn size(&self, declarations: &mut Declarations) -> Result<u32, SemanticError> {
+        let size = match self {
+            Self::Primitive(primitive) => {
+                primitive.size(u32::from(declarations.isa.pointer_bytes()))
+            }
+
             Self::Struct(Struct { size, .. }) => *size,
-            Self::Array(array) => array.size,
+            Self::Array(array) => array.size(declarations)?,
             Self::Void => 0,
-        }
+        };
+        Ok(size)
     }
 
     pub const fn expect_struct(&self) -> Result<&Struct, SemanticError> {
         match self {
             Self::Struct(struct_layout) => Ok(struct_layout),
             _ => Err(SemanticError::ExpectedStruct),
+        }
+    }
+
+    pub const fn expect_array(&self) -> Result<&Array, SemanticError> {
+        match self {
+            Self::Array(array) => Ok(array),
+            _ => Err(SemanticError::ExpectedArray),
         }
     }
 

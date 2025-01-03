@@ -65,8 +65,8 @@ where
                 let layout = self
                     .declarations
                     .insert_layout_initialised(&assignment.right.type_ref, self.scope)?;
-
-                let size = self.iconst(layout.size(&self.declarations.isa));
+                let size = layout.size(self.declarations)?;
+                let size = self.iconst(size);
 
                 let BranchStatus::Continue(right) = self.expression(assignment.right)? else {
                     return Ok(BranchStatus::Finished);
@@ -218,11 +218,8 @@ where
                 }
             }
         };
-
-        Ok(BranchStatus::Continue(self.put_in_stack_slot(
-            value,
-            layout.size(&self.declarations.isa),
-        )))
+        let size = layout.size(self.declarations)?;
+        Ok(BranchStatus::Continue(self.put_in_stack_slot(value, size)))
     }
 
     fn field_access(
@@ -290,7 +287,8 @@ where
                 .declarations
                 .insert_layout_initialised(&expression.type_ref, self.scope)?;
 
-            let size = self.iconst(layout.size(&self.declarations.isa));
+            let size = layout.size(self.declarations)?;
+            let size = self.iconst(size);
 
             let addr = self.builder.ins().iadd_imm(addr, i64::from(offset));
 
@@ -342,9 +340,10 @@ where
             .insert_layout_initialised(&function.signature().return_type, self.scope)?;
 
         if return_layout.is_aggregate() {
+            let size = return_layout.size(self.declarations)?;
             let stack_slot = self.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                return_layout.size(&self.declarations.isa),
+                size,
                 0,
             ));
 
@@ -377,7 +376,8 @@ where
             let value = if return_layout.is_aggregate() {
                 value
             } else {
-                self.put_in_stack_slot(value, return_layout.size(&self.declarations.isa))
+                let size = return_layout.size(self.declarations)?;
+                self.put_in_stack_slot(value, size)
             };
             Ok(BranchStatus::Continue(value))
         }
@@ -474,14 +474,12 @@ where
             });
         };
         let bytes = string.as_bytes().to_vec();
+        let length = self.declarations.get_length(array.length)?;
+        let element_type = self
+            .declarations
+            .insert_layout_initialised(&array.element_type, self.scope)?;
 
-        if array.length != bytes.len() as u128
-            || !matches!(
-                self.declarations
-                    .insert_layout_initialised(&array.item, self.scope)?,
-                Layout::Primitive(Primitive::U8)
-            )
-        {
+        if length != bytes.len() as u128 || element_type != Layout::Primitive(Primitive::U8) {
             return Err(SemanticError::InvalidStringConst {
                 expected: layout.clone(),
             });
@@ -593,8 +591,8 @@ where
                     let return_param = self
                         .builder
                         .use_var(Variable::new(AGGREGATE_PARAM_VARIABLE));
-
-                    let size = self.iconst(layout.size(&self.declarations.isa));
+                    let size = layout.size(self.declarations)?;
+                    let size = self.iconst(size);
                     self.builder.call_memcpy(
                         self.declarations.isa.frontend_config(),
                         return_param,

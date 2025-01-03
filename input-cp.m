@@ -25,7 +25,7 @@ fn[T, @length L] Slice[T] slice(Array[T, L] array)
 end
 
 fn UInt8 print(Slice[UInt8] data)
-    let a = @assert_type(@assert_type(print_str(data.ptr, data.length), Void), Array[USize, 100])
+    print_str(data.ptr, data.length)
 	0
 end
 

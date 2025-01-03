@@ -10,6 +10,11 @@ use std::iter;
 use std::sync::Arc;
 use tokenizer::Spanned;
 
+#[deprecated = "never ever use me you stupid melon"]
+pub fn random_scope() -> ScopeId {
+    ScopeId(4269)
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
@@ -89,7 +94,10 @@ enum Primitive {
     F32,
     F64,
     USize,
-    Array(Length, Spanned<parser::Type>),
+    Array {
+        length: Id,
+        element_type: Spanned<parser::Type>,
+    },
 }
 
 fn resolve_type(
@@ -175,34 +183,35 @@ pub enum Length {
     Generic(String),
 }
 
-impl Length {
-    fn resolve(&self, declarations: &Declarations, scope: ScopeId) -> Result<u128, SemanticError> {
-        match self {
-            Self::Literal(length) => Ok(*length),
-            Self::Generic(name) => {
-                let id = declarations.lookup(name, scope).ok_or_else(|| {
-                    SemanticError::DeclarationNotFound(todo!("'{name}' not found error"))
-                })?;
+// impl Length {
+//     fn resolve(&self, declarations: &Declarations, scope: ScopeId) -> Result<u128, SemanticError> {
+//         match self {
+//             Self::Literal(length) => Ok(*length),
+//             Self::Generic(name) => {
+//                 let id = declarations.lookup(name, scope).ok_or_else(|| {
+//                     todo!();
+//                     SemanticError::IdentNotFoundNoSpan(name.clone())
+//                 })?;
 
-                declarations
-                    .get(id)
-                    .ok_or(SemanticError::UninitialisedType)?
-                    .expect_length()
-            }
-        }
-    }
-}
+//                 declarations
+//                     .get(id)
+//                     .ok_or(SemanticError::UninitialisedType)?
+//                     .expect_length()
+//             }
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GenericArgument {
     Type(TypeReference),
-    Length(Length),
+    Length(Id),
 }
 
 impl GenericArgument {
-    pub const fn expect_length(&self) -> Result<&Length, SemanticError> {
+    pub const fn expect_length(&self) -> Result<Id, SemanticError> {
         match self {
-            Self::Length(length) => Ok(length),
+            Self::Length(length) => Ok(*length),
             Self::Type(_) => Err(SemanticError::InvalidTypeGeneric),
         }
     }
@@ -292,11 +301,16 @@ impl Declarations {
                         P::Void => Primitive::Void,
                         P::Array(length, element_type) => {
                             let length = match length.value {
-                                L::Ident(ident) => Length::Generic(ident.0),
-                                L::Literal(length) => Length::Literal(length),
+                                L::Ident(ident) => declarations.create_uninitialised(),
+                                L::Literal(length) => {
+                                    declarations.create(Declaration::Length(length))
+                                }
                             };
 
-                            Primitive::Array(length, element_type)
+                            Primitive::Array {
+                                length,
+                                element_type,
+                            }
                         }
                     };
 
@@ -345,22 +359,20 @@ impl Declarations {
             .iter()
             .map(|generic| match generic.as_ref().value {
                 parser::GenericArgument::Literal(length) => {
-                    Ok(GenericArgument::Length(Length::Literal(*length)))
+                    let length = self.create(Declaration::Length(*length));
+                    Ok(GenericArgument::Length(length))
                 }
                 parser::GenericArgument::Type(r#type) => {
                     let id = self
                         .lookup(r#type.name.value.as_ref(), scope)
                         .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
-
-                    let value = match self
+                    let declaration = self
                         .get(id)
-                        .unwrap_or_else(|| todo!("handle uninitialised types"))
-                    {
+                        .unwrap_or_else(|| todo!("handle uninitialised types"));
+                    let value = match declaration {
                         Declaration::Length(_) => {
                             if r#type.generics.value.0.is_empty() {
-                                GenericArgument::Length(Length::Generic(
-                                    r#type.name.value.0.clone(),
-                                ))
+                                GenericArgument::Length(id)
                             } else {
                                 return Err(SemanticError::GenericParametersMismatch);
                             }
@@ -381,24 +393,28 @@ impl Declarations {
             .collect()
     }
 
+    pub fn check_length(&mut self, expected: u128, found: Id) -> Result<(), SemanticError> {
+        if !self.is_initialised(found) {
+            self.initialise(found, Declaration::Length(expected));
+            Ok(())
+        } else {
+            let found = self.get_length(found)?;
+            if found == expected {
+                Ok(())
+            } else {
+                Err(SemanticError::LengthMismatch { expected, found })
+            }
+        }
+    }
+
     pub fn check_expression_type(
         &mut self,
         expression: &Typed<hir::Expression>,
         expected: &TypeReference,
         scope: ScopeId,
     ) -> Result<(), SemanticError> {
-        self.assert_equivalent(expected, &expression.type_ref, scope, &expression.value)
-    }
-
-    fn assert_equivalent(
-        &mut self,
-        expected: &TypeReference,
-        found: &TypeReference,
-        scope: ScopeId,
-        expression: &crate::hir::Expression,
-    ) -> Result<(), SemanticError> {
         let expected = expected.resolve(self);
-        let found = found.resolve(self);
+        let found = expression.type_ref.resolve(self);
         if !self.is_initialised(found.id) {
             self.initialise(found.id, Declaration::TypeAlias(expected.clone()));
         } else if !self.is_initialised(expected.id) {
@@ -414,7 +430,7 @@ impl Declarations {
             Err(SemanticError::MismatchedTypes {
                 expected: expected.unwrap(),
                 found: found.unwrap(),
-                expression: expression.clone(),
+                expression: expression.value.clone(),
             })
         }
     }
@@ -453,12 +469,16 @@ impl Declarations {
             }
         };
         // TODO: r#type.parent_scope
-        let scope = self.create_generic_scope(
-            r#type.generic_parameters.clone(),
-            &type_reference.generics,
-            r#type.parent_scope,
-            argument_scope,
-        )?;
+        let scope = self
+            .create_generic_scope(
+                r#type.generic_parameters.clone(),
+                &type_reference.generics,
+                r#type.parent_scope,
+                argument_scope,
+            )
+            .inspect_err(|_| {
+                dbg!();
+            })?;
 
         let layout = match r#type.kind {
             TypeKind::Struct { fields } => {
@@ -479,7 +499,7 @@ impl Declarations {
                     let layout = self
                         .insert_layout(&field, scope)?
                         .unwrap_or_else(|| todo!("uninitialised layout"));
-                    offset += layout.size(&self.isa);
+                    offset += layout.size(self)?;
                 }
                 Layout::Struct(layout::Struct {
                     fields: layout_fields,
@@ -501,28 +521,15 @@ impl Declarations {
                 Primitive::I128 => Layout::Primitive(layout::Primitive::I128),
                 Primitive::USize => Layout::Primitive(layout::Primitive::USize),
                 Primitive::Void => Layout::Void,
-                Primitive::Array(length, element_type) => {
-                    let mut element_type = resolve_type(&element_type, self, scope)?;
-                    if let Some(layout) = self.get(element_type.id) {
-                        element_type = match layout {
-                            Declaration::Type(_) => element_type,
-                            Declaration::TypeAlias(reference) => reference.clone(),
-                            Declaration::Function(_) => return Err(SemanticError::InvalidFunction),
-                            Declaration::Length(_) => {
-                                return Err(SemanticError::InvalidLengthGeneric)
-                            }
-                        };
-                    }
-
-                    let size = self
-                        .insert_layout(&element_type, scope)?
-                        .unwrap_or_else(|| todo!("uninitialised layout"))
-                        .size(&self.isa);
+                Primitive::Array {
+                    length,
+                    element_type,
+                } => {
+                    let element_type = resolve_type(&element_type, self, scope)?;
 
                     Layout::Array(Array {
-                        length: length.resolve(self, scope)?,
-                        size,
-                        item: element_type,
+                        length,
+                        element_type,
                     })
                 }
             },
@@ -570,8 +577,10 @@ impl Declarations {
                         parser::top_level::GenericParameter::Length { name },
                         GenericArgument::Length(length),
                     ) => {
-                        let length = length.resolve(self, argument_scope)?;
-                        Ok((name.value.0, self.create(Declaration::Length(length))))
+                        // let length = length.resolve(self, argument_scope).inspect_err(|_| {
+                        //     dbg!((&length, &name.value.0));
+                        // })?;
+                        Ok((name.value.0, *length))
                     }
                     _ => Err(SemanticError::GenericParametersMismatch),
                 })
@@ -623,7 +632,15 @@ impl Declarations {
                 if let Some(id) = function.id {
                     return Ok(id);
                 }
-                let id = function.signature.declare(module, self)?;
+                let cranelift_signature = function.signature.cranelift_signature(module, self)?;
+
+                let id = module
+                    .declare_function(
+                        &function.signature.name.value.0,
+                        cranelift_module::Linkage::Export,
+                        &cranelift_signature,
+                    )
+                    .expect("internal module error");
                 function.id = Some(id);
                 id
             }
@@ -635,6 +652,12 @@ impl Declarations {
 
     pub fn get_function(&self, func_reference: &FuncReference) -> Option<&ConcreteFunction> {
         self.concrete_functions.get(func_reference)
+    }
+
+    pub fn get_length(&self, id: Id) -> Result<u128, SemanticError> {
+        self.get(id)
+            .ok_or(SemanticError::UninitialisedType)?
+            .expect_length()
     }
 
     pub fn insert_function(

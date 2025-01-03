@@ -31,13 +31,23 @@ struct StructConstraint {
     expression: hir::Typed<hir::Expression>,
 }
 
+struct ArrayConstraint {
+    expected_length: u128,
+    array_type: TypeReference,
+}
+
+pub enum Constraint {
+    Struct(StructConstraint),
+    Array(ArrayConstraint),
+}
+
 pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
     top_level_scope: ScopeId,
     return_type: TypeReference,
     variables: HashMap<VariableId, TypeReference>,
     local_scopes: Vec<HashMap<String, Variable>>,
-    struct_constraints: Vec<StructConstraint>,
+    struct_constraints: Vec<Constraint>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
 }
@@ -78,23 +88,38 @@ impl<'a> Builder<'a> {
         while !constraints.is_empty() {
             let mut completed = Vec::with_capacity(constraints.len());
             for (index, constraint) in constraints.iter().enumerate() {
-                let struct_type = self
-                    .declarations
-                    .insert_layout(&constraint.struct_type, self.top_level_scope)?;
-                let Some(struct_type) = struct_type else {
-                    continue;
-                };
-                let struct_type = struct_type.expect_struct()?;
-                let field = struct_type
-                    .fields
-                    .get(&constraint.field)
-                    .ok_or_else(|| SemanticError::NonExistentField)?;
+                match constraint {
+                    Constraint::Struct(constraint) => {
+                        let struct_type = self
+                            .declarations
+                            .insert_layout(&constraint.struct_type, self.top_level_scope)?;
+                        let Some(struct_type) = struct_type else {
+                            continue;
+                        };
+                        let struct_type = struct_type.expect_struct()?;
+                        let field = struct_type
+                            .fields
+                            .get(&constraint.field)
+                            .ok_or_else(|| SemanticError::NonExistentField)?;
 
-                self.declarations.check_expression_type(
-                    &constraint.expression,
-                    &field.type_ref,
-                    self.top_level_scope,
-                )?;
+                        self.declarations.check_expression_type(
+                            &constraint.expression,
+                            &field.type_ref,
+                            self.top_level_scope,
+                        )?;
+                    }
+                    Constraint::Array(constraint) => {
+                        let array_type = self
+                            .declarations
+                            .insert_layout(&constraint.array_type, self.top_level_scope)?;
+                        let Some(array_type) = array_type else {
+                            continue;
+                        };
+                        let array_type = array_type.expect_array()?;
+                        self.declarations
+                            .check_length(constraint.expected_length, array_type.length)?;
+                    }
+                }
 
                 completed.push(index);
             }
@@ -225,11 +250,12 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|(ident, expression)| {
                 let expression = self.expression(expression.as_ref())?;
-                self.struct_constraints.push(StructConstraint {
-                    struct_type: struct_type.clone(),
-                    field: ident.value.0.clone(),
-                    expression: expression.clone(),
-                });
+                self.struct_constraints
+                    .push(Constraint::Struct(StructConstraint {
+                        struct_type: struct_type.clone(),
+                        field: ident.value.0.clone(),
+                        expression: expression.clone(),
+                    }));
                 Ok((ident.value.0.clone(), expression))
             })
             .collect::<Result<_, SemanticError>>()?;
@@ -359,15 +385,25 @@ impl<'a> Builder<'a> {
         expression: Spanned<&parser::Expression>,
     ) -> Result<Typed<Expression>, SemanticError> {
         match expression.value {
-            parser::Expression::Literal(literal) => {
-                let expression = match literal {
-                    parser::Literal::Integer(int) => Expression::IntegerConst(*int),
-                    parser::Literal::Float(float) => Expression::FloatConst(*float),
-                    parser::Literal::String(string) => Expression::StringConst(string.clone()),
-                    parser::Literal::Char(_) => todo!("char literals"),
-                };
-                Ok(Typed::new(expression, self.declarations.create_type_ref()))
-            }
+            parser::Expression::Literal(literal) => match literal {
+                parser::Literal::Integer(int) => {
+                    Ok(Expression::IntegerConst(*int).typed(self.declarations))
+                }
+                parser::Literal::Float(float) => {
+                    Ok(Expression::FloatConst(*float).typed(self.declarations))
+                }
+                parser::Literal::String(string) => {
+                    let expression =
+                        Expression::StringConst(string.clone()).typed(self.declarations);
+                    self.struct_constraints
+                        .push(Constraint::Array(ArrayConstraint {
+                            expected_length: string.as_bytes().len() as u128,
+                            array_type: expression.type_ref.clone(),
+                        }));
+                    Ok(expression)
+                }
+                parser::Literal::Char(_) => todo!("char literals"),
+            },
             parser::Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             parser::Expression::Return(expression) => {
                 let inner = self.expression(expression.expression.as_ref())?;
@@ -422,11 +458,12 @@ impl<'a> Builder<'a> {
                     field: field.clone(),
                 }))
                 .typed(self.declarations);
-                self.struct_constraints.push(StructConstraint {
-                    struct_type: struct_expression.type_ref,
-                    field: field.0.clone(),
-                    expression: field_access.clone(),
-                });
+                self.struct_constraints
+                    .push(Constraint::Struct(StructConstraint {
+                        struct_type: struct_expression.type_ref,
+                        field: field.0.clone(),
+                        expression: field_access.clone(),
+                    }));
                 Ok(field_access)
             }
             parser::Expression::Generixed(generixed) => {

@@ -13,7 +13,6 @@ pub struct MSignature {
     pub parameters: Vec<TypeReference>,
     pub return_type: TypeReference,
     pub name: Spanned<parser::Ident>,
-    pub linkage: Linkage,
     pub call_conv: Option<CallConv>,
     pub signature: Option<Signature>,
     pub scope: ScopeId,
@@ -27,7 +26,6 @@ impl MSignature {
         name: Spanned<parser::Ident>,
         scope: ScopeId,
         call_conv: Option<CallConv>,
-        linkage: Linkage,
     ) -> Result<Self, SemanticError> {
         let parameters = parameters
             .iter()
@@ -40,12 +38,12 @@ impl MSignature {
             return_type,
             name,
             call_conv,
-            linkage,
             scope,
             signature: None,
         })
     }
-    fn cranelift_signature(
+
+    pub fn cranelift_signature(
         &mut self,
         module: &impl Module,
         declarations: &mut Declarations,
@@ -97,23 +95,10 @@ impl MSignature {
 
         Ok(signature)
     }
-
-    pub fn declare(
-        &mut self,
-        module: &mut impl Module,
-        declarations: &mut Declarations,
-    ) -> Result<FuncId, SemanticError> {
-        let signature = &self.cranelift_signature(module, declarations)?;
-        let id = module
-            .declare_function(&self.name.value.0, self.linkage, signature)
-            .expect("internal module error");
-        Ok(id)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct External {
-    pub symbol_name: Spanned<String>,
     pub signature: MSignature,
     pub id: FuncId,
 }
@@ -127,6 +112,7 @@ impl External {
     ) -> Result<Self, SemanticError> {
         let call_conv =
             CallConv::for_libcall(module.isa().flags(), module.isa().default_call_conv());
+
         let mut signature = MSignature::new(
             &function.parameters,
             &function.return_type,
@@ -134,18 +120,14 @@ impl External {
             function.name,
             scope,
             Some(call_conv),
-            Linkage::Import,
         )?;
+
         let cranelift_signature = &signature.cranelift_signature(module, declarations)?;
         let id = module
             .declare_function(&function.symbol.value, Linkage::Import, cranelift_signature)
             .expect("internal module error");
 
-        Ok(Self {
-            symbol_name: function.symbol,
-            signature,
-            id,
-        })
+        Ok(Self { signature, id })
     }
 }
 
@@ -162,7 +144,6 @@ pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
 pub const SPECIAL_VARIABLES: &[usize] = &[AGGREGATE_PARAM_VARIABLE];
 
 impl Internal {
-    // TODO: memcpy for structs
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
@@ -198,7 +179,6 @@ impl Internal {
             function.name,
             scope,
             None,
-            Linkage::Export,
         )?;
 
         let mut body = function.body;
@@ -227,7 +207,7 @@ impl Internal {
 
     /// # Panics
     /// if the function has not yet been declared
-    pub fn compile(
+    pub(crate) fn compile(
         &self,
         declarations: &mut Declarations,
         cranelift_context: &mut CraneliftContext<impl Module>,
@@ -241,7 +221,7 @@ impl Internal {
             .signature
             .clone()
             .signature
-            .expect("signature not generated");
+            .expect("signature not generated (function not declared)");
 
         builder.func.signature = signature;
 
@@ -276,7 +256,7 @@ impl Internal {
                 // TODO: get type again?
                 let layout =
                     declarations.insert_layout_initialised(type_ref, self.signature.scope)?;
-                let size = layout.size(&declarations.isa);
+                let size = layout.size(declarations)?;
 
                 let value = if layout.is_aggregate() {
                     value
