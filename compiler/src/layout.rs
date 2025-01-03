@@ -28,8 +28,7 @@ impl Array {
         &self,
         declarations: &mut declarations::Declarations,
     ) -> Result<u32, SemanticError> {
-        let element_type = declarations
-            .insert_layout_initialised(&self.element_type, declarations::random_scope())?;
+        let element_type = declarations.insert_layout_initialised(&self.element_type)?;
         let length = declarations.get_length(self.length)?;
         let length = u32::try_from(length).map_err(|_| SemanticError::LengthTooBig)?;
         let size = element_type.size(declarations)? * length;

@@ -10,11 +10,6 @@ use std::iter;
 use std::sync::Arc;
 use tokenizer::{AsSpanned, Spanned};
 
-#[deprecated = "never ever use me you stupid melon"]
-pub fn random_scope() -> ScopeId {
-    ScopeId(4269)
-}
-
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
@@ -306,16 +301,16 @@ impl Declarations {
     }
 
     pub fn check_length(&mut self, expected: u128, found: Id) -> Result<(), SemanticError> {
-        if !self.is_initialised(found) {
-            self.initialise(found, Declaration::Length(expected));
-            Ok(())
-        } else {
+        if self.is_initialised(found) {
             let found = self.get_length(found)?;
             if found == expected {
                 Ok(())
             } else {
                 Err(SemanticError::LengthMismatch { expected, found })
             }
+        } else {
+            self.initialise(found, Declaration::Length(expected));
+            Ok(())
         }
     }
 
@@ -323,7 +318,6 @@ impl Declarations {
         &mut self,
         expression: &Typed<hir::Expression>,
         expected: &TypeReference,
-        scope: ScopeId,
     ) -> Result<(), SemanticError> {
         let expected = expected.resolve(self);
         let found = expression.type_ref.resolve(self);
@@ -337,8 +331,8 @@ impl Declarations {
         if expected == found {
             Ok(())
         } else {
-            let expected = self.insert_layout(&expected, scope)?;
-            let found = self.insert_layout(&found, scope)?;
+            let expected = self.insert_layout(&expected)?;
+            let found = self.insert_layout(&found)?;
             Err(SemanticError::MismatchedTypes {
                 expected: expected.unwrap(),
                 found: found.unwrap(),
@@ -352,16 +346,14 @@ impl Declarations {
     pub fn insert_layout_initialised(
         &mut self,
         type_reference: &TypeReference,
-        argument_scope: ScopeId,
     ) -> Result<Layout, SemanticError> {
-        self.insert_layout(type_reference, argument_scope)
+        self.insert_layout(type_reference)
             .map(|layout| layout.ok_or(SemanticError::UninitialisedType))?
     }
 
     pub fn insert_layout(
         &mut self,
         type_reference: &TypeReference,
-        argument_scope: ScopeId,
     ) -> Result<Option<Layout>, SemanticError> {
         if let Some(layout) = self.layouts.get(type_reference) {
             return Ok(Some(layout.clone()));
@@ -373,9 +365,7 @@ impl Declarations {
 
         let r#type = match layout {
             Declaration::Type(r#type) => r#type,
-            Declaration::TypeAlias(reference) => {
-                return self.insert_layout(&reference, argument_scope)
-            }
+            Declaration::TypeAlias(reference) => return self.insert_layout(&reference),
             _ => {
                 return Err(SemanticError::InvalidType);
             }
@@ -386,7 +376,6 @@ impl Declarations {
                 r#type.generic_parameters.clone(),
                 &type_reference.generics,
                 r#type.parent_scope,
-                argument_scope,
             )
             .inspect_err(|_| {
                 dbg!();
@@ -409,7 +398,7 @@ impl Declarations {
                         },
                     );
                     let layout = self
-                        .insert_layout(&type_ref, scope)?
+                        .insert_layout(&type_ref)?
                         .unwrap_or_else(|| todo!("uninitialised layout"));
                     offset += layout.size(self)?;
                 }
@@ -464,7 +453,6 @@ impl Declarations {
         parameters: Spanned<parser::generic::Parameters>,
         arguments: &[GenericArgument],
         parameter_scope: ScopeId,
-        argument_scope: ScopeId,
     ) -> Result<ScopeId, SemanticError> {
         let generics = if arguments.is_empty() {
             parameters
@@ -534,7 +522,7 @@ impl Declarations {
         scope: ScopeId,
         module: &mut impl Module,
     ) -> Result<FuncId, SemanticError> {
-        let mut function = self.insert_function(func_reference.clone(), scope)?;
+        let mut function = self.insert_function(func_reference.clone())?;
         let id = match &mut function {
             ConcreteFunction::Internal(function) => {
                 if let Some(id) = function.id {
@@ -571,7 +559,6 @@ impl Declarations {
     pub fn insert_function(
         &mut self,
         func_reference: FuncReference,
-        argument_scope: ScopeId,
     ) -> Result<ConcreteFunction, SemanticError> {
         if let Some(function) = self.concrete_functions.get(&func_reference) {
             return Ok(function.clone());
@@ -593,7 +580,6 @@ impl Declarations {
                     self,
                     func_reference.generics.clone(),
                     *parameter_scope,
-                    argument_scope,
                 )?)
             }
             GenericFunction::External(external) => ConcreteFunction::External(external.clone()),

@@ -38,7 +38,7 @@ fn[T] UInt8 eq(T left, T right)
 end
 
 fn UInt8 main()
-    let data = slice[UInt8, 69]("Hi!\n")
+    let data = slice[UInt8, 4]("Hi!\n")
 	print(data)
     let result = if eq[UInt32](not_rand(), 42) then 1 else 2 end
 	print_int(result)

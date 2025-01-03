@@ -1,8 +1,6 @@
 use crate::declarations::{self, Declarations, GenericArgument, TypeReference};
-use crate::SemanticError;
 pub use builder::Builder;
 use builder::VariableId;
-use cranelift::codegen::ir::immediates::Offset32;
 use parser::expression::IntrinsicOperator;
 
 pub mod builder;

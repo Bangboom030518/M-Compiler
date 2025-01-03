@@ -60,7 +60,7 @@ impl MSignature {
             .parameters
             .iter()
             .map(|type_ref| -> Result<_, SemanticError> {
-                let layout = declarations.insert_layout_initialised(type_ref, self.scope)?;
+                let layout = declarations.insert_layout_initialised(type_ref)?;
 
                 match layout {
                     Layout::Primitive(primitive) => Ok(AbiParam::new(
@@ -73,7 +73,7 @@ impl MSignature {
                 }
             })
             .collect::<Result<_, _>>()?;
-        let return_type = declarations.insert_layout_initialised(&self.return_type, self.scope)?;
+        let return_type = declarations.insert_layout_initialised(&self.return_type)?;
 
         signature.returns = match return_type {
             Layout::Primitive(primitive) => {
@@ -149,13 +149,11 @@ impl Internal {
         declarations: &mut Declarations,
         generic_arguments: Vec<GenericArgument>,
         parameter_scope: ScopeId,
-        argument_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
         let scope = declarations.create_generic_scope(
             function.generic_parameters,
             &generic_arguments,
             parameter_scope,
-            argument_scope,
         )?;
 
         let (parameter_names, parameter_types): (Vec<_>, Vec<_>) = function
@@ -233,7 +231,7 @@ impl Internal {
         let mut block_params = builder.block_params(entry_block).to_vec();
 
         if declarations
-            .insert_layout_initialised(&self.signature.return_type, self.signature.scope)?
+            .insert_layout_initialised(&self.signature.return_type)?
             .is_aggregate()
         {
             let param = block_params
@@ -254,8 +252,7 @@ impl Internal {
             .map(|(index, ((type_ref, name), value))| {
                 let variable = Variable::new(index + SPECIAL_VARIABLES.len());
                 // TODO: get type again?
-                let layout =
-                    declarations.insert_layout_initialised(type_ref, self.signature.scope)?;
+                let layout = declarations.insert_layout_initialised(type_ref)?;
                 let size = layout.size(declarations)?;
 
                 let value = if layout.is_aggregate() {

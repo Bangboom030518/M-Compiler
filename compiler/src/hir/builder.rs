@@ -8,6 +8,7 @@ use parser::expression::control_flow::If;
 use parser::expression::{IntrinsicCall, IntrinsicOperator};
 use std::collections::HashMap;
 use std::iter;
+use std::ops::ControlFlow;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -25,20 +26,54 @@ impl From<VariableId> for Variable {
     }
 }
 
-struct StructConstraint {
-    struct_type: TypeReference,
-    field: String,
-    expression: hir::Typed<hir::Expression>,
+enum Constraint {
+    StructField {
+        field: String,
+        expression: hir::Typed<hir::Expression>,
+        struct_type: TypeReference,
+    },
+    ArrayLength {
+        expected_length: u128,
+        array_type: TypeReference,
+    },
 }
 
-struct ArrayConstraint {
-    expected_length: u128,
-    array_type: TypeReference,
-}
+impl Constraint {
+    /// Checks against constraint, returning a bool indicating whether or not the condition was
+    /// able to be verified.
+    fn check(&self, declarations: &mut Declarations) -> Result<bool, SemanticError> {
+        match self {
+            Constraint::StructField {
+                struct_type,
+                expression,
+                field,
+            } => {
+                let struct_type = declarations.insert_layout(&struct_type)?;
+                let Some(struct_type) = struct_type else {
+                    return Ok(false);
+                };
+                let struct_type = struct_type.expect_struct()?;
+                let field = struct_type
+                    .fields
+                    .get(field)
+                    .ok_or_else(|| SemanticError::NonExistentField)?;
 
-pub enum Constraint {
-    Struct(StructConstraint),
-    Array(ArrayConstraint),
+                declarations.check_expression_type(&expression, &field.type_ref)?;
+            }
+            Constraint::ArrayLength {
+                expected_length,
+                array_type,
+            } => {
+                let array_type = declarations.insert_layout(array_type)?;
+                let Some(array_type) = array_type else {
+                    return Ok(false);
+                };
+                let array_type = array_type.expect_array()?;
+                declarations.check_length(*expected_length, array_type.length)?;
+            }
+        };
+        Ok(true)
+    }
 }
 
 pub struct Builder<'a> {
@@ -86,47 +121,16 @@ impl<'a> Builder<'a> {
             .collect::<Result<_, _>>()?;
         let mut constraints = self.struct_constraints;
         while !constraints.is_empty() {
-            let mut completed = Vec::with_capacity(constraints.len());
+            let mut checked = Vec::with_capacity(constraints.len());
             for (index, constraint) in constraints.iter().enumerate() {
-                match constraint {
-                    Constraint::Struct(constraint) => {
-                        let struct_type = self
-                            .declarations
-                            .insert_layout(&constraint.struct_type, self.top_level_scope)?;
-                        let Some(struct_type) = struct_type else {
-                            continue;
-                        };
-                        let struct_type = struct_type.expect_struct()?;
-                        let field = struct_type
-                            .fields
-                            .get(&constraint.field)
-                            .ok_or_else(|| SemanticError::NonExistentField)?;
-
-                        self.declarations.check_expression_type(
-                            &constraint.expression,
-                            &field.type_ref,
-                            self.top_level_scope,
-                        )?;
-                    }
-                    Constraint::Array(constraint) => {
-                        let array_type = self
-                            .declarations
-                            .insert_layout(&constraint.array_type, self.top_level_scope)?;
-                        let Some(array_type) = array_type else {
-                            continue;
-                        };
-                        let array_type = array_type.expect_array()?;
-                        self.declarations
-                            .check_length(constraint.expected_length, array_type.length)?;
-                    }
+                if constraint.check(self.declarations)? {
+                    checked.push(index);
                 }
-
-                completed.push(index);
             }
-            if completed.is_empty() {
+            if checked.is_empty() {
                 break;
             }
-            for index in completed.into_iter().rev() {
+            for index in checked.into_iter().rev() {
                 constraints.remove(index);
             }
         }
@@ -147,11 +151,8 @@ impl<'a> Builder<'a> {
             parser::Statement::Assignment(parser::Assignment { left, right }) => {
                 let left = self.expression(left.as_ref())?;
                 let right = self.expression(right.as_ref())?;
-                self.declarations.check_expression_type(
-                    &right,
-                    &left.type_ref,
-                    self.top_level_scope,
-                )?;
+                self.declarations
+                    .check_expression_type(&right, &left.type_ref)?;
                 Ok(hir::Statement::Assignment(hir::Assignment::new(
                     left, right,
                 )))
@@ -164,11 +165,8 @@ impl<'a> Builder<'a> {
                     .expect("Must always have a scope")
                     .insert(statement.ident.value.0.clone(), variable);
                 let expression = self.expression(statement.expression.as_ref())?;
-                self.declarations.check_expression_type(
-                    &expression,
-                    &type_ref,
-                    self.top_level_scope,
-                )?;
+                self.declarations
+                    .check_expression_type(&expression, &type_ref)?;
                 self.variables.insert(variable.into(), type_ref);
                 Ok(hir::Statement::Let(variable.into(), expression))
             }
@@ -247,12 +245,11 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|(ident, expression)| {
                 let expression = self.expression(expression.as_ref())?;
-                self.struct_constraints
-                    .push(Constraint::Struct(StructConstraint {
-                        struct_type: struct_type.clone(),
-                        field: ident.value.0.clone(),
-                        expression: expression.clone(),
-                    }));
+                self.struct_constraints.push(Constraint::StructField {
+                    struct_type: struct_type.clone(),
+                    field: ident.value.0.clone(),
+                    expression: expression.clone(),
+                });
                 Ok((ident.value.0.clone(), expression))
             })
             .collect::<Result<_, SemanticError>>()?;
@@ -271,11 +268,8 @@ impl<'a> Builder<'a> {
             IntrinsicCall::Binary(left, right, operator) => {
                 let left = self.expression(left.as_ref().as_ref())?;
                 let right = self.expression(right.as_ref().as_ref())?;
-                self.declarations.check_expression_type(
-                    &right,
-                    &left.type_ref,
-                    self.top_level_scope,
-                )?;
+                self.declarations
+                    .check_expression_type(&right, &left.type_ref)?;
                 let type_ref = if matches!(operator, IntrinsicOperator::Cmp(_)) {
                     self.declarations.create_type_ref()
                 } else {
@@ -296,11 +290,8 @@ impl<'a> Builder<'a> {
                     .lookup_type(&r#type.value, self.top_level_scope)?;
 
                 let expression = self.expression(expression.as_ref().as_ref())?;
-                self.declarations.check_expression_type(
-                    &expression,
-                    &expected,
-                    self.top_level_scope,
-                )?;
+                self.declarations
+                    .check_expression_type(&expression, &expected)?;
                 Ok(expression)
             }
             IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
@@ -358,7 +349,7 @@ impl<'a> Builder<'a> {
         };
         let signature = &self
             .declarations
-            .insert_function(func_reference, self.top_level_scope)?
+            .insert_function(func_reference)?
             .signature()
             .clone();
 
@@ -367,13 +358,10 @@ impl<'a> Builder<'a> {
         }
         for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
             self.declarations
-                .check_expression_type(argument, parameter, self.top_level_scope)?;
+                .check_expression_type(argument, parameter)?;
         }
-        self.declarations.check_expression_type(
-            &call_expression,
-            &signature.return_type,
-            self.top_level_scope,
-        )?;
+        self.declarations
+            .check_expression_type(&call_expression, &signature.return_type)?;
         Ok(call_expression)
     }
 
@@ -392,11 +380,10 @@ impl<'a> Builder<'a> {
                 parser::Literal::String(string) => {
                     let expression =
                         Expression::StringConst(string.clone()).typed(self.declarations);
-                    self.struct_constraints
-                        .push(Constraint::Array(ArrayConstraint {
-                            expected_length: string.as_bytes().len() as u128,
-                            array_type: expression.type_ref.clone(),
-                        }));
+                    self.struct_constraints.push(Constraint::ArrayLength {
+                        expected_length: string.as_bytes().len() as u128,
+                        array_type: expression.type_ref.clone(),
+                    });
                     Ok(expression)
                 }
                 parser::Literal::Char(_) => todo!("char literals"),
@@ -404,11 +391,8 @@ impl<'a> Builder<'a> {
             parser::Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
             parser::Expression::Return(expression) => {
                 let inner = self.expression(expression.expression.as_ref())?;
-                self.declarations.check_expression_type(
-                    &inner,
-                    &self.return_type,
-                    self.top_level_scope,
-                )?;
+                self.declarations
+                    .check_expression_type(&inner, &self.return_type)?;
                 Ok(hir::Expression::Return(Box::new(inner)).typed(self.declarations))
             }
             parser::Expression::Ident(ident) => {
@@ -433,18 +417,12 @@ impl<'a> Builder<'a> {
                 }))
                 .typed(self.declarations);
                 if let Some(sub_expression) = then_branch.expression {
-                    self.declarations.check_expression_type(
-                        &expression,
-                        &sub_expression.type_ref,
-                        self.top_level_scope,
-                    )?;
+                    self.declarations
+                        .check_expression_type(&expression, &sub_expression.type_ref)?;
                 }
                 if let Some(sub_expression) = else_branch.expression {
-                    self.declarations.check_expression_type(
-                        &expression,
-                        &sub_expression.type_ref,
-                        self.top_level_scope,
-                    )?;
+                    self.declarations
+                        .check_expression_type(&expression, &sub_expression.type_ref)?;
                 }
                 Ok(expression)
             }
@@ -457,12 +435,11 @@ impl<'a> Builder<'a> {
                     field: field.clone(),
                 }))
                 .typed(self.declarations);
-                self.struct_constraints
-                    .push(Constraint::Struct(StructConstraint {
-                        struct_type: struct_expression.type_ref,
-                        field: field.0.clone(),
-                        expression: field_access.clone(),
-                    }));
+                self.struct_constraints.push(Constraint::StructField {
+                    struct_type: struct_expression.type_ref,
+                    field: field.0.clone(),
+                    expression: field_access.clone(),
+                });
                 Ok(field_access)
             }
             parser::Expression::Generixed(generixed) => {
