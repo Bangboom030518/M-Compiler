@@ -244,7 +244,7 @@ where
 
         let offset = struct_layout
             .fields
-            .get(access.field.as_ref())
+            .get(&access.field.0)
             .ok_or(SemanticError::NonExistentField)?
             .offset;
 
@@ -329,7 +329,9 @@ where
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
-            let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
+            let BranchStatus::Continue(value) =
+                self.load_primitive(expression).inspect_err(|_| dbg!())?
+            else {
                 return Ok(BranchStatus::Finished);
             };
             arguments.push(value);

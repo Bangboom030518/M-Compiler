@@ -8,7 +8,7 @@ use parser::Ident;
 use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
-use tokenizer::Spanned;
+use tokenizer::{AsSpanned, Spanned};
 
 #[deprecated = "never ever use me you stupid melon"]
 pub fn random_scope() -> ScopeId {
@@ -78,55 +78,18 @@ pub struct FuncReference {
     pub generics: Vec<GenericArgument>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Primitive {
-    Void,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    F32,
-    F64,
-    USize,
-    Array {
-        length: Id,
-        element_type: Spanned<parser::Type>,
-    },
-}
-
-fn resolve_type(
-    r#type: &Spanned<parser::Type>,
-    declarations: &mut Declarations,
-    scope: ScopeId,
-) -> Result<TypeReference, SemanticError> {
-    let name = r#type.value.name.clone();
-    let id = declarations
-        .lookup(&name.value.0, scope)
-        .ok_or_else(|| SemanticError::DeclarationNotFound(name))?;
-    let generics = declarations.resolve_generics(&r#type.value.generics.value.0, scope)?;
-
-    Ok(TypeReference { id, generics })
-}
-
+#[deprecated = "use regular ast structs from the parser instead"]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Type {
     kind: TypeKind,
-    generic_parameters: Spanned<parser::top_level::GenericParameters>,
+    generic_parameters: Spanned<parser::generic::Parameters>,
     parent_scope: ScopeId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TypeKind {
-    Struct {
-        fields: Vec<(Spanned<Ident>, Spanned<parser::Type>)>,
-    },
-    Primitive(Primitive),
+    Struct { fields: Vec<Spanned<parser::Field>> },
+    Primitive(parser::PrimitiveKind),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,31 +139,6 @@ impl Declaration {
         }
     }
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Length {
-    Literal(u128),
-    Generic(String),
-}
-
-// impl Length {
-//     fn resolve(&self, declarations: &Declarations, scope: ScopeId) -> Result<u128, SemanticError> {
-//         match self {
-//             Self::Literal(length) => Ok(*length),
-//             Self::Generic(name) => {
-//                 let id = declarations.lookup(name, scope).ok_or_else(|| {
-//                     todo!();
-//                     SemanticError::IdentNotFoundNoSpan(name.clone())
-//                 })?;
-
-//                 declarations
-//                     .get(id)
-//                     .ok_or(SemanticError::UninitialisedType)?
-//                     .expect_length()
-//             }
-//         }
-//     }
-// }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GenericArgument {
@@ -259,21 +197,16 @@ impl Declarations {
         let mut functions = Vec::new();
         let mut extern_functions = Vec::new();
         for (name, id) in declarations.scopes[scope_id.0].declarations.clone() {
-            match parser_declarations
+            let declaration = parser_declarations
                 .remove_entry(&name)
                 .expect("name to exist")
-                .1
-            {
+                .1;
+            match declaration {
                 parser::Declaration::Struct(ast_struct) => {
-                    let fields = ast_struct
-                        .fields
-                        .iter()
-                        .map(|field| field.value.clone())
-                        .map(|parser::top_level::Field { r#type, name }| (name, r#type))
-                        .collect();
-
                     let declaration = Declaration::Type(Type {
-                        kind: TypeKind::Struct { fields },
+                        kind: TypeKind::Struct {
+                            fields: ast_struct.fields,
+                        },
                         parent_scope: scope_id,
                         generic_parameters: ast_struct.generics,
                     });
@@ -282,42 +215,10 @@ impl Declarations {
                 }
                 parser::Declaration::Union(_) => todo!("unions"),
                 parser::Declaration::Primitive(ast_primitive) => {
-                    use parser::top_level::{Length as L, PrimitiveKind as P};
-
-                    let primitive = match ast_primitive.kind.value {
-                        P::U8 => Primitive::U8,
-                        P::U16 => Primitive::U16,
-                        P::U32 => Primitive::U32,
-                        P::U64 => Primitive::U64,
-                        P::U128 => Primitive::U128,
-                        P::I8 => Primitive::I8,
-                        P::I16 => Primitive::I16,
-                        P::I32 => Primitive::I32,
-                        P::I64 => Primitive::I64,
-                        P::I128 => Primitive::I128,
-                        P::F32 => Primitive::F32,
-                        P::F64 => Primitive::F64,
-                        P::USize => Primitive::USize,
-                        P::Void => Primitive::Void,
-                        P::Array(length, element_type) => {
-                            let length = match length.value {
-                                L::Ident(ident) => declarations.create_uninitialised(),
-                                L::Literal(length) => {
-                                    declarations.create(Declaration::Length(length))
-                                }
-                            };
-
-                            Primitive::Array {
-                                length,
-                                element_type,
-                            }
-                        }
-                    };
-
                     let primitive = Declaration::Type(Type {
                         parent_scope: scope_id,
                         generic_parameters: ast_primitive.generics,
-                        kind: TypeKind::Primitive(primitive),
+                        kind: TypeKind::Primitive(ast_primitive.kind.value),
                     });
 
                     declarations.initialise(id, primitive);
@@ -350,6 +251,19 @@ impl Declarations {
         self.store.get(id.0).expect("`Id` exists").is_some()
     }
 
+    pub fn resolve_generic_parameters(
+        &mut self,
+        generic_parameters: Spanned<parser::generic::Parameters>,
+    ) -> HashMap<String, Id> {
+        generic_parameters
+            .value
+            .generics
+            .into_iter()
+            .map(|parameter| (parameter.value.name.value.0, self.create_uninitialised()))
+            .collect()
+    }
+
+    #[deprecated]
     pub fn resolve_generics(
         &mut self,
         generics: &[Spanned<parser::GenericArgument>],
@@ -363,9 +277,7 @@ impl Declarations {
                     Ok(GenericArgument::Length(length))
                 }
                 parser::GenericArgument::Type(r#type) => {
-                    let id = self
-                        .lookup(r#type.name.value.as_ref(), scope)
-                        .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
+                    let id = self.lookup(&r#type.name, scope)?;
                     let declaration = self
                         .get(id)
                         .unwrap_or_else(|| todo!("handle uninitialised types"));
@@ -484,12 +396,12 @@ impl Declarations {
             TypeKind::Struct { fields } => {
                 let mut offset = 0;
                 let mut layout_fields = HashMap::new();
-                for (name, field) in &fields {
-                    let field = resolve_type(field, self, scope)?;
+                for field in &fields {
+                    let type_ref = self.lookup_type(&field.value.r#type.value, scope)?;
                     layout_fields.insert(
-                        name.value.0.clone(),
+                        field.value.name.value.0.clone(),
                         layout::Field {
-                            type_ref: field.clone(),
+                            type_ref: type_ref.clone(),
                             offset: Offset32::new(
                                 i32::try_from(offset)
                                     .map_err(|_| SemanticError::StructTooChonky)?,
@@ -497,7 +409,7 @@ impl Declarations {
                         },
                     );
                     let layout = self
-                        .insert_layout(&field, scope)?
+                        .insert_layout(&type_ref, scope)?
                         .unwrap_or_else(|| todo!("uninitialised layout"));
                     offset += layout.size(self)?;
                 }
@@ -507,26 +419,28 @@ impl Declarations {
                 })
             }
             TypeKind::Primitive(primitive) => match primitive {
-                Primitive::F32 => Layout::Primitive(layout::Primitive::F32),
-                Primitive::F64 => Layout::Primitive(layout::Primitive::F64),
-                Primitive::U8 => Layout::Primitive(layout::Primitive::U8),
-                Primitive::U16 => Layout::Primitive(layout::Primitive::U16),
-                Primitive::U32 => Layout::Primitive(layout::Primitive::U32),
-                Primitive::U64 => Layout::Primitive(layout::Primitive::U64),
-                Primitive::U128 => Layout::Primitive(layout::Primitive::U128),
-                Primitive::I8 => Layout::Primitive(layout::Primitive::I8),
-                Primitive::I16 => Layout::Primitive(layout::Primitive::I16),
-                Primitive::I32 => Layout::Primitive(layout::Primitive::I32),
-                Primitive::I64 => Layout::Primitive(layout::Primitive::I64),
-                Primitive::I128 => Layout::Primitive(layout::Primitive::I128),
-                Primitive::USize => Layout::Primitive(layout::Primitive::USize),
-                Primitive::Void => Layout::Void,
-                Primitive::Array {
-                    length,
-                    element_type,
-                } => {
-                    let element_type = resolve_type(&element_type, self, scope)?;
-
+                parser::PrimitiveKind::F32 => Layout::Primitive(layout::Primitive::F32),
+                parser::PrimitiveKind::F64 => Layout::Primitive(layout::Primitive::F64),
+                parser::PrimitiveKind::U8 => Layout::Primitive(layout::Primitive::U8),
+                parser::PrimitiveKind::U16 => Layout::Primitive(layout::Primitive::U16),
+                parser::PrimitiveKind::U32 => Layout::Primitive(layout::Primitive::U32),
+                parser::PrimitiveKind::U64 => Layout::Primitive(layout::Primitive::U64),
+                parser::PrimitiveKind::U128 => Layout::Primitive(layout::Primitive::U128),
+                parser::PrimitiveKind::I8 => Layout::Primitive(layout::Primitive::I8),
+                parser::PrimitiveKind::I16 => Layout::Primitive(layout::Primitive::I16),
+                parser::PrimitiveKind::I32 => Layout::Primitive(layout::Primitive::I32),
+                parser::PrimitiveKind::I64 => Layout::Primitive(layout::Primitive::I64),
+                parser::PrimitiveKind::I128 => Layout::Primitive(layout::Primitive::I128),
+                parser::PrimitiveKind::USize => Layout::Primitive(layout::Primitive::USize),
+                parser::PrimitiveKind::Void => Layout::Void,
+                parser::PrimitiveKind::Array(length, element_type) => {
+                    let element_type = self.lookup_type(&element_type.value, scope)?;
+                    let length = match length.value {
+                        parser::Length::Ident(ident) => {
+                            self.lookup(&ident.spanned(length.span), scope)?
+                        }
+                        parser::Length::Literal(length) => self.create(Declaration::Length(length)),
+                    };
                     Layout::Array(Array {
                         length,
                         element_type,
@@ -547,7 +461,7 @@ impl Declarations {
 
     pub fn create_generic_scope(
         &mut self,
-        parameters: Spanned<parser::top_level::GenericParameters>,
+        parameters: Spanned<parser::generic::Parameters>,
         arguments: &[GenericArgument],
         parameter_scope: ScopeId,
         argument_scope: ScopeId,
@@ -557,7 +471,7 @@ impl Declarations {
                 .value
                 .generics
                 .into_iter()
-                .map(|parameter| (parameter.value.ident().value.0, self.create_uninitialised()))
+                .map(|parameter| (parameter.value.name.value.0, self.create_uninitialised()))
                 .collect()
         } else {
             if arguments.len() != parameters.value.generics.len() {
@@ -565,24 +479,18 @@ impl Declarations {
             }
 
             iter::zip(parameters.value.generics, arguments)
-                .map(|(parameter, argument)| match (parameter.value, argument) {
-                    (
-                        parser::top_level::GenericParameter::Type { name },
-                        GenericArgument::Type(type_ref),
-                    ) => Ok((
-                        name.value.0,
-                        self.create(Declaration::TypeAlias(type_ref.clone())),
-                    )),
-                    (
-                        parser::top_level::GenericParameter::Length { name },
-                        GenericArgument::Length(length),
-                    ) => {
-                        // let length = length.resolve(self, argument_scope).inspect_err(|_| {
-                        //     dbg!((&length, &name.value.0));
-                        // })?;
-                        Ok((name.value.0, *length))
+                .map(|(parameter, argument)| {
+                    let parameter = parameter.value;
+                    match (parameter.kind, argument) {
+                        (parser::generic::Kind::Type, GenericArgument::Type(type_ref)) => Ok((
+                            parameter.name.value.0,
+                            self.create(Declaration::TypeAlias(type_ref.clone())),
+                        )),
+                        (parser::generic::Kind::Length, GenericArgument::Length(length)) => {
+                            Ok((parameter.name.value.0, *length))
+                        }
+                        _ => Err(SemanticError::GenericParametersMismatch),
                     }
-                    _ => Err(SemanticError::GenericParametersMismatch),
                 })
                 .collect::<Result<_, SemanticError>>()?
         };
@@ -696,10 +604,11 @@ impl Declarations {
         Ok(function)
     }
 
-    pub fn lookup(&self, ident: &str, scope: ScopeId) -> Option<Id> {
+    pub fn lookup(&self, ident: &Spanned<Ident>, scope: ScopeId) -> Result<Id, SemanticError> {
         self.scopes[scope.0]
-            .get(ident)
-            .or_else(|| self.lookup(ident, self.scopes[scope.0].parent?))
+            .get(&ident.value.0)
+            .or_else(|| self.lookup(ident, self.scopes[scope.0].parent?).ok())
+            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
     }
 
     pub fn lookup_type(
@@ -707,12 +616,8 @@ impl Declarations {
         r#type: &parser::Type,
         scope: ScopeId,
     ) -> Result<TypeReference, SemanticError> {
-        let id = self
-            .lookup(r#type.name.value.as_ref(), scope)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(r#type.name.clone()))?;
-
+        let id = self.lookup(&r#type.name, scope)?;
         let generics = self.resolve_generics(&r#type.generics.value.0, scope)?;
-
         Ok(TypeReference { id, generics })
     }
 }

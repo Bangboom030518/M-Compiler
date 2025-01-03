@@ -8,7 +8,7 @@ use layout::Layout;
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
-use tokenizer::Spanned;
+use tokenizer::{AsSpanned, Spanned};
 
 mod declarations;
 mod function;
@@ -238,8 +238,9 @@ fn main() {
         .unwrap_or_else(|error| panic!("{error}"));
 
     let mut context = CraneliftContext::new(module);
+    let main_ref = parser::Ident("main".to_string()).spanned(0..0);
     let main_ref = declarations
-        .lookup("main", declarations::TOP_LEVEL_SCOPE)
+        .lookup(&main_ref, declarations::TOP_LEVEL_SCOPE)
         .expect("no main function");
     let main_ref = declarations::FuncReference {
         id: main_ref,

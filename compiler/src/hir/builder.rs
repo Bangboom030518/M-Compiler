@@ -139,7 +139,7 @@ impl<'a> Builder<'a> {
         variable
     }
 
-    pub fn statement(
+    fn statement(
         &mut self,
         statement: Spanned<&parser::Statement>,
     ) -> Result<hir::Statement, SemanticError> {
@@ -180,10 +180,10 @@ impl<'a> Builder<'a> {
 
     fn lookup_ident(
         &mut self,
-        ident: Spanned<&parser::Ident>,
+        ident: &Spanned<parser::Ident>,
     ) -> Result<Typed<Expression>, SemanticError> {
         for scope in self.local_scopes.iter().rev() {
-            if let Some(variable) = scope.get(ident.value.as_ref()).copied() {
+            if let Some(variable) = scope.get(&ident.value.0).copied() {
                 let variable = variable.into();
                 let type_ref = self
                     .variables
@@ -196,10 +196,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let global = self
-            .declarations
-            .lookup(ident.value.as_ref(), self.top_level_scope)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.map(Clone::clone)))?;
+        let global = self.declarations.lookup(ident, self.top_level_scope)?;
 
         Ok(Expression::GlobalAccess(global).typed(self.declarations))
     }
@@ -414,7 +411,9 @@ impl<'a> Builder<'a> {
                 )?;
                 Ok(hir::Expression::Return(Box::new(inner)).typed(self.declarations))
             }
-            parser::Expression::Ident(ident) => self.lookup_ident(ident.spanned(expression.span)),
+            parser::Expression::Ident(ident) => {
+                self.lookup_ident(&ident.clone().spanned(expression.span))
+            }
             parser::Expression::Call(call) => self.call(call),
             parser::Expression::If(If {
                 condition,
