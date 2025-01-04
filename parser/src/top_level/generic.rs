@@ -18,7 +18,7 @@ impl Parse for Parameter {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
         let value = if let Ok(at) = parser.take_token_if(TokenType::At) {
             if parser.take_ident()?.value != "length" {
-                return Err(parser.unexpected_ident(&["length"]));
+                return Err(parser.unexpected_ident(vec!["length"]));
             }
             let name = parser.parse()?;
             let end = name.end();

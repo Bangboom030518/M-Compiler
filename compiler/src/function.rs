@@ -6,6 +6,7 @@ use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::{FuncId, Linkage, Module};
 use isa::CallConv;
+use parser::PrimitiveKind;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,23 +64,21 @@ impl MSignature {
                 let layout = declarations.insert_layout_initialised(type_ref)?;
 
                 match layout {
-                    Layout::Primitive(primitive) => Ok(AbiParam::new(
-                        primitive.cranelift_type(declarations.isa.pointer_type()),
-                    )),
+                    primitive @ Layout::Primitive(_) => {
+                        Ok(AbiParam::new(primitive.cranelift_type(&declarations.isa)))
+                    }
                     Layout::Struct(_) | Layout::Array(_) => {
                         Ok(AbiParam::new(declarations.isa.pointer_type()))
                     }
-                    Layout::Void => todo!("void params"),
                 }
             })
             .collect::<Result<_, _>>()?;
         let return_type = declarations.insert_layout_initialised(&self.return_type)?;
 
         signature.returns = match return_type {
-            Layout::Primitive(primitive) => {
-                vec![AbiParam::new(
-                    primitive.cranelift_type(declarations.isa.pointer_type()),
-                )]
+            Layout::Primitive(PrimitiveKind::Void) => Vec::new(),
+            primitive @ Layout::Primitive(_) => {
+                vec![AbiParam::new(primitive.cranelift_type(&declarations.isa))]
             }
             Layout::Struct(_) | Layout::Array(_) => {
                 signature
@@ -88,7 +87,6 @@ impl MSignature {
 
                 vec![AbiParam::new(declarations.isa.pointer_type())]
             }
-            Layout::Void => Vec::new(),
         };
 
         self.signature = Some(signature.clone());
@@ -151,7 +149,7 @@ impl Internal {
         parameter_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
         let scope = declarations.create_generic_scope(
-            function.generic_parameters,
+            function.generic_parameters.value,
             &generic_arguments,
             parameter_scope,
         )?;

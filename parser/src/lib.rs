@@ -19,7 +19,7 @@ use tokenizer::{
     AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
 };
 pub use top_level::{
-    generic, Declaration, ExternFunction, Field, Function, Length, Primitive, PrimitiveKind,
+    generic, Array, Declaration, ExternFunction, Field, Function, Length, Primitive, PrimitiveKind,
     Struct, Union,
 };
 
@@ -27,10 +27,8 @@ pub mod expression;
 pub mod parser;
 pub mod top_level;
 
-trait Parse {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error>
-    where
-        Self: Sized;
+trait Parse: Sized {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error>;
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -49,7 +47,7 @@ pub enum ParseError {
     },
     #[error("unexpected identifier '{:?}'. Expected one of {expected:?}", found.value)]
     UnexpectedIdentifier {
-        expected: &'static [&'static str],
+        expected: Vec<&'static str>,
         found: Spanned<Ident>,
     },
 }

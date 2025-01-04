@@ -1,11 +1,12 @@
 use crate::declarations::{Declarations, FuncReference, ScopeId};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
-use crate::layout::{self, Layout, Primitive};
+use crate::layout::{self, Layout};
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use parser::expression::IntrinsicOperator;
+use parser::PrimitiveKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BranchStatus<T> {
@@ -123,7 +124,7 @@ where
         let condition_type = self
             .declarations
             .insert_layout_initialised(&condition.type_ref)?;
-        if condition_type != Layout::Primitive(layout::Primitive::U8) {
+        if condition_type != Layout::Primitive(PrimitiveKind::U8) {
             return Err(SemanticError::ExpectedBool);
         }
 
@@ -235,12 +236,7 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let struct_layout = match struct_layout {
-            Layout::Struct(struct_layout) => struct_layout,
-            Layout::Primitive(_) | Layout::Void | Layout::Array(_) => {
-                return Err(SemanticError::InvalidFieldAccess(struct_layout.clone()))
-            }
-        };
+        let struct_layout = struct_layout.expect_struct()?;
 
         let offset = struct_layout
             .fields
@@ -363,7 +359,7 @@ where
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
 
-        if return_layout == Layout::Void {
+        if return_layout == Layout::Primitive(PrimitiveKind::Void) {
             // TODO: What????
             let value = self
                 .builder
@@ -431,7 +427,7 @@ where
         let layout = self
             .declarations
             .insert_layout_initialised(&store.pointer.type_ref)?;
-        if layout != Layout::Primitive(crate::layout::Primitive::USize) {
+        if layout != Layout::Primitive(PrimitiveKind::USize) {
             return Err(SemanticError::InvalidAddr {
                 found: layout,
                 expression: store.pointer.value,
@@ -479,7 +475,7 @@ where
             .declarations
             .insert_layout_initialised(&array.element_type)?;
 
-        if length != bytes.len() as u128 || element_type != Layout::Primitive(Primitive::U8) {
+        if length != bytes.len() as u128 || element_type != Layout::Primitive(PrimitiveKind::U8) {
             return Err(SemanticError::InvalidStringConst {
                 expected: layout.clone(),
             });
@@ -516,12 +512,12 @@ where
                 };
 
                 let cranelift_type = match primitive {
-                    Primitive::I8 | Primitive::U8 => types::I8,
-                    Primitive::I16 | Primitive::U16 => types::I16,
-                    Primitive::I32 | Primitive::U32 => types::I32,
-                    Primitive::I64 | Primitive::U64 => types::I64,
-                    Primitive::I128 | Primitive::U128 => todo!("chonky intz"),
-                    Primitive::USize => self.declarations.isa.pointer_type(),
+                    PrimitiveKind::I8 | PrimitiveKind::U8 => types::I8,
+                    PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
+                    PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
+                    PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
+                    PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
+                    PrimitiveKind::USize => self.declarations.isa.pointer_type(),
                     _ => return Err(SemanticError::UnexpectedNumberLiteral),
                 };
 
@@ -537,12 +533,12 @@ where
             }
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
-                    Layout::Primitive(Primitive::F32) => {
+                    Layout::Primitive(PrimitiveKind::F32) => {
                         #[allow(clippy::cast_possible_truncation)]
                         let value = self.builder.ins().f32const(Ieee32::from(float as f32));
                         self.put_in_stack_slot(value, 4)
                     }
-                    Layout::Primitive(Primitive::F64) => {
+                    Layout::Primitive(PrimitiveKind::F64) => {
                         let value = self.builder.ins().f64const(Ieee64::from(float));
                         self.put_in_stack_slot(value, 8)
                     }

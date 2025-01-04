@@ -39,9 +39,8 @@ impl Array {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Layout {
     Struct(Struct),
-    Primitive(Primitive),
+    Primitive(parser::PrimitiveKind),
     Array(Array),
-    Void,
 }
 
 impl Layout {
@@ -53,7 +52,6 @@ impl Layout {
 
             Self::Struct(Struct { size, .. }) => *size,
             Self::Array(array) => array.size(declarations)?,
-            Self::Void => 0,
         };
         Ok(size)
     }
@@ -82,84 +80,22 @@ impl Layout {
 
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
-            Self::Primitive(primitive_kind) => primitive_kind.cranelift_type(isa.pointer_type()),
+            Self::Primitive(primitive_kind) => {
+                use cranelift::prelude::types;
+                use parser::PrimitiveKind as P;
+                match primitive_kind {
+                    P::U8 | P::I8 => types::I8,
+                    P::U16 | P::I16 => types::I16,
+                    P::F32 => types::F32,
+                    P::U32 | P::I32 => types::I32,
+                    P::F64 => types::F64,
+                    P::U64 | P::I64 => types::I64,
+                    P::U128 | P::I128 => types::I128,
+                    P::USize => isa.pointer_type(),
+                    P::Void => todo!("void types"),
+                }
+            }
             Self::Struct(_) | Self::Array(_) => isa.pointer_type(),
-            Self::Void => todo!("unimplemented - clean up"),
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum Primitive {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    F32,
-    F64,
-    USize,
-}
-
-impl Primitive {
-    #[must_use]
-    pub const fn cranelift_type(
-        &self,
-        pointer: cranelift::prelude::Type,
-    ) -> cranelift::prelude::Type {
-        use cranelift::prelude::*;
-        match self {
-            Self::U8 | Self::I8 => types::I8,
-            Self::U16 | Self::I16 => types::I16,
-            Self::F32 => types::F32,
-            Self::U32 | Self::I32 => types::I32,
-            Self::F64 => types::F64,
-            Self::U64 | Self::I64 => types::I64,
-            Self::U128 | Self::I128 => types::I128,
-            Self::USize => pointer,
-        }
-    }
-
-    #[must_use]
-    pub const fn is_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128
-                | Self::I64
-                | Self::I32
-                | Self::I16
-                | Self::I8
-                | Self::U128
-                | Self::U64
-                | Self::U32
-                | Self::U16
-                | Self::U8
-                | Self::USize
-        )
-    }
-
-    #[must_use]
-    pub const fn is_signed_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
-        )
-    }
-
-    #[must_use]
-    pub const fn size(&self, pointer_size: u32) -> u32 {
-        match self {
-            Self::U8 | Self::I8 => 1,
-            Self::U16 | Self::I16 => 2,
-            Self::U32 | Self::I32 | Self::F32 => 4,
-            Self::U64 | Self::I64 | Self::F64 => 8,
-            Self::U128 | Self::I128 => 16,
-            Self::USize => pointer_size,
         }
     }
 }

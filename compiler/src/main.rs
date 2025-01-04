@@ -157,7 +157,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../input-cp.m");
+    let input = include_str!("../../slice-cp.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {

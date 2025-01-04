@@ -73,18 +73,27 @@ pub struct FuncReference {
     pub generics: Vec<GenericArgument>,
 }
 
-#[deprecated = "use regular ast structs from the parser instead"]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Type {
     kind: TypeKind,
-    generic_parameters: Spanned<parser::generic::Parameters>,
     parent_scope: ScopeId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TypeKind {
-    Struct { fields: Vec<Spanned<parser::Field>> },
-    Primitive(parser::PrimitiveKind),
+    Struct(parser::Struct),
+    Primitive(parser::Primitive),
+    Array(parser::Array),
+}
+
+impl TypeKind {
+    fn generics(&self) -> parser::generic::Parameters {
+        match self {
+            Self::Primitive(_) => Default::default(),
+            Self::Struct(r#struct) => r#struct.generics.value.clone(),
+            Self::Array(array) => array.generics.value.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -199,24 +208,28 @@ impl Declarations {
             match declaration {
                 parser::Declaration::Struct(ast_struct) => {
                     let declaration = Declaration::Type(Type {
-                        kind: TypeKind::Struct {
-                            fields: ast_struct.fields,
-                        },
+                        kind: TypeKind::Struct(ast_struct),
                         parent_scope: scope_id,
-                        generic_parameters: ast_struct.generics,
                     });
 
                     declarations.initialise(id, declaration);
                 }
                 parser::Declaration::Union(_) => todo!("unions"),
-                parser::Declaration::Primitive(ast_primitive) => {
-                    let primitive = Declaration::Type(Type {
+                parser::Declaration::Primitive(primitive) => {
+                    let declaration = Declaration::Type(Type {
                         parent_scope: scope_id,
-                        generic_parameters: ast_primitive.generics,
-                        kind: TypeKind::Primitive(ast_primitive.kind.value),
+                        kind: TypeKind::Primitive(primitive),
                     });
 
-                    declarations.initialise(id, primitive);
+                    declarations.initialise(id, declaration);
+                }
+                parser::Declaration::Array(array) => {
+                    let declaration = Declaration::Type(Type {
+                        parent_scope: scope_id,
+                        kind: TypeKind::Array(array),
+                    });
+
+                    declarations.initialise(id, declaration)
                 }
                 parser::Declaration::Function(function) => functions.push((function, id)),
                 parser::Declaration::ExternFunction(function) => {
@@ -373,7 +386,7 @@ impl Declarations {
         // TODO: r#type.parent_scope
         let scope = self
             .create_generic_scope(
-                r#type.generic_parameters.clone(),
+                r#type.kind.generics(),
                 &type_reference.generics,
                 r#type.parent_scope,
             )
@@ -382,10 +395,10 @@ impl Declarations {
             })?;
 
         let layout = match r#type.kind {
-            TypeKind::Struct { fields } => {
+            TypeKind::Struct(ast_struct) => {
                 let mut offset = 0;
                 let mut layout_fields = HashMap::new();
-                for field in &fields {
+                for field in &ast_struct.fields {
                     let type_ref = self.lookup_type(&field.value.r#type.value, scope)?;
                     layout_fields.insert(
                         field.value.name.value.0.clone(),
@@ -407,35 +420,20 @@ impl Declarations {
                     size: offset,
                 })
             }
-            TypeKind::Primitive(primitive) => match primitive {
-                parser::PrimitiveKind::F32 => Layout::Primitive(layout::Primitive::F32),
-                parser::PrimitiveKind::F64 => Layout::Primitive(layout::Primitive::F64),
-                parser::PrimitiveKind::U8 => Layout::Primitive(layout::Primitive::U8),
-                parser::PrimitiveKind::U16 => Layout::Primitive(layout::Primitive::U16),
-                parser::PrimitiveKind::U32 => Layout::Primitive(layout::Primitive::U32),
-                parser::PrimitiveKind::U64 => Layout::Primitive(layout::Primitive::U64),
-                parser::PrimitiveKind::U128 => Layout::Primitive(layout::Primitive::U128),
-                parser::PrimitiveKind::I8 => Layout::Primitive(layout::Primitive::I8),
-                parser::PrimitiveKind::I16 => Layout::Primitive(layout::Primitive::I16),
-                parser::PrimitiveKind::I32 => Layout::Primitive(layout::Primitive::I32),
-                parser::PrimitiveKind::I64 => Layout::Primitive(layout::Primitive::I64),
-                parser::PrimitiveKind::I128 => Layout::Primitive(layout::Primitive::I128),
-                parser::PrimitiveKind::USize => Layout::Primitive(layout::Primitive::USize),
-                parser::PrimitiveKind::Void => Layout::Void,
-                parser::PrimitiveKind::Array(length, element_type) => {
-                    let element_type = self.lookup_type(&element_type.value, scope)?;
-                    let length = match length.value {
-                        parser::Length::Ident(ident) => {
-                            self.lookup(&ident.spanned(length.span), scope)?
-                        }
-                        parser::Length::Literal(length) => self.create(Declaration::Length(length)),
-                    };
-                    Layout::Array(Array {
-                        length,
-                        element_type,
-                    })
-                }
-            },
+            TypeKind::Primitive(primitive) => Layout::Primitive(primitive.kind.value),
+            TypeKind::Array(array) => {
+                let element_type = self.lookup_type(&array.element_type.value, scope)?;
+                let length = match array.length.value {
+                    parser::Length::Ident(ident) => {
+                        self.lookup(&ident.spanned(array.length.span), scope)?
+                    }
+                    parser::Length::Literal(length) => self.create(Declaration::Length(length)),
+                };
+                Layout::Array(Array {
+                    length,
+                    element_type,
+                })
+            }
         };
 
         self.layouts.insert(type_reference.clone(), layout.clone());
@@ -450,23 +448,22 @@ impl Declarations {
 
     pub fn create_generic_scope(
         &mut self,
-        parameters: Spanned<parser::generic::Parameters>,
+        parameters: parser::generic::Parameters,
         arguments: &[GenericArgument],
         parameter_scope: ScopeId,
     ) -> Result<ScopeId, SemanticError> {
         let generics = if arguments.is_empty() {
             parameters
-                .value
                 .generics
                 .into_iter()
                 .map(|parameter| (parameter.value.name.value.0, self.create_uninitialised()))
                 .collect()
         } else {
-            if arguments.len() != parameters.value.generics.len() {
+            if arguments.len() != parameters.generics.len() {
                 return Err(SemanticError::GenericParametersMismatch);
             }
 
-            iter::zip(parameters.value.generics, arguments)
+            iter::zip(parameters.generics, arguments)
                 .map(|(parameter, argument)| {
                     let parameter = parameter.value;
                     match (parameter.kind, argument) {
