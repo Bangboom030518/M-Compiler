@@ -1,13 +1,14 @@
-use super::Store;
-use crate::declarations::{Declarations, ScopeId, TypeReference};
+use super::{Store, Typed};
+use crate::declarations::{Declarations, FuncReference, ScopeId, TypeReference};
 use crate::hir::{BinaryIntrinsic, Expression};
-use crate::layout::Layout;
 use crate::{declarations, function, hir, SemanticError};
 use cranelift::prelude::*;
 use itertools::Itertools;
 use parser::expression::control_flow::If;
-use parser::expression::IntrinsicCall;
+use parser::expression::{IntrinsicCall, IntrinsicOperator};
 use std::collections::HashMap;
+use std::iter;
+use std::ops::ControlFlow;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -25,19 +26,63 @@ impl From<VariableId> for Variable {
     }
 }
 
-#[derive(Clone)]
-pub struct Function {
-    pub return_type: declarations::TypeReference,
-    pub variables: HashMap<VariableId, Option<TypeReference>>,
-    pub body: Vec<hir::Statement>,
+enum Constraint {
+    StructField {
+        field: String,
+        expression: hir::Typed<hir::Expression>,
+        struct_type: TypeReference,
+    },
+    ArrayLength {
+        expected_length: u128,
+        array_type: TypeReference,
+    },
+}
+
+impl Constraint {
+    /// Checks against constraint, returning a bool indicating whether or not the condition was
+    /// able to be verified.
+    fn check(&self, declarations: &mut Declarations) -> Result<bool, SemanticError> {
+        match self {
+            Constraint::StructField {
+                struct_type,
+                expression,
+                field,
+            } => {
+                let struct_type = declarations.insert_layout(&struct_type)?;
+                let Some(struct_type) = struct_type else {
+                    return Ok(false);
+                };
+                let struct_type = struct_type.expect_struct()?;
+                let field = struct_type
+                    .fields
+                    .get(field)
+                    .ok_or_else(|| SemanticError::NonExistentField)?;
+
+                declarations.check_expression_type(&expression, &field.type_ref)?;
+            }
+            Constraint::ArrayLength {
+                expected_length,
+                array_type,
+            } => {
+                let array_type = declarations.insert_layout(array_type)?;
+                let Some(array_type) = array_type else {
+                    return Ok(false);
+                };
+                let array_type = array_type.expect_array()?;
+                declarations.check_length(*expected_length, array_type.length)?;
+            }
+        };
+        Ok(true)
+    }
 }
 
 pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
     top_level_scope: ScopeId,
     return_type: TypeReference,
-    variables: HashMap<VariableId, Option<TypeReference>>,
+    variables: HashMap<VariableId, TypeReference>,
     local_scopes: Vec<HashMap<String, Variable>>,
+    struct_constraints: Vec<Constraint>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
 }
@@ -51,33 +96,45 @@ impl<'a> Builder<'a> {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
         let new_variable_index = parameters.len() + crate::function::SPECIAL_VARIABLES.len();
-        for (ident, variable, type_id) in parameters {
-            variables.insert(variable.into(), Some(type_id));
+        for (ident, variable, type_ref) in parameters {
+            variables.insert(variable.into(), type_ref);
             scope.insert(ident.value.0, variable);
         }
 
         Self {
             declarations,
-            top_level_scope: function.scope_id,
+            top_level_scope: function.signature.scope,
             variables,
             new_variable_index,
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
+            struct_constraints: Vec::new(),
         }
     }
 
-    pub fn build(mut self) -> Result<Function, SemanticError> {
+    pub fn build_body(mut self) -> Result<Vec<hir::Statement>, SemanticError> {
         let body = self
             .body
             .iter()
             .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<_, _>>()?;
-        Ok(Function {
-            return_type: self.return_type,
-            variables: self.variables,
-            body,
-        })
+        let mut constraints = self.struct_constraints;
+        while !constraints.is_empty() {
+            let mut checked = Vec::with_capacity(constraints.len());
+            for (index, constraint) in constraints.iter().enumerate() {
+                if constraint.check(self.declarations)? {
+                    checked.push(index);
+                }
+            }
+            if checked.is_empty() {
+                break;
+            }
+            for index in checked.into_iter().rev() {
+                constraints.remove(index);
+            }
+        }
+        Ok(body)
     }
 
     fn create_variable(&mut self) -> Variable {
@@ -86,29 +143,32 @@ impl<'a> Builder<'a> {
         variable
     }
 
-    pub fn statement(
+    fn statement(
         &mut self,
         statement: Spanned<&parser::Statement>,
     ) -> Result<hir::Statement, SemanticError> {
         match statement.value {
             parser::Statement::Assignment(parser::Assignment { left, right }) => {
+                let left = self.expression(left.as_ref())?;
+                let right = self.expression(right.as_ref())?;
+                self.declarations
+                    .check_expression_type(&right, &left.type_ref)?;
                 Ok(hir::Statement::Assignment(hir::Assignment::new(
-                    self.expression(left.as_ref())?,
-                    self.expression(right.as_ref())?,
+                    left, right,
                 )))
             }
             parser::Statement::Let(statement) => {
                 let variable = self.create_variable();
+                let type_ref = self.declarations.create_type_ref();
                 self.local_scopes
                     .last_mut()
                     .expect("Must always have a scope")
                     .insert(statement.ident.value.0.clone(), variable);
-                self.variables.insert(variable.into(), None);
-
-                Ok(hir::Statement::Let(
-                    variable.into(),
-                    self.expression(statement.expression.as_ref())?,
-                ))
+                let expression = self.expression(statement.expression.as_ref())?;
+                self.declarations
+                    .check_expression_type(&expression, &type_ref)?;
+                self.variables.insert(variable.into(), type_ref);
+                Ok(hir::Statement::Let(variable.into(), expression))
             }
             parser::Statement::Expression(expression) => Ok(hir::Statement::Expression(
                 self.expression(expression.spanned(statement.span))?,
@@ -116,17 +176,27 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn lookup(&self, ident: Spanned<&parser::Ident>) -> Result<Expression, SemanticError> {
+    fn lookup_ident(
+        &mut self,
+        ident: &Spanned<parser::Ident>,
+    ) -> Result<Typed<Expression>, SemanticError> {
         for scope in self.local_scopes.iter().rev() {
-            if let Some(variable) = scope.get(ident.value.as_ref()) {
-                return Ok(Expression::LocalAccess((*variable).into()));
+            if let Some(variable) = scope.get(&ident.value.0).copied() {
+                let variable = variable.into();
+                let type_ref = self
+                    .variables
+                    .get(&variable)
+                    .expect("variable doesn't exist");
+                return Ok(Typed::new(
+                    Expression::LocalAccess(variable),
+                    type_ref.clone(),
+                ));
             }
         }
 
-        self.declarations
-            .lookup(ident.value.as_ref(), self.top_level_scope)
-            .map(Expression::GlobalAccess)
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.map(Clone::clone)))
+        let global = self.declarations.lookup(ident, self.top_level_scope)?;
+
+        Ok(Expression::GlobalAccess(global).typed(self.declarations))
     }
 
     fn block(
@@ -166,130 +236,211 @@ impl<'a> Builder<'a> {
         &mut self,
         constructor: &parser::expression::Constructor,
     ) -> Result<hir::Typed<Expression>, SemanticError> {
-        let type_ref = self
+        let struct_type = self
             .declarations
             .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
 
-        let Layout::Struct(layout) = self
-            .declarations
-            .insert_layout(&type_ref, self.top_level_scope)?
-            .unwrap_or_else(|| todo!("uninitialised layout"))
-        else {
-            return Err(SemanticError::InvalidConstructor);
+        let fields = constructor
+            .fields
+            .iter()
+            .map(|(ident, expression)| {
+                let expression = self.expression(expression.as_ref())?;
+                self.struct_constraints.push(Constraint::StructField {
+                    struct_type: struct_type.clone(),
+                    field: ident.value.0.clone(),
+                    expression: expression.clone(),
+                });
+                Ok((ident.value.0.clone(), expression))
+            })
+            .collect::<Result<_, SemanticError>>()?;
+
+        Ok(Typed::new(
+            Expression::Constructor(hir::Constructor(fields)),
+            struct_type,
+        ))
+    }
+
+    fn intrinsic_call(
+        &mut self,
+        intrinsic: &IntrinsicCall,
+    ) -> Result<Typed<Expression>, SemanticError> {
+        match intrinsic {
+            IntrinsicCall::Binary(left, right, operator) => {
+                let left = self.expression(left.as_ref().as_ref())?;
+                let right = self.expression(right.as_ref().as_ref())?;
+                self.declarations
+                    .check_expression_type(&right, &left.type_ref)?;
+                let type_ref = if matches!(operator, IntrinsicOperator::Cmp(_)) {
+                    self.declarations.create_type_ref()
+                } else {
+                    left.type_ref.clone()
+                };
+                Ok(Typed::new(
+                    Expression::BinaryIntrinsic(Box::new(BinaryIntrinsic {
+                        left,
+                        right,
+                        operator: *operator,
+                    })),
+                    type_ref,
+                ))
+            }
+            IntrinsicCall::AssertType(expression, r#type) => {
+                let expected = self
+                    .declarations
+                    .lookup_type(&r#type.value, self.top_level_scope)?;
+
+                let expression = self.expression(expression.as_ref().as_ref())?;
+                self.declarations
+                    .check_expression_type(&expression, &expected)?;
+                Ok(expression)
+            }
+            IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
+                self.expression(expression.as_ref().as_ref())?,
+            ))
+            .typed(self.declarations)),
+            IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
+                self.expression(expression.as_ref().as_ref())?,
+            ))
+            .typed(self.declarations)),
+            IntrinsicCall::Store {
+                pointer,
+                expression,
+            } => Ok(Expression::Store(Box::new(Store {
+                pointer: self.expression(pointer.as_ref().as_ref())?,
+                expression: self.expression(expression.as_ref().as_ref())?,
+            }))
+            .typed(self.declarations)),
+        }
+    }
+
+    fn call(
+        &mut self,
+        call: &parser::expression::Call,
+    ) -> Result<Typed<Expression>, SemanticError> {
+        let callable = self.expression(call.callable.as_ref().as_ref())?;
+        let arguments: Vec<_> = call
+            .arguments
+            .iter()
+            .map(|argument| self.expression(argument.as_ref()))
+            .map_ok(super::Typed::<Expression>::from)
+            .collect::<Result<_, _>>()?;
+        let call_expression = hir::Expression::Call(Box::new(hir::Call {
+            callable: callable.clone(),
+            arguments: arguments.clone(),
+        }))
+        .typed(self.declarations);
+
+        let (callable, generics) = if let hir::Expression::Generixed(generixed) = &callable.value {
+            let hir::Generixed {
+                expression,
+                generics,
+            } = generixed.as_ref();
+            (expression.value.clone(), generics.clone())
+        } else {
+            (callable.value.clone(), Vec::new())
         };
 
-        // TODO: Make sure all fields are present
-        Ok(Expression::Constructor(hir::Constructor(
-            constructor
-                .fields
-                .iter()
-                .map(|(ident, expression)| {
-                    layout
-                        .fields
-                        .get(ident.value.as_ref())
-                        .ok_or(SemanticError::NonExistentField)
-                        .and_then(|field| {
-                            self.expression(expression.as_ref()).map(|expression| {
-                                (field.offset, expression.with_type(field.type_id.clone()))
-                            })
-                        })
-                })
-                .collect::<Result<_, SemanticError>>()?,
-        ))
-        .with_type(type_ref))
+        let hir::Expression::GlobalAccess(declaration) = callable else {
+            todo!("func refs!")
+        };
+        let func_reference = FuncReference {
+            id: declaration,
+            generics,
+        };
+        let signature = &self
+            .declarations
+            .insert_function(func_reference)?
+            .signature()
+            .clone();
+
+        if signature.parameters.len() != call.arguments.len() {
+            return Err(SemanticError::InvalidNumberOfArguments);
+        }
+        for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
+            self.declarations
+                .check_expression_type(argument, parameter)?;
+        }
+        self.declarations
+            .check_expression_type(&call_expression, &signature.return_type)?;
+        Ok(call_expression)
     }
 
     fn expression(
         &mut self,
         expression: Spanned<&parser::Expression>,
-    ) -> Result<hir::Typed<Expression>, SemanticError> {
+    ) -> Result<Typed<Expression>, SemanticError> {
         match expression.value {
             parser::Expression::Literal(literal) => match literal {
-                parser::Literal::Integer(int) => Ok(Expression::IntegerConst(*int).into()),
-                parser::Literal::Float(float) => Ok(Expression::FloatConst(*float).into()),
+                parser::Literal::Integer(int) => {
+                    Ok(Expression::IntegerConst(*int).typed(self.declarations))
+                }
+                parser::Literal::Float(float) => {
+                    Ok(Expression::FloatConst(*float).typed(self.declarations))
+                }
                 parser::Literal::String(string) => {
-                    Ok(Expression::StringConst(string.clone()).into())
+                    let expression =
+                        Expression::StringConst(string.clone()).typed(self.declarations);
+                    self.struct_constraints.push(Constraint::ArrayLength {
+                        expected_length: string.as_bytes().len() as u128,
+                        array_type: expression.type_ref.clone(),
+                    });
+                    Ok(expression)
                 }
                 parser::Literal::Char(_) => todo!("char literals"),
             },
-            parser::Expression::IntrinsicCall(intrinsic) => match intrinsic {
-                IntrinsicCall::Binary(left, right, operator) => {
-                    Ok(Expression::BinaryIntrinsic(Box::new(BinaryIntrinsic {
-                        left: self.expression(left.as_ref().as_ref())?,
-                        right: self.expression(right.as_ref().as_ref())?,
-                        operator: *operator,
-                    }))
-                    .into())
-                }
-                IntrinsicCall::AssertType(expression, r#type) => {
-                    let type_ref = self
-                        .declarations
-                        .lookup_type(&r#type.value, self.top_level_scope)?;
-
-                    self.expression(expression.as_ref().as_ref())
-                        .map(|expression| {
-                            hir::Expression::AssertType(Box::new(
-                                expression.value.with_type(type_ref.clone()),
-                            ))
-                            .with_type(type_ref)
-                        })
-                }
-                IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
-                    self.expression(expression.as_ref().as_ref())?,
-                ))
-                .into()),
-                IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
-                    self.expression(expression.as_ref().as_ref())?,
-                ))
-                .into()),
-                IntrinsicCall::Store {
-                    pointer,
-                    expression,
-                } => Ok(Expression::Store(Box::new(Store {
-                    pointer: self.expression(pointer.as_ref().as_ref())?,
-                    expression: self.expression(expression.as_ref().as_ref())?,
-                }))
-                .into()),
-            },
-            parser::Expression::Return(expression) => Ok(hir::Expression::Return(Box::new(
-                self.expression(expression.expression.as_ref())?
-                    .with_type(self.return_type.clone()),
-            ))
-            .into()),
-            parser::Expression::Ident(ident) => {
-                Ok(self.lookup(ident.spanned(expression.span))?.into())
+            parser::Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
+            parser::Expression::Return(expression) => {
+                let inner = self.expression(expression.expression.as_ref())?;
+                self.declarations
+                    .check_expression_type(&inner, &self.return_type)?;
+                Ok(hir::Expression::Return(Box::new(inner)).typed(self.declarations))
             }
-            parser::Expression::Call(call) => Ok(hir::Expression::Call(Box::new(hir::Call {
-                callable: self.expression(call.callable.as_ref().as_ref())?,
-                arguments: call
-                    .arguments
-                    .iter()
-                    .map(|argument| self.expression(argument.as_ref()))
-                    .map_ok(super::Typed::<Expression>::from)
-                    .collect::<Result<_, _>>()?,
-            }))
-            .into()),
+            parser::Expression::Ident(ident) => {
+                self.lookup_ident(&ident.clone().spanned(expression.span))
+            }
+            parser::Expression::Call(call) => self.call(call),
             parser::Expression::If(If {
                 condition,
                 then_branch,
                 else_branch,
-            }) => Ok(Expression::If(Box::new(hir::If {
-                condition: self.expression(condition.as_ref().as_ref())?,
-                then_branch: self.block(then_branch.iter().cloned().collect_vec().as_slice())?,
-                else_branch: self.block(
-                    &else_branch.as_ref().map_or(Vec::new(), |else_branch| {
+            }) => {
+                let then_branch =
+                    self.block(then_branch.iter().cloned().collect_vec().as_slice())?;
+                let else_branch =
+                    self.block(&else_branch.as_ref().map_or(Vec::new(), |else_branch| {
                         else_branch.iter().cloned().collect_vec()
-                    }),
-                )?,
-            }))
-            .into()),
+                    }))?;
+                let expression = Expression::If(Box::new(hir::If {
+                    condition: self.expression(condition.as_ref().as_ref())?,
+                    then_branch: then_branch.clone(),
+                    else_branch: else_branch.clone(),
+                }))
+                .typed(self.declarations);
+                if let Some(sub_expression) = then_branch.expression {
+                    self.declarations
+                        .check_expression_type(&expression, &sub_expression.type_ref)?;
+                }
+                if let Some(sub_expression) = else_branch.expression {
+                    self.declarations
+                        .check_expression_type(&expression, &sub_expression.type_ref)?;
+                }
+                Ok(expression)
+            }
             parser::Expression::Constructor(constructor) => self.constructor(constructor),
             parser::Expression::FieldAccess(field_access) => {
-                Ok(Expression::FieldAccess(Box::new(hir::FieldAccess {
-                    expression: self.expression(field_access.expression.as_ref())?,
-                    field: field_access.ident.value.clone(),
+                let struct_expression = self.expression(field_access.expression.as_ref())?;
+                let field = &field_access.ident.value;
+                let field_access = Expression::FieldAccess(Box::new(hir::FieldAccess {
+                    expression: struct_expression.clone(),
+                    field: field.clone(),
                 }))
-                .into())
+                .typed(self.declarations);
+                self.struct_constraints.push(Constraint::StructField {
+                    struct_type: struct_expression.type_ref,
+                    field: field.0.clone(),
+                    expression: field_access.clone(),
+                });
+                Ok(field_access)
             }
             parser::Expression::Generixed(generixed) => {
                 Ok(Expression::Generixed(Box::new(hir::Generixed {
@@ -298,7 +449,7 @@ impl<'a> Builder<'a> {
                         .declarations
                         .resolve_generics(&generixed.generics.value.0, self.top_level_scope)?,
                 }))
-                .into())
+                .typed(self.declarations))
             }
             parser::Expression::Binary(_) => todo!("binary"),
             parser::Expression::UnaryPrefix(_) => todo!("unary"),

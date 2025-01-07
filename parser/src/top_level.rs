@@ -2,6 +2,8 @@ use crate::parser::{Branch, Error, Parser, Recoverable};
 use crate::{Ident, Parse, Statement, Type};
 use tokenizer::{AsSpanned, Spanned, SpannedResultExt, TokenType};
 
+pub mod generic;
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct TypeBinding {
     pub r#type: Option<Spanned<Type>>,
@@ -59,61 +61,9 @@ impl Parse for Parameter {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum GenericParameter {
-    Type { name: Spanned<Ident> },
-    Length { name: Spanned<Ident> },
-}
-
-impl GenericParameter {
-    #[must_use]
-    pub fn ident(self) -> Spanned<Ident> {
-        match self {
-            Self::Type { name } | Self::Length { name } => name,
-        }
-    }
-}
-
-impl Parse for GenericParameter {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let value = if let Ok(at) = parser.take_token_if(TokenType::At) {
-            if parser.take_ident()?.value != "length" {
-                return Err(parser.unexpected_ident(&["length"]));
-            }
-            let name = parser.parse()?;
-            let end = name.end();
-            Self::Length { name }.spanned(at.start()..end)
-        } else {
-            let name = parser.parse()?;
-            let span = name.span.clone();
-            Self::Type { name }.spanned(span)
-        };
-        Ok(value)
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Default, Clone)]
-pub struct GenericParameters {
-    pub generics: Vec<Spanned<GenericParameter>>,
-}
-
-impl Parse for GenericParameters {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let Ok(open) = parser.take_token_if(TokenType::OpenSquareParen) else {
-            return Ok(Self {
-                generics: Vec::new(),
-            }
-            .spanned(parser.empty_span()));
-        };
-        let generics = parser.parse_csv();
-        Ok(Self { generics }
-            .spanned(open.start()..parser.take_token_if(TokenType::CloseSquareParen)?.end()))
-    }
-}
-
-#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Struct {
     pub name: Spanned<Ident>,
-    pub generics: Spanned<GenericParameters>,
+    pub generics: Spanned<generic::Parameters>,
     pub fields: Vec<Spanned<Field>>,
 }
 
@@ -158,7 +108,7 @@ impl Parse for Union {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: Spanned<Ident>,
-    pub generic_parameters: Spanned<GenericParameters>,
+    pub generic_parameters: Spanned<generic::Parameters>,
     pub parameters: Vec<Spanned<Parameter>>,
     pub return_type: Option<Spanned<Type>>,
     pub body: Vec<Spanned<Statement>>,
@@ -211,10 +161,51 @@ impl Parse for Function {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Array {
+    pub generics: Spanned<generic::Parameters>,
+    pub name: Spanned<Ident>,
+    pub length: Spanned<Length>,
+    pub element_type: Spanned<Type>,
+}
+
+impl Parse for Array {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let start = parser.take_token_if(TokenType::Type)?.start();
+        let generics = parser.parse()?;
+        let name = parser.parse()?;
+        parser.take_token_if(TokenType::At).recoverable()?;
+        parser.take_ident_if("array").recoverable()?;
+        parser.take_token_if(TokenType::OpenParen)?;
+        let length = parser.parse()?;
+        parser.take_token_if(TokenType::Comma)?;
+        let element_type = parser.parse()?;
+        parser.take_token_if(TokenType::CloseParen)?;
+        let end = parser.take_token_if(TokenType::End)?.end();
+        Ok(Self {
+            generics,
+            name,
+            length,
+            element_type,
+        }
+        .spanned(start..end))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Primitive {
     pub kind: Spanned<PrimitiveKind>,
-    pub generics: Spanned<GenericParameters>,
     pub name: Spanned<Ident>,
+}
+
+impl Parse for Primitive {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
+        let start = parser.take_token_if(TokenType::Type)?.start();
+        let name = parser.parse().recoverable()?;
+        parser.take_token_if(TokenType::At).recoverable()?;
+        let kind = parser.parse()?;
+        let end = parser.take_token_if(TokenType::End)?.end();
+        Ok(Self { kind, name }.spanned(start..end))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,28 +224,50 @@ pub enum PrimitiveKind {
     F64,
     USize,
     Void,
-    Array(Spanned<Length>, Spanned<Type>),
 }
 
 impl PrimitiveKind {
     const VALID_IDENTS: &'static [&'static str] = &[
         "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "void",
-        "array",
     ];
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Length {
-    Literal(u128),
-    Ident(Ident),
-}
+    #[must_use]
+    pub const fn size(&self, pointer_size: u32) -> u32 {
+        match self {
+            Self::U8 | Self::I8 => 1,
+            Self::U16 | Self::I16 => 2,
+            Self::U32 | Self::I32 | Self::F32 => 4,
+            Self::U64 | Self::I64 | Self::F64 => 8,
+            Self::U128 | Self::I128 => 16,
+            Self::USize => pointer_size,
+            Self::Void => 0,
+        }
+    }
 
-impl Parse for Length {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        parser
-            .parse()
-            .map_spanned(Self::Ident)
-            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
+    #[must_use]
+    pub const fn is_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I128
+                | Self::I64
+                | Self::I32
+                | Self::I16
+                | Self::I8
+                | Self::U128
+                | Self::U64
+                | Self::U32
+                | Self::U16
+                | Self::U8
+                | Self::USize
+        )
+    }
+
+    #[must_use]
+    pub const fn is_signed_integer(&self) -> bool {
+        matches!(
+            self,
+            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
+        )
     }
 }
 
@@ -276,35 +289,25 @@ impl Parse for PrimitiveKind {
                 "f64" => Self::F64,
                 "usize" => Self::USize,
                 "void" => Self::Void,
-                "array" => {
-                    parser.take_token_if(TokenType::OpenParen)?;
-                    let length = parser.parse()?;
-                    parser.take_token_if(TokenType::Comma)?;
-                    let inner = parser.parse()?;
-                    parser.take_token_if(TokenType::CloseParen)?;
-                    Self::Array(length, inner)
-                }
-                _ => return Err(parser.unexpected_ident(Self::VALID_IDENTS)),
+                _ => return Err(parser.unexpected_ident(Self::VALID_IDENTS.to_vec())),
             };
             Ok(kind)
         })
     }
 }
 
-impl Parse for Primitive {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Length {
+    Literal(u128),
+    Ident(Ident),
+}
+
+impl Parse for Length {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        let start = parser.take_token_if(TokenType::Type)?.start();
-        let generics = parser.parse()?;
-        let name = parser.parse()?;
-        parser.take_token_if(TokenType::At).recoverable()?;
-        let kind = parser.parse()?;
-        let end = parser.take_token_if(TokenType::End)?.end();
-        Ok(Self {
-            kind,
-            generics,
-            name,
-        }
-        .spanned(start..end))
+        parser
+            .parse()
+            .map_spanned(Self::Ident)
+            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
     }
 }
 
@@ -325,7 +328,7 @@ impl Parse for ExternFunction {
         let name = parser.parse().recoverable()?;
         parser.take_token_if(TokenType::At).recoverable()?;
         if parser.parse::<Ident>()?.value.0 != "extern" {
-            return Err(parser.unexpected_ident(&["extern"]));
+            return Err(parser.unexpected_ident(vec!["extern"]));
         };
 
         parser.take_token_if(TokenType::OpenParen)?;
@@ -360,8 +363,10 @@ pub enum Declaration {
     Union(Union),
     Struct(Struct),
     Primitive(Primitive),
+    Array(Array),
 }
 
+#[deprecated = "put common fields on `Declaration` struct instead"]
 impl Declaration {
     #[must_use]
     pub fn name(&self) -> &str {
@@ -371,6 +376,7 @@ impl Declaration {
             Self::Struct(value) => value.name.value.0.as_str(),
             Self::Union(value) => value.name.value.0.as_str(),
             Self::Primitive(value) => value.name.value.0.as_str(),
+            Self::Array(value) => value.name.value.0.as_str(),
         }
     }
 }
@@ -381,6 +387,7 @@ impl Parse for Declaration {
             .parse()
             .map_spanned(Self::ExternFunction)
             .branch(parser, Self::Function)
+            .branch(parser, Self::Array)
             .branch(parser, Self::Primitive)
             .branch(parser, Self::Struct)
     }
@@ -399,7 +406,6 @@ fn test_primitive() {
         primitive,
         Primitive {
             kind: PrimitiveKind::U32.spanned(9..11),
-            generics: GenericParameters::default().spanned(4..4),
             name: Ident(String::from("U32")).spanned(5..8),
         }
         .spanned(0..source.len())
@@ -437,7 +443,7 @@ end";
     };
 
     assert_eq!(name, "Point");
-    assert_eq!(generics, GenericParameters::default());
+    assert_eq!(generics, generic::Parameters::default());
 
     let [Spanned {
         value:

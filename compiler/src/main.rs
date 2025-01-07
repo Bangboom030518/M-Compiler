@@ -8,7 +8,7 @@ use layout::Layout;
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
-use tokenizer::Spanned;
+use tokenizer::{AsSpanned, Spanned};
 
 mod declarations;
 mod function;
@@ -41,8 +41,6 @@ pub enum SemanticError {
     UnexpectedNumberLiteral,
     #[error("Integer literal too thicc, phatt and chonky")]
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
-    #[error("Type resolution failed to infer the type")]
-    UnknownType(hir::Expression),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
     #[error("Declaration not found: '{}'", 0.0)]
@@ -63,8 +61,6 @@ pub enum SemanticError {
         found: Layout,
         expression: hir::Expression,
     },
-    #[error("Tried to construct something other than a struct")]
-    InvalidConstructor,
     #[error("Missing a struct field that must be specified")]
     MissingStructField,
     #[error("Was stoopid and tried to access the field of a non-struct type")]
@@ -88,10 +84,23 @@ pub enum SemanticError {
     GenericParametersMismatch,
     #[error("Tried to put generics somewhere they don't belong.")]
     UnexpectedGenerics,
-    #[error("Tried to use a type that hasn't been figured out yet. Don't know if this is your fault or ours tbh, sorry :(")]
+    #[error("Type resolution couldn't figure out type")]
     UninitialisedType,
     #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
     StructTooChonky,
+    #[error("Expected a bool, but found something else. Your guess is as good as mine as to what that is.")]
+    ExpectedBool,
+    #[error("Expected a type to be a struct based on usage")]
+    ExpectedStruct,
+    #[deprecated = "figure out the span you wally!"]
+    #[error("Ident not found '{0}'")]
+    IdentNotFoundNoSpan(String),
+    #[error("Attempted to use an array length greater than 2^32-1 (`u32::MAX`). That's one heckin' chonka.")]
+    LengthTooBig,
+    #[error("Expected a type to be an array based on usage")]
+    ExpectedArray,
+    #[error("Expected array of length {expected}, found array of length {found}")]
+    LengthMismatch { expected: u128, found: u128 },
 }
 
 struct FunctionCompiler {
@@ -100,12 +109,9 @@ struct FunctionCompiler {
 }
 
 impl FunctionCompiler {
-    fn new(id: declarations::Id) -> Self {
+    fn new(entry_function: FuncReference) -> Self {
         Self {
-            to_compile: vec![FuncReference {
-                id,
-                generics: Vec::new(),
-            }],
+            to_compile: vec![entry_function],
             compiled: HashSet::new(),
         }
     }
@@ -127,21 +133,16 @@ impl FunctionCompiler {
             if self.compiled.contains(&func_ref) {
                 continue;
             }
+
             let function = declarations
-                .concrete_functions
-                .remove(&func_ref)
+                .get_function(&func_ref)
                 .expect("function not found");
 
             let ConcreteFunction::Internal(internal) = function else {
-                declarations.concrete_functions.insert(func_ref, function);
                 continue;
             };
-            // TODO: `.clone()`
-            internal.clone().compile(declarations, context, self)?;
 
-            declarations
-                .concrete_functions
-                .insert(func_ref.clone(), ConcreteFunction::Internal(internal));
+            internal.clone().compile(declarations, context, self)?;
 
             self.compiled.insert(func_ref);
         }
@@ -156,13 +157,15 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../input.m");
+    let input = include_str!("../../slice-cp.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {
             use parser::ParseError;
             match error {
-                ParseError::UnexpectedIdentifier { expected, found } => todo!("unexpected ident"),
+                ParseError::UnexpectedIdentifier { expected, found } => {
+                    todo!("unexpected ident; expected '{expected:?}', found '{found:?}")
+                }
                 ParseError::UnexpectedToken { expected, found } => panic!(
                     "expected: {expected:?}, found: {:?} in '{}'",
                     found.value,
@@ -177,7 +180,7 @@ fn main() {
     flag_builder.set("use_colocated_libcalls", "false").unwrap();
     flag_builder.set("is_pic", "false").unwrap();
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
-        panic!("host machine is not supported: {}", msg);
+        panic!("host machine is not supported: {msg}");
     });
     let isa = isa_builder
         .finish(settings::Flags::new(flag_builder))
@@ -231,86 +234,34 @@ fn main() {
     builder.symbol("print_str", print_str as *const u8);
 
     let mut module = cranelift_jit::JITModule::new(builder);
-    let mut declarations = match declarations::Declarations::new(declarations, &isa, &mut module) {
-        Ok(declarations) => declarations,
-        Err(error) => match error {
-            SemanticError::DeclarationNotFound(ident) => {
-                panic!(
-                    "ident not found '{}': '{}'",
-                    ident.value,
-                    input
-                        .get((ident.span.start - 5)..(ident.span.end + 5))
-                        .unwrap()
-                )
-            }
-            error => todo!("handle meee: {error}"),
-        },
-    };
+    let mut declarations = declarations::Declarations::new(declarations, &isa, &mut module)
+        .unwrap_or_else(|error| panic!("{error}"));
 
     let mut context = CraneliftContext::new(module);
-    let main_id = declarations
-        .lookup("main", declarations::TOP_LEVEL_SCOPE)
-        .expect("no main!");
-
-    let ConcreteFunction::Internal(main) = declarations
-        .insert_function(
-            declarations::FuncReference {
-                id: main_id,
-                generics: Vec::new(),
-            },
-            &mut context.module,
-            None,
-            declarations::TOP_LEVEL_SCOPE,
-        )
-        .expect("🎉 uh oh!")
-    else {
-        panic!("main should not be extern")
+    let main_ref = parser::Ident("main".to_string()).spanned(0..0);
+    let main_ref = declarations
+        .lookup(&main_ref, declarations::TOP_LEVEL_SCOPE)
+        .expect("no main function");
+    let main_ref = declarations::FuncReference {
+        id: main_ref,
+        generics: Vec::new(),
     };
 
-    // let function_compiler = FunctionCompiler::new(main_id);
+    let main_func_id = declarations
+        .declare_function(
+            main_ref.clone(),
+            declarations::TOP_LEVEL_SCOPE,
+            &mut context.module,
+        )
+        .unwrap();
 
-    match FunctionCompiler::new(main_id).compile_all(&mut declarations, &mut context) {
-        Ok(()) => {}
-        Err(error) => match error {
-            SemanticError::DeclarationNotFound(ident) => {
-                panic!(
-                    "ident not found '{}': '{}'",
-                    ident.value,
-                    input
-                        .get((ident.span.start - 5)..(ident.span.end + 5))
-                        .unwrap()
-                )
-            }
-            error => todo!("handle meee: {error}"),
-        },
-    }
-
-    // let main_function = declarations
-    //     .concrete_functions
-    //     .values()
-    //     .find(|function| &function.signature().name.value.0 == "main")
-    //     .expect("no main function!");
-
-    // let mut functions = HashMap::new();
-    // for declaration in declarations.declarations.clone().into_iter().flatten() {
-    //     let declarations::Declaration::Function(declarations::GenericFunction::Internal {..}) =
-    //         declaration
-    //     else {
-    //         continue;
-    //     };
-
-    //     let name = function.signature.name.value.to_string();
-    //     let id = function
-    //         .compile(&mut declarations, &mut context)
-    //         .expect("TODO");
-
-    //     functions.insert(name, id);
-    // }
+    FunctionCompiler::new(main_ref)
+        .compile_all(&mut declarations, &mut context)
+        .unwrap_or_else(|error| panic!("{error}"));
 
     context.module.finalize_definitions().unwrap();
-    let function = main.id;
 
-    let code = context.module.get_finalized_function(function);
+    let code = context.module.get_finalized_function(main_func_id);
     println!("Compilation finished! Running compiled function...");
     let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
     unsafe { main() };

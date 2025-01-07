@@ -153,7 +153,7 @@ impl IntrinsicOperator {
             "gte" => Self::Cmp(CmpOperator::Gte),
             "eq" => Self::Cmp(CmpOperator::Eq),
             "ne" => Self::Cmp(CmpOperator::Ne),
-            _ => return Err(parser.unexpected_ident(Self::OPERATORS)),
+            _ => return Err(parser.unexpected_ident(Self::OPERATORS.to_vec())),
         };
         Ok(operator)
     }
@@ -230,7 +230,7 @@ impl Parse for IntrinsicCall {
 
                 Self::Binary(left, right, operator)
             }
-            _ => return Err(parser.unexpected_ident(Self::IDENTS)),
+            _ => return Err(parser.unexpected_ident(Self::IDENTS.to_vec())),
         };
 
         let end = parser.take_token_if(TokenType::CloseParen)?.end();

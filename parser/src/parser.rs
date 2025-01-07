@@ -4,7 +4,7 @@ use tokenizer::{
     AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
 };
 
-#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 #[error("Parse error")]
 pub(crate) struct Error {
     position: usize,
@@ -13,7 +13,7 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    pub(crate) const fn recoverable(self) -> Self {
+    pub(crate) fn recoverable(self) -> Self {
         Self {
             recoverable: true,
             ..self
@@ -21,10 +21,10 @@ impl Error {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum Kind {
     UnexpectedToken,
-    UnexpectedIdentifier(&'static [&'static str]),
+    UnexpectedIdentifier(Vec<&'static str>),
 }
 
 #[derive(Debug)]
@@ -103,11 +103,19 @@ impl Parser {
         }
     }
 
-    pub(crate) const fn unexpected_ident(&self, expected: &'static [&'static str]) -> Error {
+    pub(crate) const fn unexpected_ident(&self, expected: Vec<&'static str>) -> Error {
         Error {
             position: self.position,
             kind: Kind::UnexpectedIdentifier(expected),
             recoverable: false,
+        }
+    }
+
+    pub(crate) fn take_ident_if(&mut self, ident: &'static str) -> Result<(), Error> {
+        if ident == self.take_ident()?.value {
+            Ok(())
+        } else {
+            Err(self.unexpected_ident(vec![ident]))
         }
     }
 

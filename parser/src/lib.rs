@@ -18,16 +18,17 @@ use std::fmt::Display;
 use tokenizer::{
     AsSpanned, Spanned, SpannedResultExt, Token, TokenType, TokenTypeBitFields, Tokenizer,
 };
-pub use top_level::{Declaration, ExternFunction, Function, Struct, Union};
+pub use top_level::{
+    generic, Array, Declaration, ExternFunction, Field, Function, Length, Primitive, PrimitiveKind,
+    Struct, Union,
+};
 
 pub mod expression;
 pub mod parser;
 pub mod top_level;
 
-trait Parse {
-    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error>
-    where
-        Self: Sized;
+trait Parse: Sized {
+    fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error>;
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -46,7 +47,7 @@ pub enum ParseError {
     },
     #[error("unexpected identifier '{:?}'. Expected one of {expected:?}", found.value)]
     UnexpectedIdentifier {
-        expected: &'static [&'static str],
+        expected: Vec<&'static str>,
         found: Spanned<Ident>,
     },
 }
@@ -75,12 +76,6 @@ pub struct Ident(pub String);
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl AsRef<str> for Ident {
-    fn as_ref(&self) -> &str {
-        &self.0
     }
 }
 

@@ -25,7 +25,7 @@ fn[T, @length L] Slice[T] slice(Array[T, L] array)
 end
 
 fn UInt8 print(Slice[UInt8] data)
-    let a = @assert_type(@assert_type(print_str(data.ptr, data.length), Void), Array[USize, 100])
+    print_str(data.ptr, data.length)
 	0
 end
 
@@ -38,9 +38,9 @@ fn[T] UInt8 eq(T left, T right)
 end
 
 fn UInt8 main()
-    let data = slice[UInt8, 4]("Hi!\n")
+    let data = slice("Hi!\n")
 	print(data)
-    let result = if eq[UInt32](not_rand(), 42) then 1 else 2 end
+    let result = if eq(not_rand(), 42) then 1 else 2 end
 	print_int(result)
     0
 end
