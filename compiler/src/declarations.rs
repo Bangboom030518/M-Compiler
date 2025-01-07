@@ -48,7 +48,7 @@ impl Reference {
         };
 
         let Some(declaration) = declarations.get(self.id) else {
-            return self.clone();
+            return reference;
         };
 
         match declaration {
@@ -62,10 +62,6 @@ impl Reference {
                 r#type.resolve(declarations)
             }
         }
-    }
-
-    pub fn is_initialised(&self, declarations: &Declarations) -> bool {
-        declarations.is_initialised(self.id)
     }
 }
 
@@ -133,8 +129,8 @@ impl Declarations {
         declarations
     }
 
-    pub fn is_initialised(&self, id: Id) -> bool {
-        self.store.get(id.0).expect("`Id` exists").is_some()
+    fn is_initialised(&self, id: Id) -> bool {
+        self.get(id).is_some()
     }
 
     pub fn build_generics(
@@ -200,8 +196,8 @@ impl Declarations {
         }
     }
 
-    // # Errors
-    // if type is uninitialised
+    /// # Errors
+    /// if type is uninitialised
     pub fn insert_layout_initialised(
         &mut self,
         type_reference: &Reference,
@@ -209,7 +205,6 @@ impl Declarations {
         self.insert_layout(type_reference)
             .transpose()
             .ok_or(SemanticError::UnknownDeclaration)?
-        // .map(|layout| layout.ok_or(SemanticError::UnknownDeclaration))?
     }
 
     pub fn insert_layout(
@@ -294,7 +289,7 @@ impl Declarations {
         Ok(Some(layout))
     }
 
-    pub fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
+    fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
         let id = self.scopes.len();
         self.scopes.push(scope);
         ScopeId(id)
@@ -338,7 +333,7 @@ impl Declarations {
         Id(id)
     }
 
-    pub fn create_uninitialised(&mut self) -> Id {
+    fn create_uninitialised(&mut self) -> Id {
         self.store.push(None);
         Id(self.store.len() - 1)
     }

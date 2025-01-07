@@ -14,9 +14,9 @@ pub struct MSignature {
     pub parameters: Vec<Reference>,
     pub return_type: Reference,
     pub name: Spanned<parser::Ident>,
-    pub call_conv: Option<CallConv>,
-    pub signature: Option<Signature>,
     pub scope: ScopeId,
+    call_conv: Option<CallConv>,
+    signature: Option<Signature>,
 }
 
 impl MSignature {
