@@ -173,6 +173,7 @@ impl Declarations {
         expression: &Typed<hir::Expression>,
         expected: &Reference,
     ) -> Result<(), SemanticError> {
+        todo!("for each of the generics within the type_ref, assert they are equivalent :)");
         let expected = expected.resolve(self);
         let found = expression.type_ref.resolve(self);
 
