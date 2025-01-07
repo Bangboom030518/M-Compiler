@@ -1,18 +1,18 @@
-use crate::declarations::{Declarations, GenericArgument, ScopeId, TypeReference};
+use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
 use crate::{CraneliftContext, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
-use cranelift_module::{FuncId, Linkage, Module};
+use cranelift_module::{FuncId, Module};
 use isa::CallConv;
 use parser::PrimitiveKind;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MSignature {
-    pub parameters: Vec<TypeReference>,
-    pub return_type: TypeReference,
+    pub parameters: Vec<Reference>,
+    pub return_type: Reference,
     pub name: Spanned<parser::Ident>,
     pub call_conv: Option<CallConv>,
     pub signature: Option<Signature>,
@@ -98,7 +98,8 @@ impl MSignature {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct External {
     pub signature: MSignature,
-    pub id: FuncId,
+    pub id: Option<FuncId>,
+    pub symbol: Spanned<String>,
 }
 
 impl External {
@@ -106,12 +107,13 @@ impl External {
         function: parser::top_level::ExternFunction,
         declarations: &mut Declarations,
         scope: ScopeId,
-        module: &mut impl Module,
     ) -> Result<Self, SemanticError> {
-        let call_conv =
-            CallConv::for_libcall(module.isa().flags(), module.isa().default_call_conv());
+        let call_conv = CallConv::for_libcall(
+            declarations.isa.flags(),
+            declarations.isa.default_call_conv(),
+        );
 
-        let mut signature = MSignature::new(
+        let signature = MSignature::new(
             &function.parameters,
             &function.return_type,
             declarations,
@@ -120,12 +122,11 @@ impl External {
             Some(call_conv),
         )?;
 
-        let cranelift_signature = &signature.cranelift_signature(module, declarations)?;
-        let id = module
-            .declare_function(&function.symbol.value, Linkage::Import, cranelift_signature)
-            .expect("internal module error");
-
-        Ok(Self { signature, id })
+        Ok(Self {
+            signature,
+            id: None,
+            symbol: function.symbol,
+        })
     }
 }
 
@@ -135,7 +136,6 @@ pub struct Internal {
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,
     pub id: Option<FuncId>,
-    pub generics: Vec<GenericArgument>,
 }
 
 pub const AGGREGATE_PARAM_VARIABLE: usize = 0;
@@ -145,12 +145,12 @@ impl Internal {
     pub fn new(
         function: parser::top_level::Function,
         declarations: &mut Declarations,
-        generic_arguments: Vec<GenericArgument>,
+        generic_arguments: Vec<Reference>,
         parameter_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
         let scope = declarations.create_generic_scope(
             function.generic_parameters.value,
-            &generic_arguments,
+            generic_arguments,
             parameter_scope,
         )?;
 
@@ -197,7 +197,6 @@ impl Internal {
             parameter_names,
             body,
             id: None,
-            generics: generic_arguments,
         })
     }
 
@@ -287,7 +286,6 @@ impl Internal {
             declarations,
             &mut cranelift_context.module,
             function_compiler,
-            self.signature.scope,
         );
 
         for statement in body {

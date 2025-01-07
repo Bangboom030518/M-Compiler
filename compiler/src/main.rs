@@ -3,7 +3,7 @@
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use declarations::{ConcreteFunction, Declarations, FuncReference};
+use declarations::{ConcreteFunction, Declarations, Reference};
 use layout::Layout;
 use std::collections::HashSet;
 use std::io::Write;
@@ -84,17 +84,14 @@ pub enum SemanticError {
     GenericParametersMismatch,
     #[error("Tried to put generics somewhere they don't belong.")]
     UnexpectedGenerics,
-    #[error("Type resolution couldn't figure out type")]
-    UninitialisedType,
+    #[error("Compiler couldn't figure out type or function")]
+    UnknownDeclaration,
     #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
     StructTooChonky,
     #[error("Expected a bool, but found something else. Your guess is as good as mine as to what that is.")]
     ExpectedBool,
     #[error("Expected a type to be a struct based on usage")]
     ExpectedStruct,
-    #[deprecated = "figure out the span you wally!"]
-    #[error("Ident not found '{0}'")]
-    IdentNotFoundNoSpan(String),
     #[error("Attempted to use an array length greater than 2^32-1 (`u32::MAX`). That's one heckin' chonka.")]
     LengthTooBig,
     #[error("Expected a type to be an array based on usage")]
@@ -104,19 +101,19 @@ pub enum SemanticError {
 }
 
 struct FunctionCompiler {
-    to_compile: Vec<FuncReference>,
-    compiled: HashSet<FuncReference>,
+    to_compile: Vec<Reference>,
+    compiled: HashSet<Reference>,
 }
 
 impl FunctionCompiler {
-    fn new(entry_function: FuncReference) -> Self {
+    fn new(entry_function: Reference) -> Self {
         Self {
             to_compile: vec![entry_function],
             compiled: HashSet::new(),
         }
     }
 
-    fn push(&mut self, func: FuncReference) {
+    fn push(&mut self, func: Reference) {
         self.to_compile.push(func);
     }
 
@@ -233,26 +230,21 @@ fn main() {
     builder.symbol("copy_rs", copy_rs as *const u8);
     builder.symbol("print_str", print_str as *const u8);
 
-    let mut module = cranelift_jit::JITModule::new(builder);
-    let mut declarations = declarations::Declarations::new(declarations, &isa, &mut module)
-        .unwrap_or_else(|error| panic!("{error}"));
+    let module = cranelift_jit::JITModule::new(builder);
+    let mut declarations = declarations::Declarations::new(declarations, &isa);
 
     let mut context = CraneliftContext::new(module);
     let main_ref = parser::Ident("main".to_string()).spanned(0..0);
     let main_ref = declarations
         .lookup(&main_ref, declarations::TOP_LEVEL_SCOPE)
         .expect("no main function");
-    let main_ref = declarations::FuncReference {
+    let main_ref = declarations::Reference {
         id: main_ref,
         generics: Vec::new(),
     };
 
     let main_func_id = declarations
-        .declare_function(
-            main_ref.clone(),
-            declarations::TOP_LEVEL_SCOPE,
-            &mut context.module,
-        )
+        .declare_function(main_ref.clone(), &mut context.module)
         .unwrap();
 
     FunctionCompiler::new(main_ref)

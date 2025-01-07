@@ -1,4 +1,4 @@
-use crate::declarations::{self, Declarations, GenericArgument, TypeReference};
+use crate::declarations::{self, Declarations, Reference};
 pub use builder::Builder;
 use builder::VariableId;
 use parser::expression::IntrinsicOperator;
@@ -68,7 +68,7 @@ pub struct Store {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Generixed {
     pub expression: Typed<Expression>,
-    pub generics: Vec<GenericArgument>,
+    pub generics: Vec<Reference>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,11 +100,11 @@ impl Expression {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Typed<T> {
     pub value: T,
-    pub type_ref: TypeReference,
+    pub type_ref: Reference,
 }
 
 impl<T> Typed<T> {
-    pub const fn new(value: T, type_ref: TypeReference) -> Self {
+    pub const fn new(value: T, type_ref: Reference) -> Self {
         Self { value, type_ref }
     }
 

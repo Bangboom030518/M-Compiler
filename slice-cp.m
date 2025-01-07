@@ -40,8 +40,8 @@ end
 fn UInt8 main()
     let data = slice("Hi!\n")
 	print(data)
-    let result = if eq(not_rand(), 42) then 1 else 2 end
-	print_int(result)
+    // let result = if eq(not_rand(), 42) then 1 else 2 end
+	// print_int(result)
     0
 end
 

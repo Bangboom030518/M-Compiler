@@ -1,5 +1,5 @@
 use super::{Store, Typed};
-use crate::declarations::{Declarations, FuncReference, ScopeId, TypeReference};
+use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::hir::{BinaryIntrinsic, Expression};
 use crate::{declarations, function, hir, SemanticError};
 use cranelift::prelude::*;
@@ -8,7 +8,6 @@ use parser::expression::control_flow::If;
 use parser::expression::{IntrinsicCall, IntrinsicOperator};
 use std::collections::HashMap;
 use std::iter;
-use std::ops::ControlFlow;
 use tokenizer::{AsSpanned, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
@@ -30,11 +29,11 @@ enum Constraint {
     StructField {
         field: String,
         expression: hir::Typed<hir::Expression>,
-        struct_type: TypeReference,
+        struct_type: Reference,
     },
     ArrayLength {
         expected_length: u128,
-        array_type: TypeReference,
+        array_type: Reference,
     },
 }
 
@@ -43,12 +42,12 @@ impl Constraint {
     /// able to be verified.
     fn check(&self, declarations: &mut Declarations) -> Result<bool, SemanticError> {
         match self {
-            Constraint::StructField {
+            Self::StructField {
                 struct_type,
                 expression,
                 field,
             } => {
-                let struct_type = declarations.insert_layout(&struct_type)?;
+                let struct_type = declarations.insert_layout(struct_type)?;
                 let Some(struct_type) = struct_type else {
                     return Ok(false);
                 };
@@ -56,11 +55,11 @@ impl Constraint {
                 let field = struct_type
                     .fields
                     .get(field)
-                    .ok_or_else(|| SemanticError::NonExistentField)?;
+                    .ok_or(SemanticError::NonExistentField)?;
 
-                declarations.check_expression_type(&expression, &field.type_ref)?;
+                declarations.check_expression_type(expression, &field.type_ref)?;
             }
-            Constraint::ArrayLength {
+            Self::ArrayLength {
                 expected_length,
                 array_type,
             } => {
@@ -79,8 +78,8 @@ impl Constraint {
 pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
     top_level_scope: ScopeId,
-    return_type: TypeReference,
-    variables: HashMap<VariableId, TypeReference>,
+    return_type: Reference,
+    variables: HashMap<VariableId, Reference>,
     local_scopes: Vec<HashMap<String, Variable>>,
     struct_constraints: Vec<Constraint>,
     new_variable_index: usize,
@@ -91,7 +90,7 @@ impl<'a> Builder<'a> {
     pub fn new(
         declarations: &'a mut Declarations,
         function: &'a function::Internal,
-        parameters: Vec<(Spanned<parser::Ident>, Variable, TypeReference)>,
+        parameters: Vec<(Spanned<parser::Ident>, Variable, Reference)>,
     ) -> Self {
         let mut variables = HashMap::new();
         let mut scope = HashMap::new();
@@ -343,13 +342,13 @@ impl<'a> Builder<'a> {
         let hir::Expression::GlobalAccess(declaration) = callable else {
             todo!("func refs!")
         };
-        let func_reference = FuncReference {
+        let func_reference = Reference {
             id: declaration,
             generics,
         };
         let signature = &self
             .declarations
-            .insert_function(func_reference)?
+            .insert_function(&func_reference)?
             .signature()
             .clone();
 
@@ -381,7 +380,7 @@ impl<'a> Builder<'a> {
                     let expression =
                         Expression::StringConst(string.clone()).typed(self.declarations);
                     self.struct_constraints.push(Constraint::ArrayLength {
-                        expected_length: string.as_bytes().len() as u128,
+                        expected_length: string.len() as u128,
                         array_type: expression.type_ref.clone(),
                     });
                     Ok(expression)
@@ -447,7 +446,7 @@ impl<'a> Builder<'a> {
                     expression: self.expression(generixed.expression.as_ref())?,
                     generics: self
                         .declarations
-                        .resolve_generics(&generixed.generics.value.0, self.top_level_scope)?,
+                        .build_generics(&generixed.generics.value.0, self.top_level_scope)?,
                 }))
                 .typed(self.declarations))
             }

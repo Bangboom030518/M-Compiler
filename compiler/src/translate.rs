@@ -1,6 +1,6 @@
-use crate::declarations::{Declarations, FuncReference, ScopeId};
+use crate::declarations::{Declarations, Reference};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
-use crate::layout::{self, Layout};
+use crate::layout::Layout;
 use crate::{hir, FunctionCompiler, SemanticError};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
@@ -18,7 +18,6 @@ pub struct Translator<'a, M> {
     builder: cranelift::prelude::FunctionBuilder<'a>,
     declarations: &'a mut Declarations,
     module: &'a mut M,
-    scope: ScopeId,
     function_compiler: &'a mut crate::FunctionCompiler,
 }
 
@@ -35,13 +34,11 @@ where
         declarations: &'a mut Declarations,
         context: &'a mut M,
         function_compiler: &'a mut FunctionCompiler,
-        scope: ScopeId,
     ) -> Self {
         Self {
             builder,
             declarations,
             module: context,
-            scope,
             function_compiler,
         }
     }
@@ -312,12 +309,12 @@ where
             todo!("closures!")
         };
 
-        let reference = FuncReference {
+        let reference = Reference {
             id: declaration,
             generics,
         };
 
-        let function = self.declarations.insert_function(reference.clone())?;
+        let function = self.declarations.insert_function(&reference)?;
 
         self.function_compiler.push(reference.clone());
 
@@ -352,9 +349,7 @@ where
             arguments.push(addr);
         }
 
-        let func_id = self
-            .declarations
-            .declare_function(reference, self.scope, self.module)?;
+        let func_id = self.declarations.declare_function(reference, self.module)?;
         let func_ref = self.module.declare_func_in_func(func_id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
