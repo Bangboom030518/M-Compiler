@@ -207,7 +207,9 @@ impl Declarations {
         type_reference: &Reference,
     ) -> Result<Layout, SemanticError> {
         self.insert_layout(type_reference)
-            .map(|layout| layout.ok_or(SemanticError::UnknownDeclaration))?
+            .transpose()
+            .ok_or(SemanticError::UnknownDeclaration)?
+        // .map(|layout| layout.ok_or(SemanticError::UnknownDeclaration))?
     }
 
     pub fn insert_layout(
@@ -225,7 +227,7 @@ impl Declarations {
         let (declaration, parent_scope) = match layout {
             Declaration::Resolved(declaration, scope) => (declaration, scope),
             Declaration::Alias(reference) => return self.insert_layout(&reference),
-            _ => {
+            Declaration::Length(_) => {
                 return Err(SemanticError::InvalidType);
             }
         };

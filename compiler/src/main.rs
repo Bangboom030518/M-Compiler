@@ -1,4 +1,4 @@
-#![warn(clippy::pedantic, clippy::nursery)]
+#![warn(clippy::pedantic, clippy::nursery, clippy::todo, clippy::dbg_macro)]
 #![feature(iter_collect_into)]
 
 use cranelift::prelude::*;
@@ -148,6 +148,41 @@ impl FunctionCompiler {
     }
 }
 
+extern "C" fn print_int(n: usize) -> usize {
+    println!("{n}");
+    0
+}
+
+extern "C" fn print_float(f: f32) {
+    println!("{f}");
+}
+
+unsafe extern "C" fn print_str(str_ptr: *const u8, length: usize) {
+    let _ = std::io::stdout()
+        .lock()
+        .write(unsafe { std::slice::from_raw_parts(str_ptr, length) });
+}
+
+unsafe extern "C" fn alloc_rs(size: usize) -> *mut u8 {
+    use std::alloc::{alloc, handle_alloc_error, Layout};
+    let layout = Layout::from_size_align(size, 4).unwrap();
+    let ptr = unsafe { alloc(layout) };
+    if ptr.is_null() {
+        handle_alloc_error(layout);
+    }
+    ptr
+}
+
+unsafe extern "C" fn dealloc_rs(ptr: *mut u8, size: usize) -> usize {
+    use std::alloc::{dealloc, Layout};
+    unsafe { dealloc(ptr, Layout::from_size_align(size, 4).unwrap()) };
+    0
+}
+
+unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
+    std::ptr::copy(src, dst, count);
+}
+
 fn main() {
     println!("Beginning compilation...");
     #[cfg(debug_assertions)]
@@ -187,41 +222,6 @@ fn main() {
         Arc::clone(&isa),
         cranelift_module::default_libcall_names(),
     );
-
-    extern "C" fn print_int(n: usize) -> usize {
-        println!("{n}");
-        0
-    }
-
-    extern "C" fn print_float(f: f32) {
-        println!("{f}");
-    }
-
-    unsafe extern "C" fn print_str(str_ptr: *const u8, length: usize) {
-        let _ = std::io::stdout()
-            .lock()
-            .write(unsafe { std::slice::from_raw_parts(str_ptr, length) });
-    }
-
-    unsafe extern "C" fn alloc_rs(size: usize) -> *mut u8 {
-        use std::alloc::{alloc, handle_alloc_error, Layout};
-        let layout = Layout::from_size_align(size, 4).unwrap();
-        let ptr = unsafe { alloc(layout) };
-        if ptr.is_null() {
-            handle_alloc_error(layout);
-        }
-        ptr
-    }
-
-    unsafe extern "C" fn dealloc_rs(ptr: *mut u8, size: usize) -> usize {
-        use std::alloc::{dealloc, Layout};
-        unsafe { dealloc(ptr, Layout::from_size_align(size, 4).unwrap()) };
-        0
-    }
-
-    unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
-        std::ptr::copy(src, dst, count);
-    }
 
     builder.symbol("print_int", print_int as *const u8);
     builder.symbol("print_float", print_float as *const u8);

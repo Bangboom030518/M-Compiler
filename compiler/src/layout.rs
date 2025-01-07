@@ -1,4 +1,4 @@
-use crate::declarations::{self, Declarations, ScopeId};
+use crate::declarations::{self, Declarations};
 use crate::SemanticError;
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
