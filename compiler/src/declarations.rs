@@ -74,6 +74,7 @@ pub struct FuncReference {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[deprecated = "use ast structs instead"]
 struct Type {
     kind: TypeKind,
     parent_scope: ScopeId,
@@ -97,6 +98,7 @@ impl TypeKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[deprecated = "use ast structs instead"]
 pub enum GenericFunction {
     Internal {
         function: parser::Function,
