@@ -359,6 +359,7 @@ impl<'a> Builder<'a> {
             self.declarations
                 .check_expression_type(argument, parameter)?;
         }
+
         self.declarations
             .check_expression_type(&call_expression, &signature.return_type)?;
         Ok(call_expression)

@@ -44,35 +44,3 @@ block0(v0: i64):
     v10 = load.i8 v9
     return v10
 }
-function u0:0(i64, i64) -> i64 system_v {
-    ss0 = explicit_slot 16
-    ss1 = explicit_slot 8
-    ss2 = explicit_slot 8
-    sig0 = (i64, i64, i64) -> i64 system_v
-    sig1 = (i64, i64, i64) -> i64 system_v
-    sig2 = (i64, i64, i64) -> i64 system_v
-    fn0 = %Memmove sig0
-    fn1 = %Memmove sig1
-    fn2 = %Memcpy sig2
-
-block0(v0: i64, v1: i64):
-    v2 = stack_addr.i64 ss0
-    v3 = iconst.i64 8
-    v14 = iconst.i64 8
-    v4 = iadd v2, v14  ; v14 = 8
-    v15 = stack_addr.i64 ss1
-    store notrap v0, v15
-    v5 = stack_addr.i64 ss1
-    v6 = call fn0(v4, v5, v3)  ; v3 = 8
-    v7 = iconst.i64 8
-    v16 = iconst.i64 0
-    v8 = iadd v2, v16  ; v16 = 0
-    v9 = iconst.i64 4
-    v17 = stack_addr.i64 ss2
-    store notrap v9, v17  ; v9 = 4
-    v10 = stack_addr.i64 ss2
-    v11 = call fn1(v8, v10, v7)  ; v7 = 8
-    v12 = iconst.i64 16
-    v13 = call fn2(v1, v2, v12)  ; v12 = 16
-    return v1
-}
