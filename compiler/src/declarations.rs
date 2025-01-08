@@ -313,26 +313,18 @@ impl Declarations {
         arguments: Vec<Reference>,
         parameter_scope: ScopeId,
     ) -> Result<ScopeId, SemanticError> {
-        let generics = if arguments.is_empty() {
-            parameters
-                .generics
-                .into_iter()
-                .map(|parameter| (parameter.value.name.value.0, self.create_uninitialised()))
-                .collect()
-        } else {
-            if arguments.len() != parameters.generics.len() {
-                return Err(SemanticError::GenericParametersMismatch);
-            }
+        if arguments.len() != parameters.generics.len() {
+            return Err(SemanticError::GenericParametersMismatch);
+        }
 
-            iter::zip(parameters.generics, arguments)
-                .map(|(parameter, argument)| {
-                    (
-                        parameter.value.name.value.0,
-                        self.create(Declaration::Alias(argument)),
-                    )
-                })
-                .collect()
-        };
+        let generics = iter::zip(parameters.generics, arguments)
+            .map(|(parameter, argument)| {
+                (
+                    parameter.value.name.value.0,
+                    self.create(Declaration::Alias(argument)),
+                )
+            })
+            .collect();
         Ok(self.create_scope(TopLevelScope {
             declarations: generics,
             parent: Some(parameter_scope),
@@ -424,6 +416,7 @@ impl Declarations {
         let Some(declaration) = self.get(id) else {
             return Ok(None);
         };
+
         match declaration {
             Declaration::Length(length) => Ok(Some(*length)),
             Declaration::Resolved(..) => Err(SemanticError::InvalidLengthGeneric),

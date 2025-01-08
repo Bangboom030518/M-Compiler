@@ -20,7 +20,7 @@ fn print_str @extern("print_str", fn(USize, USize) Void)
 fn[T, @length L] Slice[T] slice(Array[T, L] array)
     Slice[T]
         ptr = @addr(array),
-        length = 4,
+        length = L,
     end
 end
 
@@ -38,7 +38,7 @@ fn[T] UInt8 eq(T left, T right)
 end
 
 fn UInt8 main()
-    let data = slice("Hi!\n")
+    let data = slice[UInt8, 4]("Hi!\n")
 	print(data)
     // let result = if eq(not_rand(), 42) then 1 else 2 end
 	// print_int(result)

@@ -489,6 +489,36 @@ where
         Ok(BranchStatus::Continue(value))
     }
 
+    fn integer_const(
+        &mut self,
+        value: u128,
+        layout: &Layout,
+    ) -> Result<BranchStatus<Value>, SemanticError> {
+        let Layout::Primitive(primitive) = layout else {
+            return Err(SemanticError::UnexpectedNumberLiteral);
+        };
+
+        let cranelift_type = match primitive {
+            PrimitiveKind::I8 | PrimitiveKind::U8 => types::I8,
+            PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
+            PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
+            PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
+            PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
+            PrimitiveKind::USize => self.declarations.isa.pointer_type(),
+            _ => return Err(SemanticError::UnexpectedNumberLiteral),
+        };
+
+        let value = self
+            .builder
+            .ins()
+            .iconst(cranelift_type, i64::try_from(value)?);
+
+        Ok(BranchStatus::Continue(self.put_in_stack_slot(
+            value,
+            primitive.size(self.declarations.isa.pointer_bytes().into()),
+        )))
+    }
+
     fn expression(
         &mut self,
         hir::Typed {
@@ -499,31 +529,7 @@ where
         let layout = self.declarations.insert_layout_initialised(&type_ref);
 
         let value = match expression {
-            hir::Expression::IntegerConst(int) => {
-                let Layout::Primitive(primitive) = layout? else {
-                    return Err(SemanticError::UnexpectedNumberLiteral);
-                };
-
-                let cranelift_type = match primitive {
-                    PrimitiveKind::I8 | PrimitiveKind::U8 => types::I8,
-                    PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
-                    PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
-                    PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
-                    PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
-                    PrimitiveKind::USize => self.declarations.isa.pointer_type(),
-                    _ => return Err(SemanticError::UnexpectedNumberLiteral),
-                };
-
-                let value = self
-                    .builder
-                    .ins()
-                    .iconst(cranelift_type, i64::try_from(int)?);
-
-                BranchStatus::Continue(self.put_in_stack_slot(
-                    value,
-                    primitive.size(self.declarations.isa.pointer_bytes().into()),
-                ))
-            }
+            hir::Expression::IntegerConst(int) => self.integer_const(int, &layout?)?,
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
                     Layout::Primitive(PrimitiveKind::F32) => {
@@ -598,7 +604,12 @@ where
             }
             hir::Expression::Call(call) => self.call(*call)?,
             hir::Expression::Generixed(_) => todo!("generixed"),
-            hir::Expression::GlobalAccess(_) => todo!("global access"),
+            hir::Expression::GlobalAccess(id) => {
+                let length = self.declarations.get_initialised_length(id)?;
+
+                // TODO: strictness: lengths must be usize?
+                self.integer_const(length.into(), &layout?)?
+            }
             hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };
 
