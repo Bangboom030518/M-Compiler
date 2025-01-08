@@ -32,7 +32,7 @@ enum Constraint {
         struct_type: Reference,
     },
     ArrayLength {
-        expected_length: u128,
+        expected_length: u32,
         array_type: Reference,
     },
 }
@@ -380,7 +380,7 @@ impl<'a> Builder<'a> {
                     let expression =
                         Expression::StringConst(string.clone()).typed(self.declarations);
                     self.struct_constraints.push(Constraint::ArrayLength {
-                        expected_length: string.len() as u128,
+                        expected_length: string.len() as u32,
                         array_type: expression.type_ref.clone(),
                     });
                     Ok(expression)

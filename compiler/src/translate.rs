@@ -320,9 +320,7 @@ where
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
-            let BranchStatus::Continue(value) =
-                self.load_primitive(expression).inspect_err(|_| dbg!())?
-            else {
+            let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
                 return Ok(BranchStatus::Finished);
             };
             arguments.push(value);
@@ -465,12 +463,12 @@ where
             });
         };
         let bytes = string.as_bytes().to_vec();
-        let length = self.declarations.get_length(array.length)?;
+        let length = self.declarations.get_initialised_length(array.length)?;
         let element_type = self
             .declarations
             .insert_layout_initialised(&array.element_type)?;
 
-        if length != bytes.len() as u128 || element_type != Layout::Primitive(PrimitiveKind::U8) {
+        if length != bytes.len() as u32 || element_type != Layout::Primitive(PrimitiveKind::U8) {
             return Err(SemanticError::InvalidStringConst {
                 expected: layout.clone(),
             });

@@ -298,16 +298,18 @@ impl Parse for PrimitiveKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Length {
-    Literal(u128),
+    Literal(u32),
     Ident(Ident),
 }
 
 impl Parse for Length {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        parser
-            .parse()
-            .map_spanned(Self::Ident)
-            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
+        parser.parse().map_spanned(Self::Ident).or_else(|_| {
+            parser
+                .take_integer()
+                .map_spanned(|length| length as u32)
+                .map_spanned(Self::Literal)
+        })
     }
 }
 

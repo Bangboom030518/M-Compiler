@@ -56,11 +56,7 @@ pub enum SemanticError {
     #[error("Incorrect function arity was assumed")]
     InvalidNumberOfArguments,
     #[error("Mismatched types.\nexpected '{expected:?}',\nfound    '{found:?}'.")]
-    MismatchedTypes {
-        expected: Layout,
-        found: Layout,
-        expression: hir::Expression,
-    },
+    MismatchedTypes { expected: Layout, found: Layout },
     #[error("Missing a struct field that must be specified")]
     MissingStructField,
     #[error("Was stoopid and tried to access the field of a non-struct type")]
@@ -97,7 +93,7 @@ pub enum SemanticError {
     #[error("Expected a type to be an array based on usage")]
     ExpectedArray,
     #[error("Expected array of length {expected}, found array of length {found}")]
-    LengthMismatch { expected: u128, found: u128 },
+    LengthMismatch { expected: u32, found: u32 },
 }
 
 struct FunctionCompiler {

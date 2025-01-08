@@ -84,7 +84,7 @@ impl ConcreteFunction {
 enum Declaration {
     Resolved(parser::Declaration, ScopeId),
     Alias(Reference),
-    Length(u128),
+    Length(u32),
 }
 
 pub struct Declarations {
@@ -154,9 +154,8 @@ impl Declarations {
             .collect()
     }
 
-    pub fn check_length(&mut self, expected: u128, found: Id) -> Result<(), SemanticError> {
-        if self.is_initialised(found) {
-            let found = self.get_length(found)?;
+    pub fn check_length(&mut self, expected: u32, found: Id) -> Result<(), SemanticError> {
+        if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
             } else {
@@ -168,33 +167,45 @@ impl Declarations {
         }
     }
 
+    fn assert_equivalent(
+        &mut self,
+        expected: &Reference,
+        found: &Reference,
+    ) -> Result<(), SemanticError> {
+        if !self.is_initialised(found.id) {
+            self.initialise(found.id, Declaration::Alias(expected.clone()));
+            return Ok(());
+        } else if !self.is_initialised(expected.id) {
+            self.initialise(expected.id, Declaration::Alias(found.clone()));
+            return Ok(());
+        }
+
+        if expected.id == found.id {
+            if expected.generics.len() != found.generics.len() {
+                todo!("generics mismatch")
+            }
+            for (expected, found) in iter::zip(&expected.generics, &found.generics) {
+                self.assert_equivalent(expected, found)?;
+            }
+            return Ok(());
+        }
+
+        let expected = self.insert_layout(expected)?;
+        let found = self.insert_layout(found)?;
+        Err(SemanticError::MismatchedTypes {
+            expected: expected.unwrap(),
+            found: found.unwrap(),
+        })
+    }
+
     pub fn check_expression_type(
         &mut self,
         expression: &Typed<hir::Expression>,
         expected: &Reference,
     ) -> Result<(), SemanticError> {
-        todo!("for each of the generics within the type_ref, assert they are equivalent :)");
         let expected = expected.resolve(self);
         let found = expression.type_ref.resolve(self);
-
-        if expected == found {
-            Ok(())
-        } else if !self.is_initialised(found.id) {
-            self.initialise(found.id, Declaration::Alias(expected.clone()));
-            Ok(())
-        } else if !self.is_initialised(expected.id) {
-            self.initialise(expected.id, Declaration::Alias(found.clone()));
-            Ok(())
-        } else {
-            dbg!(&expected, &found);
-            let expected = self.insert_layout(&expected)?;
-            let found = self.insert_layout(&found)?;
-            Err(SemanticError::MismatchedTypes {
-                expected: expected.unwrap(),
-                found: found.unwrap(),
-                expression: expression.value.clone(),
-            })
-        }
+        self.assert_equivalent(&expected, &found)
     }
 
     /// # Errors
@@ -404,9 +415,17 @@ impl Declarations {
         self.concrete_functions.get(func_reference)
     }
 
-    pub fn get_length(&self, id: Id) -> Result<u128, SemanticError> {
-        match self.get(id).ok_or(SemanticError::UnknownDeclaration)? {
-            Declaration::Length(length) => Ok(*length),
+    pub fn get_initialised_length(&self, id: Id) -> Result<u32, SemanticError> {
+        self.get_length(id)?
+            .ok_or(SemanticError::UnknownDeclaration)
+    }
+
+    fn get_length(&self, id: Id) -> Result<Option<u32>, SemanticError> {
+        let Some(declaration) = self.get(id) else {
+            return Ok(None);
+        };
+        match declaration {
+            Declaration::Length(length) => Ok(Some(*length)),
             Declaration::Resolved(..) => Err(SemanticError::InvalidLengthGeneric),
             Declaration::Alias(alias) => {
                 let reference = alias.resolve(self);

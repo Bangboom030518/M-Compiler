@@ -100,15 +100,17 @@ impl Parse for GenericArguments {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericArgument {
     Type(Type),
-    Literal(u128),
+    Literal(u32),
 }
 
 impl Parse for GenericArgument {
     fn parse(parser: &mut Parser) -> Result<Spanned<Self>, Error> {
-        parser
-            .parse()
-            .map_spanned(Self::Type)
-            .or_else(|_| parser.take_integer().map_spanned(Self::Literal))
+        parser.parse().map_spanned(Self::Type).or_else(|_| {
+            parser
+                .take_integer()
+                .map_spanned(|length| length as u32)
+                .map_spanned(Self::Literal)
+        })
     }
 }
 
