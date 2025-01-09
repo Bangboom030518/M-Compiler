@@ -18,9 +18,10 @@ fn copy_rs @extern("copy_rs", fn(USize, USize, USize) Void)
 fn print_str @extern("print_str", fn(USize, USize) Void)
 
 fn[T, @length L] Slice[T] slice(Array[T, L] array)
+	print_int(L)
     Slice[T]
         ptr = @addr(array),
-        length = L,
+        length = 4,
     end
 end
 

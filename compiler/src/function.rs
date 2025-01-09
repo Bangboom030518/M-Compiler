@@ -164,6 +164,7 @@ impl Internal {
             .into_iter()
             .map(|r#type| r#type.ok_or(SemanticError::UntypedParameter))
             .collect::<Result<Vec<_>, _>>()?;
+
         let return_type = function
             .return_type
             .ok_or(SemanticError::MissingReturnType)?;
@@ -212,6 +213,7 @@ impl Internal {
             &mut cranelift_context.context.func,
             &mut cranelift_context.builder_context,
         );
+
         let signature = self
             .signature
             .clone()

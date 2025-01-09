@@ -44,3 +44,48 @@ block0(v0: i64):
     v10 = load.i8 v9
     return v10
 }
+function u0:0(i64, i64) -> i64 system_v {
+    ss0 = explicit_slot 4
+    ss1 = explicit_slot 4
+    ss2 = explicit_slot 16
+    ss3 = explicit_slot 8
+    ss4 = explicit_slot 8
+    sig0 = (i32) -> i32 system_v
+    sig1 = (i64, i64, i64) -> i64 system_v
+    sig2 = (i64, i64, i64) -> i64 system_v
+    sig3 = (i64, i64, i64) -> i64 system_v
+    fn0 = u0:4 sig0
+    fn1 = %Memmove sig1
+    fn2 = %Memmove sig2
+    fn3 = %Memcpy sig3
+
+block0(v0: i64, v1: i64):
+    v2 = iconst.i32 4
+    v19 = stack_addr.i64 ss0
+    store notrap v2, v19  ; v2 = 4
+    v3 = stack_addr.i64 ss0
+    v4 = load.i32 v3
+    v5 = call fn0(v4)
+    v20 = stack_addr.i64 ss1
+    store notrap v5, v20
+    v6 = stack_addr.i64 ss1
+    v7 = stack_addr.i64 ss2
+    v8 = iconst.i64 8
+    v21 = iconst.i64 8
+    v9 = iadd v7, v21  ; v21 = 8
+    v22 = stack_addr.i64 ss3
+    store notrap v0, v22
+    v10 = stack_addr.i64 ss3
+    v11 = call fn1(v9, v10, v8)  ; v8 = 8
+    v12 = iconst.i64 8
+    v23 = iconst.i64 0
+    v13 = iadd v7, v23  ; v23 = 0
+    v14 = iconst.i64 4
+    v24 = stack_addr.i64 ss4
+    store notrap v14, v24  ; v14 = 4
+    v15 = stack_addr.i64 ss4
+    v16 = call fn2(v13, v15, v12)  ; v12 = 8
+    v17 = iconst.i64 16
+    v18 = call fn3(v1, v7, v17)  ; v17 = 16
+    return v1
+}

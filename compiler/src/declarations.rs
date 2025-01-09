@@ -155,6 +155,7 @@ impl Declarations {
     }
 
     pub fn check_length(&mut self, expected: u32, found: Id) -> Result<(), SemanticError> {
+        let found = found.to_type_ref().resolve(self).id;
         if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
@@ -284,7 +285,8 @@ impl Declarations {
                 let element_type = self.lookup_type(&array.element_type.value, scope)?;
                 let length = match array.length.value {
                     parser::Length::Ident(ident) => {
-                        self.lookup(&ident.spanned(array.length.span), scope)?
+                        let id = self.lookup(&ident.spanned(array.length.span), scope)?;
+                        id
                     }
                     parser::Length::Literal(length) => self.create(Declaration::Length(length)),
                 };
@@ -355,6 +357,11 @@ impl Declarations {
     }
 
     fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
+        assert!(
+            self.store[index].is_none(),
+            "tried to overwrite existing declaration: found '{:?}'",
+            self.store[index]
+        );
         self.store[index] = Some(declaration);
     }
 
@@ -364,7 +371,7 @@ impl Declarations {
     /// If the declaration at `Id` does not exist
     #[must_use]
     fn get(&self, Id(id): Id) -> Option<&Declaration> {
-        self.store.get(id).expect("`Id` exists").as_ref()
+        self.store[id].as_ref()
     }
 
     pub fn declare_function(

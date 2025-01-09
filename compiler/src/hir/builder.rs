@@ -77,7 +77,7 @@ impl Constraint {
 
 pub struct Builder<'a> {
     declarations: &'a mut declarations::Declarations,
-    top_level_scope: ScopeId,
+    scope: ScopeId,
     return_type: Reference,
     variables: HashMap<VariableId, Reference>,
     local_scopes: Vec<HashMap<String, Variable>>,
@@ -102,7 +102,7 @@ impl<'a> Builder<'a> {
 
         Self {
             declarations,
-            top_level_scope: function.signature.scope,
+            scope: function.signature.scope,
             variables,
             new_variable_index,
             return_type: function.signature.return_type.clone(),
@@ -193,8 +193,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let global = self.declarations.lookup(ident, self.top_level_scope)?;
-
+        let global = self.declarations.lookup(ident, self.scope)?;
         Ok(Expression::GlobalAccess(global).typed(self.declarations))
     }
 
@@ -237,7 +236,7 @@ impl<'a> Builder<'a> {
     ) -> Result<hir::Typed<Expression>, SemanticError> {
         let struct_type = self
             .declarations
-            .lookup_type(&constructor.r#type.value, self.top_level_scope)?;
+            .lookup_type(&constructor.r#type.value, self.scope)?;
 
         let fields = constructor
             .fields
@@ -284,9 +283,7 @@ impl<'a> Builder<'a> {
                 ))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
-                let expected = self
-                    .declarations
-                    .lookup_type(&r#type.value, self.top_level_scope)?;
+                let expected = self.declarations.lookup_type(&r#type.value, self.scope)?;
 
                 let expression = self.expression(expression.as_ref().as_ref())?;
                 self.declarations
@@ -447,7 +444,7 @@ impl<'a> Builder<'a> {
                     expression: self.expression(generixed.expression.as_ref())?,
                     generics: self
                         .declarations
-                        .build_generics(&generixed.generics.value.0, self.top_level_scope)?,
+                        .build_generics(&generixed.generics.value.0, self.scope)?,
                 }))
                 .typed(self.declarations))
             }
