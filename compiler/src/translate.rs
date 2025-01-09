@@ -314,7 +314,11 @@ where
             generics,
         };
 
-        let function = self.declarations.insert_function(&reference)?;
+        let function = self
+            .declarations
+            .get_function(&reference)
+            .expect("function doesn't exist")
+            .clone();
 
         self.function_compiler.push(reference.clone());
 

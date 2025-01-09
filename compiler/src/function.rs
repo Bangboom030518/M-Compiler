@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
@@ -14,6 +16,7 @@ pub struct MSignature {
     pub parameters: Vec<Reference>,
     pub return_type: Reference,
     pub name: Spanned<parser::Ident>,
+    pub symbol: String,
     pub scope: ScopeId,
     call_conv: Option<CallConv>,
     signature: Option<Signature>,
@@ -25,6 +28,7 @@ impl MSignature {
         return_type: &Spanned<parser::Type>,
         declarations: &mut Declarations,
         name: Spanned<parser::Ident>,
+        symbol: String,
         scope: ScopeId,
         call_conv: Option<CallConv>,
     ) -> Result<Self, SemanticError> {
@@ -40,6 +44,7 @@ impl MSignature {
             name,
             call_conv,
             scope,
+            symbol,
             signature: None,
         })
     }
@@ -99,7 +104,6 @@ impl MSignature {
 pub struct External {
     pub signature: MSignature,
     pub id: Option<FuncId>,
-    pub symbol: Spanned<String>,
 }
 
 impl External {
@@ -118,6 +122,7 @@ impl External {
             &function.return_type,
             declarations,
             function.name,
+            function.symbol.value,
             scope,
             Some(call_conv),
         )?;
@@ -125,7 +130,6 @@ impl External {
         Ok(Self {
             signature,
             id: None,
-            symbol: function.symbol,
         })
     }
 }
@@ -148,6 +152,14 @@ impl Internal {
         generic_arguments: Vec<Reference>,
         parameter_scope: ScopeId,
     ) -> Result<Self, SemanticError> {
+        let symbol = if function.generic_parameters.value.generics.is_empty() {
+            function.name.value.0.clone()
+        } else {
+            let mut hasher = std::hash::DefaultHasher::new();
+            generic_arguments.hash(&mut hasher);
+            format!("{}[{}]", function.name.value.0, hasher.finish())
+        };
+
         let scope = declarations.create_generic_scope(
             function.generic_parameters.value,
             generic_arguments,
@@ -174,6 +186,7 @@ impl Internal {
             &return_type,
             declarations,
             function.name,
+            symbol,
             scope,
             None,
         )?;

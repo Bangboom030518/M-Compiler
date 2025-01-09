@@ -43,13 +43,13 @@ pub enum SemanticError {
     IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
     #[error("Attempt to assign incorrect type to a variable")]
     InvalidAssignment,
-    #[error("Declaration not found: '{}'", 0.0)]
+    #[error("Declaration not found: '{}'", .0.value)]
     DeclarationNotFound(Spanned<parser::Ident>),
     #[error("Expected a type")]
     InvalidType,
     #[error("Expected a function")]
     InvalidFunction,
-    #[error("Couldn't infer type of parameter")]
+    #[error("Couldn't infer typeof parameter")]
     UntypedParameter,
     #[error("Couldn't infer type of return")]
     MissingReturnType,
@@ -185,7 +185,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../slice-cp.m");
+    let input = include_str!("../../examples/sort.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {

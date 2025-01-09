@@ -17,31 +17,21 @@ fn dealloc_rs @extern("dealloc_rs", fn(USize, USize) USize)
 fn copy_rs @extern("copy_rs", fn(USize, USize, USize) Void)
 fn print_str @extern("print_str", fn(USize, USize) Void)
 
-fn[T, @length L] Slice[T] slice(Array[T, L] array)
-    Slice[T]
-        ptr = @addr(array),
-        length = 4,
-    end
-end
-
 fn UInt8 print(Slice[UInt8] data)
     print_str(data.ptr, data.length)
 	0
 end
 
-fn UInt32 not_rand()
-    42
-end
-
-fn[T] UInt8 eq(T left, T right)
-	@eq(left, right)
+fn[T, @length L] Slice[T] slice(Array[T, L] array)
+    Slice[T]
+        ptr = @addr(array),
+        length = L,
+    end
 end
 
 fn UInt8 main()
     let data = slice("Hi!\n")
 	print(data)
-    let result = if eq[UInt32](not_rand(), 42) then 1 else 2 end
-	print_int(result)
     0
 end
 

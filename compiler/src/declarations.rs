@@ -28,7 +28,6 @@ pub struct ScopeId(usize);
 pub const TOP_LEVEL_SCOPE: ScopeId = ScopeId(0);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-
 pub struct Reference {
     pub id: Id,
     pub generics: Vec<Reference>,
@@ -183,7 +182,7 @@ impl Declarations {
 
         if expected.id == found.id {
             if expected.generics.len() != found.generics.len() {
-                todo!("generics mismatch")
+                return Err(SemanticError::GenericParametersMismatch);
             }
             for (expected, found) in iter::zip(&expected.generics, &found.generics) {
                 self.assert_equivalent(expected, found)?;
@@ -389,11 +388,12 @@ impl Declarations {
 
                 let id = module
                     .declare_function(
-                        &function.signature.name.value.0,
+                        &function.signature.symbol,
                         cranelift_module::Linkage::Export,
                         &cranelift_signature,
                     )
-                    .expect("internal module error");
+                    .unwrap_or_else(|err| panic!("internal module error: {err}"));
+
                 function.id = Some(id);
                 id
             }
@@ -405,11 +405,11 @@ impl Declarations {
                 let cranelift_signature = function.signature.cranelift_signature(module, self)?;
                 let id = module
                     .declare_function(
-                        &function.symbol.value,
+                        &function.signature.symbol,
                         cranelift_module::Linkage::Import,
                         &cranelift_signature,
                     )
-                    .expect("internal module error");
+                    .unwrap_or_else(|err| panic!("internal module error: {err}"));
                 function.id = Some(id);
                 id
             }
@@ -418,8 +418,9 @@ impl Declarations {
         Ok(id)
     }
 
-    pub fn get_function(&self, func_reference: &Reference) -> Option<&ConcreteFunction> {
-        self.concrete_functions.get(func_reference)
+    pub fn get_function(&self, reference: &Reference) -> Option<&ConcreteFunction> {
+        let reference = reference.resolve(self);
+        self.concrete_functions.get(&reference)
     }
 
     pub fn get_initialised_length(&self, id: Id) -> Result<u32, SemanticError> {
@@ -448,16 +449,16 @@ impl Declarations {
 
     pub fn insert_function(
         &mut self,
-        func_reference: &Reference,
+        reference: &Reference,
     ) -> Result<ConcreteFunction, SemanticError> {
-        let func_reference = func_reference.resolve(self);
+        let reference = reference.resolve(self);
 
-        if let Some(function) = self.concrete_functions.get(&func_reference) {
+        if let Some(function) = self.concrete_functions.get(&reference) {
             return Ok(function.clone());
         }
 
         let declaration = self
-            .get(func_reference.id)
+            .get(reference.id)
             .ok_or(SemanticError::UnknownDeclaration)?;
 
         let Declaration::Resolved(declaration, scope) = declaration else {
@@ -469,18 +470,22 @@ impl Declarations {
                 ConcreteFunction::External(function::External::new(function.clone(), self, *scope)?)
             }
             parser::Declaration::Function(function) => {
+                assert_eq!(
+                    reference.generics.len(),
+                    function.generic_parameters.value.generics.len()
+                );
+
                 ConcreteFunction::Internal(function::Internal::new(
                     function.clone(),
                     self,
-                    func_reference.generics.clone(),
+                    reference.generics.clone(),
                     *scope,
                 )?)
             }
             _ => return Err(SemanticError::InvalidFunction),
         };
 
-        self.concrete_functions
-            .insert(func_reference, function.clone());
+        self.concrete_functions.insert(reference, function.clone());
         Ok(function)
     }
 
