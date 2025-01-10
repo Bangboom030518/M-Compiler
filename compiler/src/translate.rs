@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use crate::declarations::{Declarations, Reference};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
 use crate::layout::Layout;
-use crate::{hir, FunctionCompiler, SemanticError};
+use crate::{errors, hir, Error, FunctionCompiler};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::Module;
@@ -50,10 +52,7 @@ where
         )
     }
 
-    pub fn statement(
-        &mut self,
-        statement: hir::Statement,
-    ) -> Result<BranchStatus<()>, SemanticError> {
+    pub fn statement(&mut self, statement: hir::Statement) -> Result<BranchStatus<()>, Error> {
         match statement {
             hir::Statement::Assignment(assignment) => {
                 let BranchStatus::Continue(left) = self.expression(assignment.left)? else {
@@ -101,7 +100,7 @@ where
             statements,
             expression,
         }: hir::Block,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         for statement in statements {
             if self.statement(statement)? == BranchStatus::Finished {
                 return Ok(BranchStatus::Finished);
@@ -117,12 +116,19 @@ where
             then_branch,
             else_branch,
         }: hir::If,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let condition_type = self
             .declarations
             .insert_layout_initialised(&condition.type_ref)?;
+
         if condition_type != Layout::Primitive(PrimitiveKind::U8) {
-            return Err(SemanticError::ExpectedBool);
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Bool,
+                    found: condition.type_ref,
+                },
+            });
         }
 
         let then_block = self.builder.create_block();
@@ -170,7 +176,7 @@ where
         &mut self,
         binary: hir::BinaryIntrinsic,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let BranchStatus::Continue(left) = self.load_primitive(binary.left)? else {
             return Ok(BranchStatus::Finished);
         };
@@ -178,9 +184,17 @@ where
         let BranchStatus::Continue(right) = self.load_primitive(binary.right)? else {
             return Ok(BranchStatus::Finished);
         };
+
         let Layout::Primitive(primitive) = layout else {
-            return Err(SemanticError::InvalidIntrinsic);
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Number,
+                    found: todo!(),
+                },
+            });
         };
+
         let value = if primitive.is_integer() {
             match binary.operator {
                 IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
@@ -224,7 +238,7 @@ where
         &mut self,
         access: hir::FieldAccess,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let struct_layout = self
             .declarations
             .insert_layout_initialised(&access.expression.type_ref)?;
@@ -238,7 +252,13 @@ where
         let offset = struct_layout
             .fields
             .get(&access.field.0)
-            .ok_or(SemanticError::NonExistentField)?
+            .ok_or_else(|| Error {
+                span: todo!(),
+                kind: errors::Kind::FieldNotFound {
+                    parent_struct: todo!(),
+                    field: access.field.0,
+                },
+            })?
             .offset;
 
         let offset = self.builder.ins().iconst(
@@ -255,7 +275,7 @@ where
         &mut self,
         constructor: hir::Constructor,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let struct_layout = layout.expect_struct()?;
 
         let stack_slot = self.builder.create_sized_stack_slot(StackSlotData {
@@ -269,6 +289,8 @@ where
             stack_slot,
             Offset32::new(0),
         );
+
+        // TODO: check all fields are provided for struct
 
         for (field, expression) in constructor.0 {
             let offset = struct_layout
@@ -297,7 +319,7 @@ where
         Ok(BranchStatus::Continue(addr))
     }
 
-    fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, SemanticError> {
+    fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, Error> {
         let (callable, generics) =
             if let hir::Expression::Generixed(generixed) = call.callable.value {
                 (generixed.expression.value, generixed.generics)
@@ -351,7 +373,17 @@ where
             arguments.push(addr);
         }
 
-        let func_id = self.declarations.declare_function(reference, self.module)?;
+        self.declarations.insert_function(&reference)?;
+        let function = self
+            .declarations
+            .get_function(&reference)
+            .expect("function not inserted");
+
+        let func_id = Arc::clone(function)
+            .signature()
+            .cranelift_declaration(self.module, self.declarations)?
+            .1;
+
         let func_ref = self.module.declare_func_in_func(func_id, self.builder.func);
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
@@ -397,7 +429,7 @@ where
     fn load_primitive(
         &mut self,
         expression: hir::Typed<hir::Expression>,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let layout = self
             .declarations
             .insert_layout_initialised(&expression.type_ref)?;
@@ -420,14 +452,17 @@ where
         Ok(BranchStatus::Continue(value))
     }
 
-    fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, SemanticError> {
+    fn store(&mut self, store: hir::Store) -> Result<BranchStatus<Value>, Error> {
         let layout = self
             .declarations
             .insert_layout_initialised(&store.pointer.type_ref)?;
         if layout != Layout::Primitive(PrimitiveKind::USize) {
-            return Err(SemanticError::InvalidAddr {
-                found: layout,
-                expression: store.pointer.value,
+            return Err(Error {
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Address,
+                    found: store.pointer.type_ref,
+                },
+                span: todo!(),
             });
         }
 
@@ -455,15 +490,19 @@ where
         &mut self,
         string: &str,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let data = self
             .module
             .declare_anonymous_data(false, false)
             .expect("Internal Module Error");
 
         let Layout::Array(array) = layout else {
-            return Err(SemanticError::InvalidStringConst {
-                expected: layout.clone(),
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::String,
+                    found: todo!(),
+                },
             });
         };
         let bytes = string.as_bytes().to_vec();
@@ -471,10 +510,22 @@ where
         let element_type = self
             .declarations
             .insert_layout_initialised(&array.element_type)?;
-
-        if length != bytes.len() as u32 || element_type != Layout::Primitive(PrimitiveKind::U8) {
-            return Err(SemanticError::InvalidStringConst {
-                expected: layout.clone(),
+        if length != bytes.len() as u32 {
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::MismatchedLengths {
+                    expected: length,
+                    found: bytes.len() as u32,
+                },
+            });
+        }
+        if element_type != Layout::Primitive(PrimitiveKind::U8) {
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::String,
+                    found: todo!(),
+                },
             });
         }
 
@@ -497,9 +548,15 @@ where
         &mut self,
         value: u128,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let Layout::Primitive(primitive) = layout else {
-            return Err(SemanticError::UnexpectedNumberLiteral);
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Integer,
+                    found: todo!(),
+                },
+            });
         };
 
         let cranelift_type = match primitive {
@@ -509,13 +566,24 @@ where
             PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
             PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
             PrimitiveKind::USize => self.declarations.isa.pointer_type(),
-            _ => return Err(SemanticError::UnexpectedNumberLiteral),
+            _ => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Integer,
+                        found: todo!(),
+                    },
+                })
+            }
         };
 
-        let value = self
-            .builder
-            .ins()
-            .iconst(cranelift_type, i64::try_from(value)?);
+        let value = self.builder.ins().iconst(
+            cranelift_type,
+            i64::try_from(value).map_err(|_| Error {
+                span: todo!(),
+                kind: errors::Kind::IntegerLiteralTooBig,
+            })?,
+        );
 
         Ok(BranchStatus::Continue(self.put_in_stack_slot(
             value,
@@ -529,7 +597,7 @@ where
             value: expression,
             type_ref,
         }: hir::Typed<hir::Expression>,
-    ) -> Result<BranchStatus<Value>, SemanticError> {
+    ) -> Result<BranchStatus<Value>, Error> {
         let layout = self.declarations.insert_layout_initialised(&type_ref);
 
         let value = match expression {
@@ -545,7 +613,15 @@ where
                         let value = self.builder.ins().f64const(Ieee64::from(float));
                         self.put_in_stack_slot(value, 8)
                     }
-                    _ => return Err(SemanticError::UnexpectedNumberLiteral),
+                    _ => {
+                        return Err(Error {
+                            span: todo!(),
+                            kind: errors::Kind::TypeConstraintViolation {
+                                constraint: errors::TypeConstraint::Float,
+                                found: type_ref,
+                            },
+                        })
+                    }
                 };
 
                 BranchStatus::Continue(value)

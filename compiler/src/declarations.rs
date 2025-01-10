@@ -1,6 +1,6 @@
 use crate::hir::{self, Typed};
 use crate::layout::{self, Array, Layout};
-use crate::{function, SemanticError};
+use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use cranelift_module::{FuncId, Module};
@@ -65,12 +65,12 @@ impl Reference {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ConcreteFunction {
+pub enum Function {
     Internal(function::Internal),
     External(function::External),
 }
 
-impl ConcreteFunction {
+impl Function {
     pub const fn signature(&self) -> &function::MSignature {
         match self {
             Self::Internal(function) => &function.signature,
@@ -90,7 +90,7 @@ pub struct Declarations {
     store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
     layouts: HashMap<Reference, Layout>,
-    concrete_functions: HashMap<Reference, ConcreteFunction>,
+    pub concrete_functions: HashMap<Reference, Arc<Function>>,
     pub isa: Arc<dyn TargetIsa>,
 }
 
@@ -136,7 +136,7 @@ impl Declarations {
         &mut self,
         generics: &[Spanned<parser::GenericArgument>],
         scope: ScopeId,
-    ) -> Result<Vec<Reference>, SemanticError> {
+    ) -> Result<Vec<Reference>, Error> {
         generics
             .iter()
             .map(|generic| match generic.as_ref().value {
@@ -153,13 +153,16 @@ impl Declarations {
             .collect()
     }
 
-    pub fn check_length(&mut self, expected: u32, found: Id) -> Result<(), SemanticError> {
+    pub fn check_length(&mut self, expected: u32, found: Id) -> Result<(), Error> {
         let found = found.to_type_ref().resolve(self).id;
         if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
             } else {
-                Err(SemanticError::LengthMismatch { expected, found })
+                Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::MismatchedLengths { expected, found },
+                })
             }
         } else {
             self.initialise(found, Declaration::Length(expected));
@@ -167,11 +170,7 @@ impl Declarations {
         }
     }
 
-    fn assert_equivalent(
-        &mut self,
-        expected: &Reference,
-        found: &Reference,
-    ) -> Result<(), SemanticError> {
+    fn assert_equivalent(&mut self, expected: &Reference, found: &Reference) -> Result<(), Error> {
         if !self.is_initialised(found.id) {
             self.initialise(found.id, Declaration::Alias(expected.clone()));
             return Ok(());
@@ -182,7 +181,14 @@ impl Declarations {
 
         if expected.id == found.id {
             if expected.generics.len() != found.generics.len() {
-                return Err(SemanticError::GenericParametersMismatch);
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::MismatchedGenericArguments {
+                        arguments: found.generics.len(),
+                        parameters: expected.generics.len(),
+                        declaration: todo!("is this error internal"),
+                    },
+                });
             }
             for (expected, found) in iter::zip(&expected.generics, &found.generics) {
                 self.assert_equivalent(expected, found)?;
@@ -190,11 +196,12 @@ impl Declarations {
             return Ok(());
         }
 
-        let expected = self.insert_layout(expected)?;
-        let found = self.insert_layout(found)?;
-        Err(SemanticError::MismatchedTypes {
-            expected: expected.unwrap(),
-            found: found.unwrap(),
+        Err(Error {
+            kind: errors::Kind::MismatchedTypes {
+                expected: expected.clone(),
+                found: found.clone(),
+            },
+            span: todo!(),
         })
     }
 
@@ -202,7 +209,7 @@ impl Declarations {
         &mut self,
         expression: &Typed<hir::Expression>,
         expected: &Reference,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<(), Error> {
         let expected = expected.resolve(self);
         let found = expression.type_ref.resolve(self);
         self.assert_equivalent(&expected, &found)
@@ -213,21 +220,21 @@ impl Declarations {
     pub fn insert_layout_initialised(
         &mut self,
         type_reference: &Reference,
-    ) -> Result<Layout, SemanticError> {
+    ) -> Result<Layout, Error> {
         self.insert_layout(type_reference)
             .transpose()
-            .ok_or(SemanticError::UnknownDeclaration)?
+            .ok_or_else(|| Error {
+                kind: errors::Kind::CannotInferType,
+                span: 0..0, // TODO: don't ignore error in translate
+            })?
     }
 
-    pub fn insert_layout(
-        &mut self,
-        type_reference: &Reference,
-    ) -> Result<Option<Layout>, SemanticError> {
-        if let Some(layout) = self.layouts.get(type_reference) {
+    pub fn insert_layout(&mut self, reference: &Reference) -> Result<Option<Layout>, Error> {
+        if let Some(layout) = self.layouts.get(reference) {
             return Ok(Some(layout.clone()));
         }
 
-        let Some(layout) = self.get(type_reference.id).cloned() else {
+        let Some(layout) = self.get(reference.id).cloned() else {
             return Ok(None);
         };
 
@@ -235,15 +242,21 @@ impl Declarations {
             Declaration::Resolved(declaration, scope) => (declaration, scope),
             Declaration::Alias(reference) => return self.insert_layout(&reference),
             Declaration::Length(_) => {
-                return Err(SemanticError::InvalidType);
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::DeclarationConstraintViolation {
+                        constraint: errors::DeclarationConstraint::Type,
+                        found: reference.clone(),
+                    },
+                });
             }
         };
 
         let layout = match declaration {
             parser::Declaration::Struct(ast_struct) => {
                 let scope = self.create_generic_scope(
-                    ast_struct.generics.value,
-                    type_reference.generics.clone(),
+                    ast_struct.generics,
+                    reference.generics.clone(),
                     parent_scope,
                 )?;
 
@@ -255,10 +268,10 @@ impl Declarations {
                         field.value.name.value.0.clone(),
                         layout::Field {
                             type_ref: type_ref.clone(),
-                            offset: Offset32::new(
-                                i32::try_from(offset)
-                                    .map_err(|_| SemanticError::StructTooChonky)?,
-                            ),
+                            offset: Offset32::new(i32::try_from(offset).map_err(|_| Error {
+                                span: todo!(),
+                                kind: errors::Kind::StructTooBig,
+                            })?),
                         },
                     );
 
@@ -276,8 +289,8 @@ impl Declarations {
             parser::Declaration::Primitive(primitive) => Layout::Primitive(primitive.kind.value),
             parser::Declaration::Array(array) => {
                 let scope = self.create_generic_scope(
-                    array.generics.value,
-                    type_reference.generics.clone(),
+                    array.generics,
+                    reference.generics.clone(),
                     parent_scope,
                 )?;
 
@@ -295,10 +308,18 @@ impl Declarations {
                 })
             }
             parser::Declaration::Union(_) => todo!("unions"),
-            _ => return Err(SemanticError::InvalidType),
+            _ => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::DeclarationConstraintViolation {
+                        constraint: errors::DeclarationConstraint::Type,
+                        found: reference.clone(),
+                    },
+                })
+            }
         };
 
-        self.layouts.insert(type_reference.clone(), layout.clone());
+        self.layouts.insert(reference.clone(), layout.clone());
         Ok(Some(layout))
     }
 
@@ -310,22 +331,30 @@ impl Declarations {
 
     pub fn create_generic_scope(
         &mut self,
-        parameters: parser::generic::Parameters,
+        parameters: Spanned<parser::generic::Parameters>,
         arguments: Vec<Reference>,
         parameter_scope: ScopeId,
-    ) -> Result<ScopeId, SemanticError> {
+    ) -> Result<ScopeId, Error> {
         let generics = if arguments.is_empty() {
             parameters
+                .value
                 .generics
                 .into_iter()
                 .map(|parameter| (parameter.value.name.value.0, self.create_uninitialised()))
                 .collect()
         } else {
-            if arguments.len() != parameters.generics.len() {
-                return Err(SemanticError::GenericParametersMismatch);
+            if arguments.len() != parameters.value.generics.len() {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::MismatchedGenericArguments {
+                        arguments: arguments.len(),
+                        parameters: parameters.value.generics.len(),
+                        declaration: parameters.span,
+                    },
+                });
             }
 
-            iter::zip(parameters.generics, arguments)
+            iter::zip(parameters.value.generics, arguments)
                 .map(|(parameter, argument)| {
                     (
                         parameter.value.name.value.0,
@@ -373,101 +402,86 @@ impl Declarations {
         self.store[id].as_ref()
     }
 
-    pub fn declare_function(
-        &mut self,
-        func_reference: Reference,
-        module: &mut impl Module,
-    ) -> Result<FuncId, SemanticError> {
-        let mut function = self.insert_function(&func_reference)?;
-        let id = match &mut function {
-            ConcreteFunction::Internal(function) => {
-                if let Some(id) = function.id {
-                    return Ok(id);
-                }
-                let cranelift_signature = function.signature.cranelift_signature(module, self)?;
+    // pub fn declare_function(
+    //     &mut self,
+    //     func_reference: Reference,
+    //     module: &mut impl Module,
+    // ) -> Result<FuncId, SemanticError> {
+    //     self.insert_function(&func_reference)?;
+    //     let function = self
+    //         .get_function(&func_reference)
+    //         .expect("function not inserted");
 
-                let id = module
-                    .declare_function(
-                        &function.signature.symbol,
-                        cranelift_module::Linkage::Export,
-                        &cranelift_signature,
-                    )
-                    .unwrap_or_else(|err| panic!("internal module error: {err}"));
+    // }
 
-                function.id = Some(id);
-                id
-            }
-            ConcreteFunction::External(function) => {
-                if let Some(id) = function.id {
-                    return Ok(id);
-                }
-
-                let cranelift_signature = function.signature.cranelift_signature(module, self)?;
-                let id = module
-                    .declare_function(
-                        &function.signature.symbol,
-                        cranelift_module::Linkage::Import,
-                        &cranelift_signature,
-                    )
-                    .unwrap_or_else(|err| panic!("internal module error: {err}"));
-                function.id = Some(id);
-                id
-            }
-        };
-        self.concrete_functions.insert(func_reference, function);
-        Ok(id)
-    }
-
-    pub fn get_function(&self, reference: &Reference) -> Option<&ConcreteFunction> {
+    pub fn get_function(&self, reference: &Reference) -> Option<&Arc<Function>> {
         let reference = reference.resolve(self);
         self.concrete_functions.get(&reference)
     }
 
-    pub fn get_initialised_length(&self, id: Id) -> Result<u32, SemanticError> {
-        self.get_length(id)?
-            .ok_or(SemanticError::UnknownDeclaration)
+    pub fn get_initialised_length(&self, id: Id) -> Result<u32, Error> {
+        self.get_length(id)?.ok_or_else(|| Error {
+            span: todo!(),
+            kind: errors::Kind::CannotInferType,
+        })
     }
 
-    fn get_length(&self, id: Id) -> Result<Option<u32>, SemanticError> {
+    fn get_length(&self, id: Id) -> Result<Option<u32>, Error> {
         let Some(declaration) = self.get(id) else {
             return Ok(None);
         };
 
         match declaration {
             Declaration::Length(length) => Ok(Some(*length)),
-            Declaration::Resolved(..) => Err(SemanticError::InvalidLengthGeneric),
+            Declaration::Resolved(..) => Err(Error {
+                span: todo!(),
+                kind: errors::Kind::DeclarationConstraintViolation {
+                    constraint: errors::DeclarationConstraint::Length,
+                    found: id.to_type_ref(),
+                },
+            }),
             Declaration::Alias(alias) => {
                 let reference = alias.resolve(self);
                 if reference.generics.is_empty() {
                     self.get_length(reference.id)
                 } else {
-                    Err(SemanticError::UnexpectedGenerics)
+                    Err(Error {
+                        span: todo!(),
+                        kind: errors::Kind::MismatchedGenericArguments {
+                            arguments: reference.generics.len(),
+                            parameters: 0,
+                            declaration: todo!(),
+                        },
+                    })
                 }
             }
         }
     }
 
-    pub fn insert_function(
-        &mut self,
-        reference: &Reference,
-    ) -> Result<ConcreteFunction, SemanticError> {
+    pub fn insert_function(&mut self, reference: &Reference) -> Result<(), Error> {
         let reference = reference.resolve(self);
 
-        if let Some(function) = self.concrete_functions.get(&reference) {
-            return Ok(function.clone());
+        if self.get_function(&reference).is_some() {
+            return Ok(());
         }
 
         let declaration = self
             .get(reference.id)
-            .ok_or(SemanticError::UnknownDeclaration)?;
+            .ok_or_else(|| todo!("internal error?: func not initialised"))?;
 
         let Declaration::Resolved(declaration, scope) = declaration else {
-            return Err(SemanticError::InvalidFunction);
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::DeclarationConstraintViolation {
+                    constraint: errors::DeclarationConstraint::Function,
+                    found: reference.clone(),
+                },
+            });
         };
 
         let function = match declaration {
             parser::Declaration::ExternFunction(function) => {
-                ConcreteFunction::External(function::External::new(function.clone(), self, *scope)?)
+                Function::External(function::External::new(function.clone(), self, *scope)?)
             }
             parser::Declaration::Function(function) => {
                 assert_eq!(
@@ -475,32 +489,47 @@ impl Declarations {
                     function.generic_parameters.value.generics.len()
                 );
 
-                ConcreteFunction::Internal(function::Internal::new(
+                Function::Internal(function::Internal::new(
                     function.clone(),
                     self,
-                    reference.generics.clone(),
                     *scope,
+                    reference.generics.clone(),
                 )?)
             }
-            _ => return Err(SemanticError::InvalidFunction),
+            _ => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::DeclarationConstraintViolation {
+                        constraint: errors::DeclarationConstraint::Function,
+                        found: reference.clone(),
+                    },
+                })
+            }
         };
 
-        self.concrete_functions.insert(reference, function.clone());
-        Ok(function)
+        self.concrete_functions
+            .insert(reference, Arc::new(function));
+
+        Ok(())
     }
 
-    pub fn lookup(&self, ident: &Spanned<Ident>, scope: ScopeId) -> Result<Id, SemanticError> {
+    pub fn lookup(&self, ident: &Spanned<Ident>, scope: ScopeId) -> Result<Id, Error> {
         self.scopes[scope.0]
             .get(&ident.value.0)
             .or_else(|| self.lookup(ident, self.scopes[scope.0].parent?).ok())
-            .ok_or_else(|| SemanticError::DeclarationNotFound(ident.clone()))
+            .ok_or_else(|| Error {
+                span: ident.span.clone(),
+                kind: errors::Kind::DeclarationNotFound {
+                    ident: ident.value.0.clone(),
+                },
+            })
     }
 
     pub fn lookup_type(
         &mut self,
         r#type: &parser::Type,
         scope: ScopeId,
-    ) -> Result<Reference, SemanticError> {
+    ) -> Result<Reference, Error> {
         let id = self.lookup(&r#type.name, scope)?;
         let generics = self.build_generics(&r#type.generics.value.0, scope)?;
         Ok(Reference { id, generics })

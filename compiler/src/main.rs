@@ -1,16 +1,17 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::todo, clippy::dbg_macro)]
-#![feature(iter_collect_into)]
+#![feature(once_cell_try)]
 
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use declarations::{ConcreteFunction, Declarations, Reference};
-use layout::Layout;
+use declarations::{Declarations, Function, Reference};
+pub use errors::Error;
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
-use tokenizer::{AsSpanned, Spanned};
+use tokenizer::AsSpanned;
 
 mod declarations;
+mod errors;
 mod function;
 mod hir;
 mod layout;
@@ -35,67 +36,6 @@ impl<M> CraneliftContext<M> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
-pub enum SemanticError {
-    #[error("Number literal used as non-number")]
-    UnexpectedNumberLiteral,
-    #[error("Integer literal too thicc, phatt and chonky")]
-    IntegerLiteralTooBig(#[from] std::num::TryFromIntError),
-    #[error("Attempt to assign incorrect type to a variable")]
-    InvalidAssignment,
-    #[error("Declaration not found: '{}'", .0.value)]
-    DeclarationNotFound(Spanned<parser::Ident>),
-    #[error("Expected a type")]
-    InvalidType,
-    #[error("Expected a function")]
-    InvalidFunction,
-    #[error("Couldn't infer typeof parameter")]
-    UntypedParameter,
-    #[error("Couldn't infer type of return")]
-    MissingReturnType,
-    #[error("Incorrect function arity was assumed")]
-    InvalidNumberOfArguments,
-    #[error("Mismatched types.\nexpected '{expected:?}',\nfound    '{found:?}'.")]
-    MismatchedTypes { expected: Layout, found: Layout },
-    #[error("Missing a struct field that must be specified")]
-    MissingStructField,
-    #[error("Was stoopid and tried to access the field of a non-struct type")]
-    InvalidFieldAccess(Layout),
-    #[error("Tried to access a non-existent struct field")]
-    NonExistentField,
-    #[error("Tried to initialise non-reference type as a reference")]
-    InvalidAddr {
-        found: Layout,
-        expression: hir::Expression,
-    },
-    #[error("Actions have consequences! You used an intrinsic wrong and now you're on your own.")]
-    InvalidIntrinsic,
-    #[error("Used a string where a byte array wasn't expected (javascript developer 🤨)")]
-    InvalidStringConst { expected: Layout },
-    #[error("Invalid length generic")]
-    InvalidLengthGeneric,
-    #[error("Invalid type generic")]
-    InvalidTypeGeneric,
-    #[error("The wrong number of generics were passed to a function. Figure the rest out :)")]
-    GenericParametersMismatch,
-    #[error("Tried to put generics somewhere they don't belong.")]
-    UnexpectedGenerics,
-    #[error("Compiler couldn't figure out type or function")]
-    UnknownDeclaration,
-    #[error("A struct was created that was so violently overweight that its field offset exceeded 2^32-1 (`i32::MAX`). That's one thicc boi.")]
-    StructTooChonky,
-    #[error("Expected a bool, but found something else. Your guess is as good as mine as to what that is.")]
-    ExpectedBool,
-    #[error("Expected a type to be a struct based on usage")]
-    ExpectedStruct,
-    #[error("Attempted to use an array length greater than 2^32-1 (`u32::MAX`). That's one heckin' chonka.")]
-    LengthTooBig,
-    #[error("Expected a type to be an array based on usage")]
-    ExpectedArray,
-    #[error("Expected array of length {expected}, found array of length {found}")]
-    LengthMismatch { expected: u32, found: u32 },
-}
-
 struct FunctionCompiler {
     to_compile: Vec<Reference>,
     compiled: HashSet<Reference>,
@@ -117,12 +57,13 @@ impl FunctionCompiler {
         &mut self,
         declarations: &mut Declarations,
         context: &mut CraneliftContext<impl Module>,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<(), Error> {
         loop {
             let Some(func_ref) = self.to_compile.pop() else {
                 break;
             };
 
+            let func_ref = func_ref.resolve(declarations);
             if self.compiled.contains(&func_ref) {
                 continue;
             }
@@ -131,11 +72,13 @@ impl FunctionCompiler {
                 .get_function(&func_ref)
                 .expect("function not found");
 
-            let ConcreteFunction::Internal(internal) = function else {
+            let function = Arc::clone(function);
+
+            let Function::Internal(internal) = function.as_ref() else {
                 continue;
             };
 
-            internal.clone().compile(declarations, context, self)?;
+            internal.compile(declarations, context, self)?;
 
             self.compiled.insert(func_ref);
         }
@@ -239,13 +182,23 @@ fn main() {
         generics: Vec::new(),
     };
 
-    let main_func_id = declarations
-        .declare_function(main_ref.clone(), &mut context.module)
-        .unwrap();
+    declarations
+        .insert_function(&main_ref)
+        .expect("main to work");
+
+    let function = declarations
+        .get_function(&main_ref)
+        .expect("function not inserted");
+
+    let main_func_id = Arc::clone(function)
+        .signature()
+        .cranelift_declaration(&mut context.module, &mut declarations)
+        .expect("")
+        .1;
 
     FunctionCompiler::new(main_ref)
         .compile_all(&mut declarations, &mut context)
-        .unwrap_or_else(|error| panic!("{error}"));
+        .unwrap_or_else(|error| panic!("{error:?}"));
 
     context.module.finalize_definitions().unwrap();
 

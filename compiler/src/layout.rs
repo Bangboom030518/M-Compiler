@@ -1,5 +1,5 @@
 use crate::declarations::{self, Declarations};
-use crate::SemanticError;
+use crate::{errors, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
@@ -24,13 +24,13 @@ pub struct Array {
 }
 
 impl Array {
-    pub fn size(
-        &self,
-        declarations: &mut declarations::Declarations,
-    ) -> Result<u32, SemanticError> {
+    pub fn size(&self, declarations: &mut declarations::Declarations) -> Result<u32, Error> {
         let element_type = declarations.insert_layout_initialised(&self.element_type)?;
         let length = declarations.get_initialised_length(self.length)?;
-        let length = u32::try_from(length).map_err(|_| SemanticError::LengthTooBig)?;
+        let length = u32::try_from(length).map_err(|_| Error {
+            span: todo!(),
+            kind: errors::Kind::LengthTooBig,
+        })?;
         let size = element_type.size(declarations)? * length;
         Ok(size * length)
     }
@@ -44,7 +44,7 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub fn size(&self, declarations: &mut Declarations) -> Result<u32, SemanticError> {
+    pub fn size(&self, declarations: &mut Declarations) -> Result<u32, Error> {
         let size = match self {
             Self::Primitive(primitive) => {
                 primitive.size(u32::from(declarations.isa.pointer_bytes()))
@@ -56,17 +56,29 @@ impl Layout {
         Ok(size)
     }
 
-    pub const fn expect_struct(&self) -> Result<&Struct, SemanticError> {
+    pub const fn expect_struct(&self) -> Result<&Struct, Error> {
         match self {
             Self::Struct(struct_layout) => Ok(struct_layout),
-            _ => Err(SemanticError::ExpectedStruct),
+            _ => Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Struct,
+                    found: todo!(),
+                },
+            }),
         }
     }
 
-    pub const fn expect_array(&self) -> Result<&Array, SemanticError> {
+    pub const fn expect_array(&self) -> Result<&Array, Error> {
         match self {
             Self::Array(array) => Ok(array),
-            _ => Err(SemanticError::ExpectedArray),
+            _ => Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Array,
+                    found: todo!(),
+                },
+            }),
         }
     }
 

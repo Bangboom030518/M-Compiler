@@ -1,5 +1,4 @@
 #![feature(iter_collect_into)]
-
 use itertools::Itertools;
 
 macro_rules! define_token_enums {

@@ -6,7 +6,7 @@ pub mod generic;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct TypeBinding {
-    pub r#type: Option<Spanned<Type>>,
+    pub r#type: Spanned<Option<Type>>,
     pub name: Spanned<Ident>,
 }
 
@@ -20,12 +20,16 @@ impl TypeBinding {
         if peek(parser) && r#type.value.generics.value.0.is_empty() {
             let name = r#type.value.name;
             let span = name.span.clone();
-            Ok(Self { name, r#type: None }.spanned(span))
+            Ok(Self {
+                name,
+                r#type: None.spanned(span.start..span.start),
+            }
+            .spanned(span))
         } else {
             let name = parser.parse()?;
             let span = r#type.start()..name.end();
             Ok(Self {
-                r#type: Some(r#type),
+                r#type: Some(r#type.value).spanned(r#type.span),
                 name,
             }
             .spanned(span))
@@ -110,7 +114,7 @@ pub struct Function {
     pub name: Spanned<Ident>,
     pub generic_parameters: Spanned<generic::Parameters>,
     pub parameters: Vec<Spanned<Parameter>>,
-    pub return_type: Option<Spanned<Type>>,
+    pub return_type: Spanned<Option<Type>>,
     pub body: Vec<Spanned<Statement>>,
 }
 
@@ -122,16 +126,17 @@ impl Parse for Function {
             .start();
 
         let generics = parser.parse()?;
+        let return_type_span = parser.empty_span();
 
-        let mut return_type = parser.parse().ok();
+        let mut return_type = match parser.parse::<Type>() {
+            Ok(return_type) => Some(return_type.value).spanned(return_type.span),
+            Err(_) => None.spanned(return_type_span.clone()),
+        };
 
         let name = parser.parse().or_else({
-            |err| match return_type.clone() {
-                Some(Spanned {
-                    value: Type { name, generics },
-                    ..
-                }) if generics.value.0.is_empty() => {
-                    return_type = None;
+            |err| match return_type.clone().value {
+                Some(Type { name, generics }) if generics.value.0.is_empty() => {
+                    return_type = None.spanned(return_type_span);
                     Ok(name)
                 }
                 _ => Err(err),

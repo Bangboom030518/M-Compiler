@@ -1,7 +1,7 @@
 use super::{Store, Typed};
 use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::hir::{BinaryIntrinsic, Expression};
-use crate::{declarations, function, hir, SemanticError};
+use crate::{declarations, errors, function, hir, Error};
 use cranelift::prelude::*;
 use itertools::Itertools;
 use parser::expression::control_flow::If;
@@ -27,7 +27,7 @@ impl From<VariableId> for Variable {
 
 enum Constraint {
     StructField {
-        field: String,
+        field: Spanned<parser::Ident>,
         expression: hir::Typed<hir::Expression>,
         struct_type: Reference,
     },
@@ -40,22 +40,28 @@ enum Constraint {
 impl Constraint {
     /// Checks against constraint, returning a bool indicating whether or not the condition was
     /// able to be verified.
-    fn check(&self, declarations: &mut Declarations) -> Result<bool, SemanticError> {
+    fn check(&self, declarations: &mut Declarations) -> Result<bool, Error> {
         match self {
             Self::StructField {
-                struct_type,
+                struct_type: struct_type_ref,
                 expression,
                 field,
             } => {
-                let struct_type = declarations.insert_layout(struct_type)?;
+                let struct_type = declarations.insert_layout(struct_type_ref)?;
                 let Some(struct_type) = struct_type else {
                     return Ok(false);
                 };
                 let struct_type = struct_type.expect_struct()?;
                 let field = struct_type
                     .fields
-                    .get(field)
-                    .ok_or(SemanticError::NonExistentField)?;
+                    .get(&field.value.0)
+                    .ok_or_else(|| Error {
+                        span: field.span.clone(),
+                        kind: errors::Kind::FieldNotFound {
+                            parent_struct: struct_type_ref.clone(),
+                            field: field.value.0.clone(),
+                        },
+                    })?;
 
                 declarations.check_expression_type(expression, &field.type_ref)?;
             }
@@ -112,7 +118,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    pub fn build_body(mut self) -> Result<Vec<hir::Statement>, SemanticError> {
+    pub fn build_body(mut self) -> Result<Vec<hir::Statement>, Error> {
         let body = self
             .body
             .iter()
@@ -145,7 +151,7 @@ impl<'a> Builder<'a> {
     fn statement(
         &mut self,
         statement: Spanned<&parser::Statement>,
-    ) -> Result<hir::Statement, SemanticError> {
+    ) -> Result<hir::Statement, Error> {
         match statement.value {
             parser::Statement::Assignment(parser::Assignment { left, right }) => {
                 let left = self.expression(left.as_ref())?;
@@ -175,10 +181,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn lookup_ident(
-        &mut self,
-        ident: &Spanned<parser::Ident>,
-    ) -> Result<Typed<Expression>, SemanticError> {
+    fn lookup_ident(&mut self, ident: &Spanned<parser::Ident>) -> Result<Typed<Expression>, Error> {
         for scope in self.local_scopes.iter().rev() {
             if let Some(variable) = scope.get(&ident.value.0).copied() {
                 let variable = variable.into();
@@ -197,10 +200,7 @@ impl<'a> Builder<'a> {
         Ok(Expression::GlobalAccess(global).typed(self.declarations))
     }
 
-    fn block(
-        &mut self,
-        statements: &[Spanned<parser::Statement>],
-    ) -> Result<hir::Block, SemanticError> {
+    fn block(&mut self, statements: &[Spanned<parser::Statement>]) -> Result<hir::Block, Error> {
         self.local_scopes.push(HashMap::new());
 
         let Some((last, statements)) = statements.split_last() else {
@@ -213,7 +213,7 @@ impl<'a> Builder<'a> {
         let mut statements = statements
             .iter()
             .map(|statement| self.statement(statement.as_ref()))
-            .collect::<Result<Vec<_>, SemanticError>>()?;
+            .collect::<Result<Vec<_>, Error>>()?;
 
         let expression = if let parser::Statement::Expression(expression) = &last.value {
             Some(self.expression(expression.spanned(last.span.clone()))?)
@@ -233,7 +233,7 @@ impl<'a> Builder<'a> {
     fn constructor(
         &mut self,
         constructor: &parser::expression::Constructor,
-    ) -> Result<hir::Typed<Expression>, SemanticError> {
+    ) -> Result<hir::Typed<Expression>, Error> {
         let struct_type = self
             .declarations
             .lookup_type(&constructor.r#type.value, self.scope)?;
@@ -245,12 +245,12 @@ impl<'a> Builder<'a> {
                 let expression = self.expression(expression.as_ref())?;
                 self.struct_constraints.push(Constraint::StructField {
                     struct_type: struct_type.clone(),
-                    field: ident.value.0.clone(),
+                    field: ident.clone(),
                     expression: expression.clone(),
                 });
                 Ok((ident.value.0.clone(), expression))
             })
-            .collect::<Result<_, SemanticError>>()?;
+            .collect::<Result<_, Error>>()?;
 
         Ok(Typed::new(
             Expression::Constructor(hir::Constructor(fields)),
@@ -258,10 +258,7 @@ impl<'a> Builder<'a> {
         ))
     }
 
-    fn intrinsic_call(
-        &mut self,
-        intrinsic: &IntrinsicCall,
-    ) -> Result<Typed<Expression>, SemanticError> {
+    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<Typed<Expression>, Error> {
         match intrinsic {
             IntrinsicCall::Binary(left, right, operator) => {
                 let left = self.expression(left.as_ref().as_ref())?;
@@ -309,10 +306,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn call(
-        &mut self,
-        call: &parser::expression::Call,
-    ) -> Result<Typed<Expression>, SemanticError> {
+    fn call(&mut self, call: &parser::expression::Call) -> Result<Typed<Expression>, Error> {
         let callable = self.expression(call.callable.as_ref().as_ref())?;
         let arguments: Vec<_> = call
             .arguments
@@ -343,14 +337,23 @@ impl<'a> Builder<'a> {
             id: declaration,
             generics,
         };
-        let signature = &self
+        &self.declarations.insert_function(&func_reference)?;
+        let signature = self
             .declarations
-            .insert_function(&func_reference)?
+            .get_function(&func_reference)
+            .expect("function not inserted")
             .signature()
             .clone();
 
         if signature.parameters.len() != call.arguments.len() {
-            return Err(SemanticError::InvalidNumberOfArguments);
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::MismatchedArguments {
+                    arguments: call.arguments.len(),
+                    parameters: signature.parameters.len(),
+                    declaration: todo!(),
+                },
+            });
         }
         for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
             self.declarations
@@ -365,7 +368,7 @@ impl<'a> Builder<'a> {
     fn expression(
         &mut self,
         expression: Spanned<&parser::Expression>,
-    ) -> Result<Typed<Expression>, SemanticError> {
+    ) -> Result<Typed<Expression>, Error> {
         match expression.value {
             parser::Expression::Literal(literal) => match literal {
                 parser::Literal::Integer(int) => {
@@ -426,15 +429,15 @@ impl<'a> Builder<'a> {
             parser::Expression::Constructor(constructor) => self.constructor(constructor),
             parser::Expression::FieldAccess(field_access) => {
                 let struct_expression = self.expression(field_access.expression.as_ref())?;
-                let field = &field_access.ident.value;
+                let field = &field_access.ident;
                 let field_access = Expression::FieldAccess(Box::new(hir::FieldAccess {
                     expression: struct_expression.clone(),
-                    field: field.clone(),
+                    field: field.value.clone(),
                 }))
                 .typed(self.declarations);
                 self.struct_constraints.push(Constraint::StructField {
                     struct_type: struct_expression.type_ref,
-                    field: field.0.clone(),
+                    field: field.clone(),
                     expression: field_access.clone(),
                 });
                 Ok(field_access)
