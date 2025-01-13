@@ -1,6 +1,7 @@
 type UInt8 @u8 end
 type USize @usize end
 type UInt32 @u32 end
+type UInt16 @u16 end
 type Void @void end
 
 type[T, @length L] Array @array(L, T) end
@@ -53,7 +54,7 @@ fn[T] UInt8 eq(T lhs, T rhs)
 end
 
 fn[T] UInt8 pass(Slice[T] list, USize index)
-	if eq[USize](index, @sub(list.length, 1)) then
+	if eq(index, @sub(list.length, 1)) then
 		return 0
 	else
 		@assert_type(0, UInt8)
@@ -90,6 +91,9 @@ fn[T] UInt8 bubble_sort(Slice[T] list)
 end
 
 fn UInt32 main()
+	eq(@assert_type(1, UInt8), 1)
+	eq(@assert_type(1, UInt16), 1)
+	eq(@assert_type(1, UInt32), 1)
 	let coconut = slice[UInt8, 7]("COCONUT")
 	bubble_sort[UInt8](coconut)
 	print(coconut)

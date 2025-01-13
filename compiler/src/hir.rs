@@ -2,6 +2,7 @@ use crate::declarations::{self, Declarations, Reference};
 pub use builder::Builder;
 use builder::VariableId;
 use parser::expression::IntrinsicOperator;
+use tokenizer::Span;
 
 pub mod builder;
 
@@ -92,8 +93,8 @@ pub enum Expression {
 }
 
 impl Expression {
-    pub fn typed(self, declarations: &mut Declarations) -> Typed<Self> {
-        Typed::new(self, declarations.create_type_ref())
+    pub fn typed(self, declarations: &mut Declarations, span: Span) -> Typed<Self> {
+        Typed::new(self, declarations.create_type_ref(), span)
     }
 }
 
@@ -101,21 +102,15 @@ impl Expression {
 pub struct Typed<T> {
     pub value: T,
     pub type_ref: Reference,
+    pub span: Span,
 }
 
 impl<T> Typed<T> {
-    pub const fn new(value: T, type_ref: Reference) -> Self {
-        Self { value, type_ref }
-    }
-
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Typed<U> {
-        Typed {
-            value: f(self.value),
-            type_ref: self.type_ref,
+    pub const fn new(value: T, type_ref: Reference, span: Span) -> Self {
+        Self {
+            value,
+            type_ref,
+            span,
         }
-    }
-
-    pub fn boxed(self) -> Typed<Box<T>> {
-        self.map(Box::new)
     }
 }

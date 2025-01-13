@@ -8,7 +8,7 @@ use parser::expression::control_flow::If;
 use parser::expression::{IntrinsicCall, IntrinsicOperator};
 use std::collections::HashMap;
 use std::iter;
-use tokenizer::{AsSpanned, Spanned};
+use tokenizer::{AsSpanned, Span, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct VariableId(usize);
@@ -192,12 +192,13 @@ impl<'a> Builder<'a> {
                 return Ok(Typed::new(
                     Expression::LocalAccess(variable),
                     type_ref.clone(),
+                    ident.span.clone(),
                 ));
             }
         }
 
         let global = self.declarations.lookup(ident, self.scope)?;
-        Ok(Expression::GlobalAccess(global).typed(self.declarations))
+        Ok(Expression::GlobalAccess(global).typed(self.declarations, ident.span.clone()))
     }
 
     fn block(&mut self, statements: &[Spanned<parser::Statement>]) -> Result<hir::Block, Error> {
@@ -233,6 +234,7 @@ impl<'a> Builder<'a> {
     fn constructor(
         &mut self,
         constructor: &parser::expression::Constructor,
+        span: Span,
     ) -> Result<hir::Typed<Expression>, Error> {
         let struct_type = self
             .declarations
@@ -255,10 +257,15 @@ impl<'a> Builder<'a> {
         Ok(Typed::new(
             Expression::Constructor(hir::Constructor(fields)),
             struct_type,
+            span,
         ))
     }
 
-    fn intrinsic_call(&mut self, intrinsic: &IntrinsicCall) -> Result<Typed<Expression>, Error> {
+    fn intrinsic_call(
+        &mut self,
+        intrinsic: &IntrinsicCall,
+        span: Span,
+    ) -> Result<Typed<Expression>, Error> {
         match intrinsic {
             IntrinsicCall::Binary(left, right, operator) => {
                 let left = self.expression(left.as_ref().as_ref())?;
@@ -277,6 +284,7 @@ impl<'a> Builder<'a> {
                         operator: *operator,
                     })),
                     type_ref,
+                    span,
                 ))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
@@ -290,11 +298,11 @@ impl<'a> Builder<'a> {
             IntrinsicCall::Addr(expression) => Ok(Expression::Addr(Box::new(
                 self.expression(expression.as_ref().as_ref())?,
             ))
-            .typed(self.declarations)),
+            .typed(self.declarations, span)),
             IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
                 self.expression(expression.as_ref().as_ref())?,
             ))
-            .typed(self.declarations)),
+            .typed(self.declarations, span)),
             IntrinsicCall::Store {
                 pointer,
                 expression,
@@ -302,42 +310,54 @@ impl<'a> Builder<'a> {
                 pointer: self.expression(pointer.as_ref().as_ref())?,
                 expression: self.expression(expression.as_ref().as_ref())?,
             }))
-            .typed(self.declarations)),
+            .typed(self.declarations, span)),
         }
     }
 
-    fn call(&mut self, call: &parser::expression::Call) -> Result<Typed<Expression>, Error> {
-        let callable = self.expression(call.callable.as_ref().as_ref())?;
+    fn call(
+        &mut self,
+        call: &parser::expression::Call,
+        span: Span,
+    ) -> Result<Typed<Expression>, Error> {
+        let mut callable = self.expression(call.callable.as_ref().as_ref())?;
         let arguments: Vec<_> = call
             .arguments
             .iter()
             .map(|argument| self.expression(argument.as_ref()))
             .map_ok(super::Typed::<Expression>::from)
             .collect::<Result<_, _>>()?;
+
+        let (declaration, generics) = match callable.value {
+            hir::Expression::GlobalAccess(declaration) => {
+                let generics = self.declarations.make_generic_arguments(declaration);
+                let inner = callable.clone();
+                callable.value = hir::Expression::Generixed(Box::new(hir::Generixed {
+                    expression: inner,
+                    generics: generics.clone(),
+                }));
+                (declaration, generics)
+            }
+            hir::Expression::Generixed(ref generixed) => {
+                let hir::Expression::GlobalAccess(declaration) = generixed.expression.value else {
+                    todo!("func ref");
+                };
+                (declaration, generixed.generics.clone())
+            }
+            _ => todo!("func ref"),
+        };
+
         let call_expression = hir::Expression::Call(Box::new(hir::Call {
-            callable: callable.clone(),
+            callable,
             arguments: arguments.clone(),
         }))
-        .typed(self.declarations);
+        .typed(self.declarations, span);
 
-        let (callable, generics) = if let hir::Expression::Generixed(generixed) = &callable.value {
-            let hir::Generixed {
-                expression,
-                generics,
-            } = generixed.as_ref();
-            (expression.value.clone(), generics.clone())
-        } else {
-            (callable.value.clone(), Vec::new())
-        };
-
-        let hir::Expression::GlobalAccess(declaration) = callable else {
-            todo!("func refs!")
-        };
         let func_reference = Reference {
             id: declaration,
             generics,
         };
-        &self.declarations.insert_function(&func_reference)?;
+
+        self.declarations.insert_function(&func_reference)?;
         let signature = self
             .declarations
             .get_function(&func_reference)
@@ -372,14 +392,14 @@ impl<'a> Builder<'a> {
         match expression.value {
             parser::Expression::Literal(literal) => match literal {
                 parser::Literal::Integer(int) => {
-                    Ok(Expression::IntegerConst(*int).typed(self.declarations))
+                    Ok(Expression::IntegerConst(*int).typed(self.declarations, expression.span))
                 }
                 parser::Literal::Float(float) => {
-                    Ok(Expression::FloatConst(*float).typed(self.declarations))
+                    Ok(Expression::FloatConst(*float).typed(self.declarations, expression.span))
                 }
                 parser::Literal::String(string) => {
-                    let expression =
-                        Expression::StringConst(string.clone()).typed(self.declarations);
+                    let expression = Expression::StringConst(string.clone())
+                        .typed(self.declarations, expression.span);
                     self.struct_constraints.push(Constraint::ArrayLength {
                         expected_length: string.len() as u32,
                         array_type: expression.type_ref.clone(),
@@ -388,17 +408,20 @@ impl<'a> Builder<'a> {
                 }
                 parser::Literal::Char(_) => todo!("char literals"),
             },
-            parser::Expression::IntrinsicCall(intrinsic) => self.intrinsic_call(intrinsic),
-            parser::Expression::Return(expression) => {
-                let inner = self.expression(expression.expression.as_ref())?;
+            parser::Expression::IntrinsicCall(intrinsic) => {
+                self.intrinsic_call(intrinsic, expression.span)
+            }
+            parser::Expression::Return(inner) => {
+                let inner = self.expression(inner.expression.as_ref())?;
                 self.declarations
                     .check_expression_type(&inner, &self.return_type)?;
-                Ok(hir::Expression::Return(Box::new(inner)).typed(self.declarations))
+                Ok(hir::Expression::Return(Box::new(inner))
+                    .typed(self.declarations, expression.span))
             }
             parser::Expression::Ident(ident) => {
                 self.lookup_ident(&ident.clone().spanned(expression.span))
             }
-            parser::Expression::Call(call) => self.call(call),
+            parser::Expression::Call(call) => self.call(call, expression.span),
             parser::Expression::If(If {
                 condition,
                 then_branch,
@@ -415,7 +438,7 @@ impl<'a> Builder<'a> {
                     then_branch: then_branch.clone(),
                     else_branch: else_branch.clone(),
                 }))
-                .typed(self.declarations);
+                .typed(self.declarations, expression.span);
                 if let Some(sub_expression) = then_branch.expression {
                     self.declarations
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
@@ -426,7 +449,9 @@ impl<'a> Builder<'a> {
                 }
                 Ok(expression)
             }
-            parser::Expression::Constructor(constructor) => self.constructor(constructor),
+            parser::Expression::Constructor(constructor) => {
+                self.constructor(constructor, expression.span)
+            }
             parser::Expression::FieldAccess(field_access) => {
                 let struct_expression = self.expression(field_access.expression.as_ref())?;
                 let field = &field_access.ident;
@@ -434,7 +459,7 @@ impl<'a> Builder<'a> {
                     expression: struct_expression.clone(),
                     field: field.value.clone(),
                 }))
-                .typed(self.declarations);
+                .typed(self.declarations, expression.span);
                 self.struct_constraints.push(Constraint::StructField {
                     struct_type: struct_expression.type_ref,
                     field: field.clone(),
@@ -449,7 +474,7 @@ impl<'a> Builder<'a> {
                         .declarations
                         .build_generics(&generixed.generics.value.0, self.scope)?,
                 }))
-                .typed(self.declarations))
+                .typed(self.declarations, expression.span))
             }
             parser::Expression::Binary(_) => todo!("binary"),
             parser::Expression::UnaryPrefix(_) => todo!("unary"),

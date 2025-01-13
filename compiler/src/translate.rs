@@ -7,6 +7,7 @@ use crate::{errors, hir, Error, FunctionCompiler};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::Module;
+use itertools::Itertools;
 use parser::expression::IntrinsicOperator;
 use parser::PrimitiveKind;
 
@@ -320,27 +321,34 @@ where
     }
 
     fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, Error> {
-        let (callable, generics) =
+        let (declaration, generics) =
             if let hir::Expression::Generixed(generixed) = call.callable.value {
-                (generixed.expression.value, generixed.generics)
+                let hir::Expression::GlobalAccess(declaration) = generixed.expression.value else {
+                    todo!("func refs")
+                };
+                (declaration, generixed.generics)
             } else {
-                (call.callable.value, Vec::new())
+                todo!("func ref")
             };
-
-        let hir::Expression::GlobalAccess(declaration) = callable else {
-            todo!("closures!")
-        };
 
         let reference = Reference {
             id: declaration,
             generics,
         };
 
+        self.declarations.insert_function(&reference)?;
         let function = self
             .declarations
             .get_function(&reference)
             .expect("function doesn't exist")
             .clone();
+
+        dbg!(self
+            .declarations
+            .concrete_functions
+            .iter()
+            .map(|(r, func)| (r, func.signature().symbol.clone()))
+            .collect_vec());
 
         self.function_compiler.push(reference.clone());
 
@@ -596,6 +604,7 @@ where
         hir::Typed {
             value: expression,
             type_ref,
+            ..
         }: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, Error> {
         let layout = self.declarations.insert_layout_initialised(&type_ref);
