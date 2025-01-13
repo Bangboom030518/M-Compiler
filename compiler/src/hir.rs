@@ -94,7 +94,7 @@ pub enum Expression {
 
 impl Expression {
     pub fn typed(self, declarations: &mut Declarations, span: Span) -> Typed<Self> {
-        Typed::new(self, declarations.create_type_ref(), span)
+        Typed::new(self, declarations.unresolved.create_type_ref(), span)
     }
 }
 

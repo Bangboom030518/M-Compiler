@@ -343,13 +343,6 @@ where
             .expect("function doesn't exist")
             .clone();
 
-        dbg!(self
-            .declarations
-            .concrete_functions
-            .iter()
-            .map(|(r, func)| (r, func.signature().symbol.clone()))
-            .collect_vec());
-
         self.function_compiler.push(reference.clone());
 
         let mut arguments = Vec::new();
@@ -514,7 +507,10 @@ where
             });
         };
         let bytes = string.as_bytes().to_vec();
-        let length = self.declarations.get_initialised_length(array.length)?;
+        let length = self
+            .declarations
+            .unresolved
+            .get_initialised_length(array.length)?;
         let element_type = self
             .declarations
             .insert_layout_initialised(&array.element_type)?;
@@ -694,7 +690,7 @@ where
             hir::Expression::Call(call) => self.call(*call)?,
             hir::Expression::Generixed(_) => todo!("generixed"),
             hir::Expression::GlobalAccess(id) => {
-                let length = self.declarations.get_initialised_length(id)?;
+                let length = self.declarations.unresolved.get_initialised_length(id)?;
 
                 // TODO: strictness: lengths must be usize?
                 self.integer_const(length.into(), &layout?)?

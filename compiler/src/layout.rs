@@ -26,7 +26,9 @@ pub struct Array {
 impl Array {
     pub fn size(&self, declarations: &mut declarations::Declarations) -> Result<u32, Error> {
         let element_type = declarations.insert_layout_initialised(&self.element_type)?;
-        let length = declarations.get_initialised_length(self.length)?;
+        let length = declarations
+            .unresolved
+            .get_initialised_length(self.length)?;
         let length = u32::try_from(length).map_err(|_| Error {
             span: todo!(),
             kind: errors::Kind::LengthTooBig,

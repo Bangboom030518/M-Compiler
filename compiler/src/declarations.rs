@@ -3,7 +3,6 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use cranelift_module::{FuncId, Module};
 use parser::Ident;
 use std::collections::HashMap;
 use std::iter;
@@ -251,7 +250,7 @@ impl UnresolvedDeclarations {
         }
     }
 
-    fn resolve(&self, reference: &Reference) -> Reference {
+    pub fn resolve(&self, reference: &Reference) -> Reference {
         let generics = reference
             .generics
             .iter()
@@ -342,9 +341,9 @@ impl UnresolvedDeclarations {
 }
 
 pub struct Declarations {
-    unresolved: UnresolvedDeclarations,
+    pub unresolved: UnresolvedDeclarations,
     layouts: ResolvedReferenceMap<Layout>,
-    pub concrete_functions: ResolvedReferenceMap<Arc<Function>>,
+    concrete_functions: ResolvedReferenceMap<Arc<Function>>,
     pub isa: Arc<dyn TargetIsa>,
 }
 
@@ -365,10 +364,15 @@ impl Declarations {
 
         let scope_declarations = parser_declarations
             .iter()
-            .map(|(ident, ..)| (ident.clone(), declarations.create_uninitialised()))
+            .map(|(ident, ..)| {
+                (
+                    ident.clone(),
+                    declarations.unresolved.create_uninitialised(),
+                )
+            })
             .collect();
 
-        let scope = declarations.create_scope(TopLevelScope {
+        let scope = declarations.unresolved.create_scope(TopLevelScope {
             declarations: scope_declarations,
             parent: None,
         });
@@ -378,7 +382,9 @@ impl Declarations {
                 .remove_entry(&name)
                 .expect("name to exist")
                 .1;
-            declarations.initialise(id, Declaration::Resolved(declaration, scope));
+            declarations
+                .unresolved
+                .initialise(id, Declaration::Resolved(declaration, scope));
         }
 
         declarations
@@ -399,11 +405,11 @@ impl Declarations {
     }
 
     pub fn insert_layout(&mut self, reference: &Reference) -> Result<Option<Layout>, Error> {
-        if let Some(layout) = self.layouts.get(reference, self.unresolved) {
+        if let Some(layout) = self.layouts.get(reference, &self.unresolved) {
             return Ok(Some(layout.clone()));
         }
 
-        let Some(layout) = self.get(reference.id).cloned() else {
+        let Some(layout) = self.unresolved.get(reference.id).cloned() else {
             return Ok(None);
         };
 
@@ -423,7 +429,7 @@ impl Declarations {
 
         let layout = match declaration {
             parser::Declaration::Struct(ast_struct) => {
-                let scope = self.create_generic_scope(
+                let scope = self.unresolved.create_generic_scope(
                     ast_struct.generics,
                     reference.generics.clone(),
                     parent_scope,
@@ -432,7 +438,9 @@ impl Declarations {
                 let mut offset = 0;
                 let mut layout_fields = HashMap::new();
                 for field in &ast_struct.fields {
-                    let type_ref = self.lookup_type(&field.value.r#type.value, scope)?;
+                    let type_ref = self
+                        .unresolved
+                        .lookup_type(&field.value.r#type.value, scope)?;
                     layout_fields.insert(
                         field.value.name.value.0.clone(),
                         layout::Field {
@@ -457,19 +465,25 @@ impl Declarations {
             }
             parser::Declaration::Primitive(primitive) => Layout::Primitive(primitive.kind.value),
             parser::Declaration::Array(array) => {
-                let scope = self.create_generic_scope(
+                let scope = self.unresolved.create_generic_scope(
                     array.generics,
                     reference.generics.clone(),
                     parent_scope,
                 )?;
 
-                let element_type = self.lookup_type(&array.element_type.value, scope)?;
+                let element_type = self
+                    .unresolved
+                    .lookup_type(&array.element_type.value, scope)?;
                 let length = match array.length.value {
                     parser::Length::Ident(ident) => {
-                        let id = self.lookup(&ident.spanned(array.length.span), scope)?;
+                        let id = self
+                            .unresolved
+                            .lookup(&ident.spanned(array.length.span), scope)?;
                         id
                     }
-                    parser::Length::Literal(length) => self.create(Declaration::Length(length)),
+                    parser::Length::Literal(length) => {
+                        self.unresolved.create(Declaration::Length(length))
+                    }
                 };
                 Layout::Array(Array {
                     length,
@@ -488,29 +502,19 @@ impl Declarations {
             }
         };
 
-        self.layouts.insert(reference.clone(), layout.clone());
+        self.layouts
+            .insert(reference, layout.clone(), &self.unresolved);
         Ok(Some(layout))
     }
 
-    // pub fn declare_function(
-    //     &mut self,
-    //     func_reference: Reference,
-    //     module: &mut impl Module,
-    // ) -> Result<FuncId, SemanticError> {
-    //     self.insert_function(&func_reference)?;
-    //     let function = self
-    //         .get_function(&func_reference)
-    //         .expect("function not inserted");
-
-    // }
-
-    pub fn get_function(&self, reference: &Reference) -> Option<&Arc<Function>> {
-        let reference = reference.resolve(self);
-        self.concrete_functions.get(&reference)
+    #[deprecated]
+    pub fn get_function(&mut self, reference: &Reference) -> Option<&Arc<Function>> {
+        self.concrete_functions.get(&reference, &self.unresolved)
     }
 
     pub fn make_generic_arguments(&mut self, function_id: Id) -> Vec<Reference> {
         let declaration = self
+            .unresolved
             .get(function_id)
             .unwrap_or_else(|| todo!("internal error?"));
 
@@ -525,7 +529,9 @@ impl Declarations {
             _ => todo!(),
         };
 
-        (0..len).map(|_| self.create_type_ref()).collect()
+        (0..len)
+            .map(|_| self.unresolved.create_type_ref())
+            .collect()
     }
 
     pub fn insert_function(&mut self, reference: &Reference) -> Result<(), Error> {

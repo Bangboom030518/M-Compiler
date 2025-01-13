@@ -63,7 +63,7 @@ impl FunctionCompiler {
                 break;
             };
 
-            let func_ref = func_ref.resolve(declarations);
+            let func_ref = declarations.unresolved.resolve(&func_ref);
             if self.compiled.contains(&func_ref) {
                 continue;
             }
@@ -175,6 +175,7 @@ fn main() {
     let mut context = CraneliftContext::new(module);
     let main_ref = parser::Ident("main".to_string()).spanned(0..0);
     let main_ref = declarations
+        .unresolved
         .lookup(&main_ref, declarations::TOP_LEVEL_SCOPE)
         .expect("no main function");
     let main_ref = declarations::Reference {

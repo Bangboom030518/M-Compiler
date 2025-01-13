@@ -36,9 +36,11 @@ impl MSignature {
     ) -> Result<Self, Error> {
         let parameters = parameters
             .iter()
-            .map(|parameter| declarations.lookup_type(&parameter.value, scope))
+            .map(|parameter| declarations.unresolved.lookup_type(&parameter.value, scope))
             .collect::<Result<Vec<_>, Error>>()?;
-        let return_type = declarations.lookup_type(&return_type.value, scope)?;
+        let return_type = declarations
+            .unresolved
+            .lookup_type(&return_type.value, scope)?;
 
         Ok(Self {
             parameters,
@@ -159,7 +161,7 @@ impl Internal {
             format!("{}[{}]", function.name.value.0, hasher.finish())
         };
 
-        let scope = declarations.create_generic_scope(
+        let scope = declarations.unresolved.create_generic_scope(
             function.generic_parameters,
             generic_arguments,
             scope,

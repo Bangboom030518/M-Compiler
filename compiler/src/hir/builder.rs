@@ -63,7 +63,9 @@ impl Constraint {
                         },
                     })?;
 
-                declarations.check_expression_type(expression, &field.type_ref)?;
+                declarations
+                    .unresolved
+                    .check_expression_type(expression, &field.type_ref)?;
             }
             Self::ArrayLength {
                 expected_length,
@@ -74,7 +76,9 @@ impl Constraint {
                     return Ok(false);
                 };
                 let array_type = array_type.expect_array()?;
-                declarations.check_length(*expected_length, array_type.length)?;
+                declarations
+                    .unresolved
+                    .check_length(*expected_length, array_type.length)?;
             }
         };
         Ok(true)
@@ -157,6 +161,7 @@ impl<'a> Builder<'a> {
                 let left = self.expression(left.as_ref())?;
                 let right = self.expression(right.as_ref())?;
                 self.declarations
+                    .unresolved
                     .check_expression_type(&right, &left.type_ref)?;
                 Ok(hir::Statement::Assignment(hir::Assignment::new(
                     left, right,
@@ -164,13 +169,14 @@ impl<'a> Builder<'a> {
             }
             parser::Statement::Let(statement) => {
                 let variable = self.create_variable();
-                let type_ref = self.declarations.create_type_ref();
+                let type_ref = self.declarations.unresolved.create_type_ref();
                 self.local_scopes
                     .last_mut()
                     .expect("Must always have a scope")
                     .insert(statement.ident.value.0.clone(), variable);
                 let expression = self.expression(statement.expression.as_ref())?;
                 self.declarations
+                    .unresolved
                     .check_expression_type(&expression, &type_ref)?;
                 self.variables.insert(variable.into(), type_ref);
                 Ok(hir::Statement::Let(variable.into(), expression))
@@ -197,7 +203,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let global = self.declarations.lookup(ident, self.scope)?;
+        let global = self.declarations.unresolved.lookup(ident, self.scope)?;
         Ok(Expression::GlobalAccess(global).typed(self.declarations, ident.span.clone()))
     }
 
@@ -238,6 +244,7 @@ impl<'a> Builder<'a> {
     ) -> Result<hir::Typed<Expression>, Error> {
         let struct_type = self
             .declarations
+            .unresolved
             .lookup_type(&constructor.r#type.value, self.scope)?;
 
         let fields = constructor
@@ -271,9 +278,10 @@ impl<'a> Builder<'a> {
                 let left = self.expression(left.as_ref().as_ref())?;
                 let right = self.expression(right.as_ref().as_ref())?;
                 self.declarations
+                    .unresolved
                     .check_expression_type(&right, &left.type_ref)?;
                 let type_ref = if matches!(operator, IntrinsicOperator::Cmp(_)) {
-                    self.declarations.create_type_ref()
+                    self.declarations.unresolved.create_type_ref()
                 } else {
                     left.type_ref.clone()
                 };
@@ -288,10 +296,14 @@ impl<'a> Builder<'a> {
                 ))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
-                let expected = self.declarations.lookup_type(&r#type.value, self.scope)?;
+                let expected = self
+                    .declarations
+                    .unresolved
+                    .lookup_type(&r#type.value, self.scope)?;
 
                 let expression = self.expression(expression.as_ref().as_ref())?;
                 self.declarations
+                    .unresolved
                     .check_expression_type(&expression, &expected)?;
                 Ok(expression)
             }
@@ -377,10 +389,12 @@ impl<'a> Builder<'a> {
         }
         for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
             self.declarations
+                .unresolved
                 .check_expression_type(argument, parameter)?;
         }
 
         self.declarations
+            .unresolved
             .check_expression_type(&call_expression, &signature.return_type)?;
         Ok(call_expression)
     }
@@ -414,6 +428,7 @@ impl<'a> Builder<'a> {
             parser::Expression::Return(inner) => {
                 let inner = self.expression(inner.expression.as_ref())?;
                 self.declarations
+                    .unresolved
                     .check_expression_type(&inner, &self.return_type)?;
                 Ok(hir::Expression::Return(Box::new(inner))
                     .typed(self.declarations, expression.span))
@@ -441,10 +456,12 @@ impl<'a> Builder<'a> {
                 .typed(self.declarations, expression.span);
                 if let Some(sub_expression) = then_branch.expression {
                     self.declarations
+                        .unresolved
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
                 }
                 if let Some(sub_expression) = else_branch.expression {
                     self.declarations
+                        .unresolved
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
                 }
                 Ok(expression)
@@ -472,6 +489,7 @@ impl<'a> Builder<'a> {
                     expression: self.expression(generixed.expression.as_ref())?,
                     generics: self
                         .declarations
+                        .unresolved
                         .build_generics(&generixed.generics.value.0, self.scope)?,
                 }))
                 .typed(self.declarations, expression.span))
