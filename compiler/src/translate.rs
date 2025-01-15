@@ -10,6 +10,7 @@ use cranelift_module::Module;
 use itertools::Itertools;
 use parser::expression::IntrinsicOperator;
 use parser::PrimitiveKind;
+use tokenizer::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BranchStatus<T> {
@@ -122,9 +123,9 @@ where
             .declarations
             .insert_layout_initialised(&condition.type_ref)?;
 
-        if condition_type != Layout::Primitive(PrimitiveKind::U8) {
+        if condition_type != Layout::Primitive(PrimitiveKind::Bool) {
             return Err(Error {
-                span: todo!(),
+                span: condition.span,
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::Bool,
                     found: condition.type_ref,
@@ -186,51 +187,105 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let Layout::Primitive(primitive) = layout else {
+        let Layout::Primitive(input_type) = layout else {
             return Err(Error {
                 span: todo!(),
                 kind: errors::Kind::TypeConstraintViolation {
-                    constraint: errors::TypeConstraint::Number,
+                    constraint: todo!(),
                     found: todo!(),
                 },
             });
         };
 
-        let value = if primitive.is_integer() {
-            match binary.operator {
-                IntrinsicOperator::Add => self.builder.ins().iadd(left, right),
-                IntrinsicOperator::Sub => self.builder.ins().isub(left, right),
-                IntrinsicOperator::Mul => self.builder.ins().imul(left, right),
-                IntrinsicOperator::Div => {
-                    if primitive.is_signed_integer() {
-                        self.builder.ins().sdiv(left, right)
-                    } else {
-                        self.builder.ins().udiv(left, right)
-                    }
-                }
-                IntrinsicOperator::Cmp(operator) => {
-                    if primitive.is_signed_integer() {
-                        self.builder
-                            .ins()
-                            .icmp(operator.signed_intcc(), left, right)
-                    } else {
-                        self.builder
-                            .ins()
-                            .icmp(operator.unsigned_intcc(), left, right)
-                    }
-                }
+        let Layout::Primitive(output_type) = layout else {
+            return Err(Error {
+                span: todo!(),
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: todo!(),
+                    found: todo!(),
+                },
+            });
+        };
+
+        let value = match binary.operator {
+            IntrinsicOperator::Add if input_type.is_integer() => {
+                self.builder.ins().iadd(left, right)
             }
-        } else {
-            match binary.operator {
-                IntrinsicOperator::Add => self.builder.ins().fadd(left, right),
-                IntrinsicOperator::Sub => self.builder.ins().fsub(left, right),
-                IntrinsicOperator::Mul => self.builder.ins().fmul(left, right),
-                IntrinsicOperator::Div => self.builder.ins().fdiv(left, right),
-                IntrinsicOperator::Cmp(operator) => {
-                    self.builder.ins().fcmp(operator.floatcc(), left, right)
-                }
+            IntrinsicOperator::Add if input_type.is_float() => self.builder.ins().fadd(left, right),
+            IntrinsicOperator::Add => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Number,
+                        found: todo!(),
+                    },
+                })
+            }
+            IntrinsicOperator::Sub if input_type.is_integer() => {
+                self.builder.ins().isub(left, right)
+            }
+            IntrinsicOperator::Sub if input_type.is_float() => self.builder.ins().fsub(left, right),
+            IntrinsicOperator::Sub => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Number,
+                        found: todo!(),
+                    },
+                })
+            }
+            IntrinsicOperator::Mul if input_type.is_integer() => {
+                self.builder.ins().imul(left, right)
+            }
+            IntrinsicOperator::Mul if input_type.is_float() => self.builder.ins().fmul(left, right),
+            IntrinsicOperator::Mul => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Number,
+                        found: todo!(),
+                    },
+                })
+            }
+            IntrinsicOperator::Div if input_type.is_signed_integer() => {
+                self.builder.ins().sdiv(left, right)
+            }
+            IntrinsicOperator::Div if input_type.is_integer() => {
+                self.builder.ins().udiv(left, right)
+            }
+            IntrinsicOperator::Div if input_type.is_float() => self.builder.ins().fdiv(left, right),
+            IntrinsicOperator::Div => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Number,
+                        found: todo!(),
+                    },
+                })
+            }
+            IntrinsicOperator::Cmp(operator) if input_type.is_signed_integer() => self
+                .builder
+                .ins()
+                .icmp(operator.signed_intcc(), left, right),
+            IntrinsicOperator::Cmp(operator) if input_type.is_integer() => {
+                self.builder
+                    .ins()
+                    .icmp(operator.unsigned_intcc(), left, right)
+            }
+            IntrinsicOperator::Cmp(operator) if input_type.is_float() => {
+                self.builder.ins().fcmp(operator.floatcc(), left, right)
+            }
+            IntrinsicOperator::Cmp(_) => {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::TypeConstraintViolation {
+                        constraint: errors::TypeConstraint::Number,
+                        found: todo!(),
+                    },
+                })
             }
         };
+
         let size = layout.size(self.declarations)?;
         Ok(BranchStatus::Continue(self.put_in_stack_slot(value, size)))
     }
@@ -600,13 +655,26 @@ where
         hir::Typed {
             value: expression,
             type_ref,
-            ..
+            span,
         }: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Value>, Error> {
         let layout = self.declarations.insert_layout_initialised(&type_ref);
 
         let value = match expression {
             hir::Expression::IntegerConst(int) => self.integer_const(int, &layout?)?,
+            hir::Expression::BoolConst(bool) => {
+                let layout = layout?;
+                if layout != Layout::Primitive(PrimitiveKind::Bool) {
+                    return Err(Error {
+                        span,
+                        kind: errors::Kind::TypeConstraintViolation {
+                            constraint: errors::TypeConstraint::Bool,
+                            found: type_ref,
+                        },
+                    });
+                }
+                BranchStatus::Continue(self.iconst(bool.into()))
+            }
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
                     Layout::Primitive(PrimitiveKind::F32) => {
@@ -620,7 +688,7 @@ where
                     }
                     _ => {
                         return Err(Error {
-                            span: todo!(),
+                            span,
                             kind: errors::Kind::TypeConstraintViolation {
                                 constraint: errors::TypeConstraint::Float,
                                 found: type_ref,

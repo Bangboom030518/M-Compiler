@@ -54,8 +54,10 @@ enum Declaration {
     Length(u32),
 }
 
-struct ResolvedReferenceMap<V> {
-    map: HashMap<Reference, V>,
+#[derive(Debug)]
+#[deprecated = "make private"]
+pub struct ResolvedReferenceMap<V> {
+    pub map: HashMap<Reference, V>,
 }
 
 impl<V> ResolvedReferenceMap<V> {
@@ -70,13 +72,13 @@ impl<V> ResolvedReferenceMap<V> {
 
     fn insert(&mut self, reference: &Reference, value: V, declarations: &UnresolvedDeclarations) {
         self.normalize(declarations);
-        let reference = declarations.resolve(&reference);
+        let reference = declarations.resolve(reference);
         self.map.insert(reference, value);
     }
 
     fn get(&mut self, reference: &Reference, declarations: &UnresolvedDeclarations) -> Option<&V> {
         self.normalize(declarations);
-        let reference = declarations.resolve(&reference);
+        let reference = declarations.resolve(reference);
         self.map.get(&reference)
     }
 
@@ -86,7 +88,6 @@ impl<V> ResolvedReferenceMap<V> {
         }
     }
 }
-
 pub struct UnresolvedDeclarations {
     store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
@@ -343,7 +344,8 @@ impl UnresolvedDeclarations {
 pub struct Declarations {
     pub unresolved: UnresolvedDeclarations,
     layouts: ResolvedReferenceMap<Layout>,
-    concrete_functions: ResolvedReferenceMap<Arc<Function>>,
+    #[deprecated = "make private"]
+    pub concrete_functions: ResolvedReferenceMap<Arc<Function>>,
     pub isa: Arc<dyn TargetIsa>,
 }
 

@@ -31,6 +31,7 @@ pub enum Literal {
     Integer(u128),
     Float(f64),
     Char(char),
+    Bool(bool),
 }
 
 impl Parse for Literal {
@@ -41,6 +42,16 @@ impl Parse for Literal {
             .or_else(|_| parser.take_integer().map_spanned(Self::Integer))
             .or_else(|_| parser.take_float().map_spanned(Self::Float))
             .or_else(|_| parser.take_char().map_spanned(Self::Char))
+            .or_else(|_| {
+                parser
+                    .take_token_if(TokenType::True)
+                    .map_spanned(|_| Self::Bool(true))
+            })
+            .or_else(|_| {
+                parser
+                    .take_token_if(TokenType::False)
+                    .map_spanned(|_| Self::Bool(false))
+            })
     }
 }
 

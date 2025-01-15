@@ -420,6 +420,9 @@ impl<'a> Builder<'a> {
                     });
                     Ok(expression)
                 }
+                parser::Literal::Bool(bool) => {
+                    Ok(Expression::BoolConst(*bool).typed(self.declarations, expression.span))
+                }
                 parser::Literal::Char(_) => todo!("char literals"),
             },
             parser::Expression::IntrinsicCall(intrinsic) => {

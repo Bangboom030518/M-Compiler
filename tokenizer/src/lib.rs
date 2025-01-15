@@ -64,6 +64,8 @@ define_token_enums!(
     Exponent,
     Union,
     Struct,
+    True,
+    False,
     Assignment,
     Plus,
     Minus,
@@ -264,6 +266,8 @@ impl Tokenizer {
             "return" => Token::Return,
             "end" => Token::End,
             "then" => Token::Then,
+            "true" => Token::True,
+            "false" => Token::False,
             _ => Token::Ident(ident),
         }
     }

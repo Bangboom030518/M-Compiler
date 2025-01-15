@@ -3,6 +3,7 @@ type USize @usize end
 type UInt32 @u32 end
 type UInt16 @u16 end
 type Void @void end
+type Bool @bool end
 
 type[T, @length L] Array @array(L, T) end
 
@@ -45,11 +46,11 @@ fn[T] UInt8 deinit_slice(Slice[T] slice)
 	0
 end
 
-fn[T] UInt8 lte(T lhs, T rhs)
+fn[T] Bool lte(T lhs, T rhs)
 	@lte(lhs, rhs)
 end
 
-fn[T] UInt8 eq(T lhs, T rhs)
+fn[T] Bool eq(T lhs, T rhs)
 	@eq(lhs, rhs)
 end
 
@@ -62,8 +63,7 @@ fn[T] UInt8 pass(Slice[T] list, USize index)
 
 	let lhs = get_element[UInt8](list, index)
 	let rhs = get_element[UInt8](list, @add(index, 1))
-	lte[UInt8](rhs, lhs)
-	if @assert_type(@lt(rhs, lhs), UInt8) then
+	if lte(rhs, lhs) then
 		set_element[UInt8](list, index, rhs)
 		set_element[UInt8](list, @add(index, 1), lhs)
 	else
@@ -91,9 +91,7 @@ fn[T] UInt8 bubble_sort(Slice[T] list)
 end
 
 fn UInt32 main()
-	eq(@assert_type(1, UInt8), 1)
-	eq(@assert_type(1, UInt16), 1)
-	eq(@assert_type(1, UInt32), 1)
+	// TODO: remove true keyword, add @true() intrinsic
 	let coconut = slice[UInt8, 7]("COCONUT")
 	bubble_sort[UInt8](coconut)
 	print(coconut)

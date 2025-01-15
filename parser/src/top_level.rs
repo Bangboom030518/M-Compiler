@@ -229,17 +229,19 @@ pub enum PrimitiveKind {
     F64,
     USize,
     Void,
+    Bool,
 }
 
 impl PrimitiveKind {
     const VALID_IDENTS: &'static [&'static str] = &[
         "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "void",
+        "bool",
     ];
 
     #[must_use]
     pub const fn size(&self, pointer_size: u32) -> u32 {
         match self {
-            Self::U8 | Self::I8 => 1,
+            Self::U8 | Self::I8 | Self::Bool => 1,
             Self::U16 | Self::I16 => 2,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
@@ -247,6 +249,11 @@ impl PrimitiveKind {
             Self::USize => pointer_size,
             Self::Void => 0,
         }
+    }
+
+    #[must_use]
+    pub const fn is_float(&self) -> bool {
+        matches!(self, Self::F32 | Self::F64)
     }
 
     #[must_use]
@@ -294,6 +301,7 @@ impl Parse for PrimitiveKind {
                 "f64" => Self::F64,
                 "usize" => Self::USize,
                 "void" => Self::Void,
+                "bool" => Self::Bool,
                 _ => return Err(parser.unexpected_ident(Self::VALID_IDENTS.to_vec())),
             };
             Ok(kind)

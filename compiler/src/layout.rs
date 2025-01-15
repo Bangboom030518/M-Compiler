@@ -88,17 +88,13 @@ impl Layout {
         matches!(self, Self::Struct(_) | Self::Array(_))
     }
 
-    pub const fn should_load(&self) -> bool {
-        !self.is_aggregate()
-    }
-
     pub fn cranelift_type(&self, isa: &Arc<dyn TargetIsa>) -> cranelift::prelude::Type {
         match self {
             Self::Primitive(primitive_kind) => {
                 use cranelift::prelude::types;
                 use parser::PrimitiveKind as P;
                 match primitive_kind {
-                    P::U8 | P::I8 => types::I8,
+                    P::U8 | P::I8 | P::Bool => types::I8,
                     P::U16 | P::I16 => types::I16,
                     P::F32 => types::F32,
                     P::U32 | P::I32 => types::I32,

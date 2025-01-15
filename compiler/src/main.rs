@@ -5,6 +5,7 @@ use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::{Declarations, Function, Reference};
 pub use errors::Error;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
@@ -118,7 +119,7 @@ unsafe extern "C" fn dealloc_rs(ptr: *mut u8, size: usize) -> usize {
     0
 }
 
-unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
+const unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
     std::ptr::copy(src, dst, count);
 }
 
@@ -200,6 +201,13 @@ fn main() {
     FunctionCompiler::new(main_ref)
         .compile_all(&mut declarations, &mut context)
         .unwrap_or_else(|error| panic!("{error:?}"));
+
+    dbg!(declarations
+        .concrete_functions
+        .map
+        .iter()
+        .map(|(k, v)| (v.signature().symbol.clone()))
+        .collect_vec());
 
     context.module.finalize_definitions().unwrap();
 
