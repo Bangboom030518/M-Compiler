@@ -189,18 +189,19 @@ impl<'a> Builder<'a> {
 
     fn lookup_ident(&mut self, ident: &Spanned<parser::Ident>) -> Result<Typed<Expression>, Error> {
         for scope in self.local_scopes.iter().rev() {
-            if let Some(variable) = scope.get(&ident.value.0).copied() {
-                let variable = variable.into();
-                let type_ref = self
-                    .variables
-                    .get(&variable)
-                    .expect("variable doesn't exist");
-                return Ok(Typed::new(
-                    Expression::LocalAccess(variable),
-                    type_ref.clone(),
-                    ident.span.clone(),
-                ));
-            }
+            let Some(variable) = scope.get(&ident.value.0).copied() else {
+                continue;
+            };
+            let variable = variable.into();
+            let type_ref = self
+                .variables
+                .get(&variable)
+                .expect("variable doesn't exist");
+            return Ok(Typed::new(
+                Expression::LocalAccess(variable),
+                type_ref.clone(),
+                ident.span.clone(),
+            ));
         }
 
         let global = self.declarations.unresolved.lookup(ident, self.scope)?;
@@ -477,7 +478,7 @@ impl<'a> Builder<'a> {
                 let field = &field_access.ident;
                 let field_access = Expression::FieldAccess(Box::new(hir::FieldAccess {
                     expression: struct_expression.clone(),
-                    field: field.value.clone(),
+                    field: field.clone(),
                 }))
                 .typed(self.declarations, expression.span);
                 self.struct_constraints.push(Constraint::StructField {

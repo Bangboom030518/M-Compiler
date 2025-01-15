@@ -2,7 +2,7 @@ use crate::declarations::{self, Declarations, Reference};
 pub use builder::Builder;
 use builder::VariableId;
 use parser::expression::IntrinsicOperator;
-use tokenizer::Span;
+use tokenizer::{Span, Spanned};
 
 pub mod builder;
 
@@ -57,7 +57,7 @@ pub struct Constructor(pub Vec<(String, Typed<Expression>)>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAccess {
     pub expression: Typed<Expression>,
-    pub field: parser::Ident,
+    pub field: Spanned<parser::Ident>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -119,7 +119,7 @@ unsafe extern "C" fn dealloc_rs(ptr: *mut u8, size: usize) -> usize {
     0
 }
 
-const unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
+unsafe extern "C" fn copy_rs(src: *const u8, dst: *mut u8, count: usize) {
     std::ptr::copy(src, dst, count);
 }
 
