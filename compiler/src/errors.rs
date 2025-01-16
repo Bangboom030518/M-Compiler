@@ -1,21 +1,20 @@
+use crate::declarations::Reference;
 use tokenizer::Span;
 
-use crate::declarations::Reference;
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error {
     pub span: Span,
     pub kind: Kind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeclarationConstraint {
     Length,
     Function,
     Type,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeConstraint {
     String,
     Integer,
@@ -27,7 +26,7 @@ pub enum TypeConstraint {
     Number,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
     DeclarationNotFound {
         ident: String,

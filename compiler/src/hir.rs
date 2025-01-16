@@ -74,7 +74,7 @@ pub struct Generixed {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
-    IntegerConst(u128),
+    IntegerConst(u64),
     FloatConst(f64),
     StringConst(String),
     BoolConst(bool),
@@ -91,6 +91,7 @@ pub enum Expression {
     GlobalAccess(declarations::Id),
     Generixed(Box<Generixed>),
     AssertType(Box<Typed<Expression>>),
+    SizeOf(Reference),
 }
 
 impl Expression {

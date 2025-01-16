@@ -2,28 +2,33 @@ type UInt8 @u8 end
 type USize @usize end
 type UInt32 @u32 end
 type Bool @bool end
+type Void @void end
 
-type Bool = union(UInt8)
-	false = 0,
-	true = 1,
+fn Bool true()
+	@true()
 end
 
-fn[T] UInt8 lte(T lhs, T rhs)
-	@lte(lhs, rhs)
-end
+// fn Void sus()
+	
+// end
 
-fn[T] UInt8 sus()
-	lte[T](0, 0)
+fn UInt8 sus(Void a)
+	0
 end
 
 fn UInt32 main()
-	lte[UInt32](0, 0)
-
-	if @assert_type(true, Bool) then
-		@assert_type(0, UInt8)
-	else
-		@assert_type(0, UInt8)
+	// @assert_type(0, Void)
+	sus(if true() then
+	end)
+	if true() then
+		true()
 	end
+
+	// if true() then
+	// 	@assert_type(0, UInt8)
+	// else
+	// 	@assert_type(0, UInt8)
+	// end
     0
 end
 

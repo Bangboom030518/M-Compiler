@@ -9,7 +9,7 @@ macro_rules! define_token_enums {
             String(String),
             Char(char),
             Ident(String),
-            Integer(u128),
+            Integer(u64),
             Float(f64),
         }
 
@@ -56,6 +56,8 @@ define_token_enums!(
     Function,
     Type,
     If,
+    While,
+    Do,
     Else,
     Let,
     End,
@@ -64,8 +66,6 @@ define_token_enums!(
     Exponent,
     Union,
     Struct,
-    True,
-    False,
     Assignment,
     Plus,
     Minus,
@@ -266,8 +266,8 @@ impl Tokenizer {
             "return" => Token::Return,
             "end" => Token::End,
             "then" => Token::Then,
-            "true" => Token::True,
-            "false" => Token::False,
+            "while" => Token::While,
+            "do" => Token::Do,
             _ => Token::Ident(ident),
         }
     }
@@ -314,7 +314,7 @@ impl Tokenizer {
     fn take_number_base(&mut self, base: u32) -> Token {
         self.0.next();
         let digits: String = self.0.peeking_take_while(|ch| ch.is_digit(base)).collect();
-        u128::from_str_radix(&digits, base)
+        u64::from_str_radix(&digits, base)
             .map(Token::Integer)
             .unwrap_or_default()
     }

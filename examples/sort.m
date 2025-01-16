@@ -24,8 +24,8 @@ fn UInt8 print(Slice[UInt8] data)
 end
 
 fn[T, @length L] Slice[T] slice(Array[T, L] array)
-	let ptr = alloc_rs(L) // * @sizeof(T)
-	copy_rs(@addr(array), ptr, L) // * @sizeof(T)
+	let ptr = alloc_rs(@mul(L, @sizeof(T)))
+	copy_rs(@addr(array), ptr, @mul(L, @sizeof(T)))
     Slice[T]
         ptr = ptr,
         length = L,
@@ -33,11 +33,11 @@ fn[T, @length L] Slice[T] slice(Array[T, L] array)
 end
 
 fn[T] T get_element(Slice[T] list, USize index)
-	@load(@add(list.ptr, index /* * @sizeof(T) */), T)
+	@load(@add(list.ptr, @mul(index, @sizeof(T))), T)
 end
 
 fn[T] UInt8 set_element(Slice[T] list, USize index, T value)
-	@store(@add(list.ptr, index /* * @sizeof(T) */), value)
+	@store(@add(list.ptr, @mul(index, @sizeof(T))), value)
 	0
 end
 
@@ -61,21 +61,20 @@ fn[T] UInt8 pass(Slice[T] list, USize index)
 		@assert_type(0, UInt8)
 	end
 
-	let lhs = get_element[UInt8](list, index)
-	let rhs = get_element[UInt8](list, @add(index, 1))
+	let lhs = get_element(list, index)
+	let rhs = get_element(list, @add(index, 1))
 	if lte(rhs, lhs) then
-		set_element[UInt8](list, index, rhs)
-		set_element[UInt8](list, @add(index, 1), lhs)
+		set_element(list, index, rhs)
+		set_element(list, @add(index, 1), lhs)
 	else
 		@assert_type(0, UInt8)
 	end
 
 	pass[T](list, @add(index, 1))
-	0
 end
 
 fn[T] UInt8 bubble_sort(Slice[T] list)
-	if lte[USize](list.length, 1) then
+	if lte(list.length, 1) then
 		return 0
 	else
 		@assert_type(0, UInt8)
@@ -87,15 +86,13 @@ fn[T] UInt8 bubble_sort(Slice[T] list)
 		ptr = list.ptr,
 		length = @sub(list.length, 1)
 	end)
-	0
 end
 
 fn UInt32 main()
-	// TODO: remove true keyword, add @true() intrinsic
-	let coconut = slice[UInt8, 7]("COCONUT")
-	bubble_sort[UInt8](coconut)
+	let coconut = slice("COCONUT")
+	bubble_sort(coconut)
 	print(coconut)
-	deinit_slice[UInt8](coconut)
+	deinit_slice(coconut)
     0
 end
 

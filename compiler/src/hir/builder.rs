@@ -275,6 +275,8 @@ impl<'a> Builder<'a> {
         span: Span,
     ) -> Result<Typed<Expression>, Error> {
         match intrinsic {
+            IntrinsicCall::True => Ok(Expression::BoolConst(true).typed(self.declarations, span)),
+            IntrinsicCall::False => Ok(Expression::BoolConst(false).typed(self.declarations, span)),
             IntrinsicCall::Binary(left, right, operator) => {
                 let left = self.expression(left.as_ref().as_ref())?;
                 let right = self.expression(right.as_ref().as_ref())?;
@@ -312,10 +314,19 @@ impl<'a> Builder<'a> {
                 self.expression(expression.as_ref().as_ref())?,
             ))
             .typed(self.declarations, span)),
+
             IntrinsicCall::Load(expression) => Ok(Expression::Load(Box::new(
                 self.expression(expression.as_ref().as_ref())?,
             ))
             .typed(self.declarations, span)),
+            IntrinsicCall::SizeOf(r#type) => {
+                let reference = self
+                    .declarations
+                    .unresolved
+                    .lookup_type(&r#type.value, self.scope)?;
+
+                Ok(Expression::SizeOf(reference).typed(self.declarations, span))
+            }
             IntrinsicCall::Store {
                 pointer,
                 expression,
@@ -420,9 +431,6 @@ impl<'a> Builder<'a> {
                         array_type: expression.type_ref.clone(),
                     });
                     Ok(expression)
-                }
-                parser::Literal::Bool(bool) => {
-                    Ok(Expression::BoolConst(*bool).typed(self.declarations, expression.span))
                 }
                 parser::Literal::Char(_) => todo!("char literals"),
             },

@@ -100,7 +100,6 @@ impl Layout {
                     P::U32 | P::I32 => types::I32,
                     P::F64 => types::F64,
                     P::U64 | P::I64 => types::I64,
-                    P::U128 | P::I128 => types::I128,
                     P::USize => isa.pointer_type(),
                     P::Void => todo!("void types"),
                 }

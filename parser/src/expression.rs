@@ -28,10 +28,9 @@ impl Parse for UnaryOperator {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
     String(String),
-    Integer(u128),
+    Integer(u64),
     Float(f64),
     Char(char),
-    Bool(bool),
 }
 
 impl Parse for Literal {
@@ -42,16 +41,6 @@ impl Parse for Literal {
             .or_else(|_| parser.take_integer().map_spanned(Self::Integer))
             .or_else(|_| parser.take_float().map_spanned(Self::Float))
             .or_else(|_| parser.take_char().map_spanned(Self::Char))
-            .or_else(|_| {
-                parser
-                    .take_token_if(TokenType::True)
-                    .map_spanned(|_| Self::Bool(true))
-            })
-            .or_else(|_| {
-                parser
-                    .take_token_if(TokenType::False)
-                    .map_spanned(|_| Self::Bool(false))
-            })
     }
 }
 
@@ -174,6 +163,7 @@ impl IntrinsicOperator {
 pub enum IntrinsicCall {
     AssertType(Box<Spanned<Expression>>, Spanned<Type>),
     Addr(Box<Spanned<Expression>>),
+    SizeOf(Spanned<Type>),
     Load(Box<Spanned<Expression>>),
     Store {
         pointer: Box<Spanned<Expression>>,
@@ -184,6 +174,8 @@ pub enum IntrinsicCall {
         Box<Spanned<Expression>>,
         IntrinsicOperator,
     ),
+    True,
+    False,
 }
 
 impl IntrinsicCall {
@@ -200,6 +192,9 @@ impl IntrinsicCall {
         "gte",
         "eq",
         "ne",
+        "true",
+        "false",
+        "sizeof",
     ];
 }
 
@@ -210,12 +205,15 @@ impl Parse for IntrinsicCall {
 
         parser.take_token_if(TokenType::OpenParen)?;
         let kind = match ident.as_str() {
+            "true" => Self::True,
+            "false" => Self::False,
             "assert_type" => {
                 let expression = Box::new(parser.parse()?);
                 parser.take_token_if(TokenType::Comma)?;
                 Self::AssertType(expression, parser.parse()?)
             }
             "addr" => Self::Addr(Box::new(parser.parse()?)),
+            "sizeof" => Self::SizeOf(parser.parse()?),
             "load" => {
                 let expr = parser.parse()?;
                 let span = expr.span.clone();

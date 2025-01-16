@@ -219,12 +219,10 @@ pub enum PrimitiveKind {
     U16,
     U32,
     U64,
-    U128,
     I8,
     I16,
     I32,
     I64,
-    I128,
     F32,
     F64,
     USize,
@@ -234,8 +232,7 @@ pub enum PrimitiveKind {
 
 impl PrimitiveKind {
     const VALID_IDENTS: &'static [&'static str] = &[
-        "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "usize", "void",
-        "bool",
+        "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "void", "bool",
     ];
 
     #[must_use]
@@ -245,7 +242,6 @@ impl PrimitiveKind {
             Self::U16 | Self::I16 => 2,
             Self::U32 | Self::I32 | Self::F32 => 4,
             Self::U64 | Self::I64 | Self::F64 => 8,
-            Self::U128 | Self::I128 => 16,
             Self::USize => pointer_size,
             Self::Void => 0,
         }
@@ -260,12 +256,10 @@ impl PrimitiveKind {
     pub const fn is_integer(&self) -> bool {
         matches!(
             self,
-            Self::I128
-                | Self::I64
+            Self::I64
                 | Self::I32
                 | Self::I16
                 | Self::I8
-                | Self::U128
                 | Self::U64
                 | Self::U32
                 | Self::U16
@@ -276,10 +270,7 @@ impl PrimitiveKind {
 
     #[must_use]
     pub const fn is_signed_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::I128 | Self::I64 | Self::I32 | Self::I16 | Self::I8
-        )
+        matches!(self, Self::I64 | Self::I32 | Self::I16 | Self::I8)
     }
 }
 
@@ -291,12 +282,10 @@ impl Parse for PrimitiveKind {
                 "i16" => Self::I16,
                 "i32" => Self::I32,
                 "i64" => Self::I64,
-                "i128" => Self::I128,
                 "u8" => Self::U8,
                 "u16" => Self::U16,
                 "u32" => Self::U32,
                 "u64" => Self::U64,
-                "u128" => Self::U128,
                 "f32" => Self::F32,
                 "f64" => Self::F64,
                 "usize" => Self::USize,

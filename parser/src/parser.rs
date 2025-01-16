@@ -193,7 +193,7 @@ impl Parser {
     special!(take_string, peek_string, String, String);
     special!(take_ident, peek_ident, Ident, String);
     special!(take_float, peek_float, Float, f64);
-    special!(take_integer, peek_integer, Integer, u128);
+    special!(take_integer, peek_integer, Integer, u64);
     special!(take_char, peek_char, Char, char);
 }
 

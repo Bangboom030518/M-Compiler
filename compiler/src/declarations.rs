@@ -55,9 +55,8 @@ enum Declaration {
 }
 
 #[derive(Debug)]
-#[deprecated = "make private"]
-pub struct ResolvedReferenceMap<V> {
-    pub map: HashMap<Reference, V>,
+struct ResolvedReferenceMap<V> {
+    map: HashMap<Reference, V>,
 }
 
 impl<V> ResolvedReferenceMap<V> {
@@ -344,8 +343,7 @@ impl UnresolvedDeclarations {
 pub struct Declarations {
     pub unresolved: UnresolvedDeclarations,
     layouts: ResolvedReferenceMap<Layout>,
-    #[deprecated = "make private"]
-    pub concrete_functions: ResolvedReferenceMap<Arc<Function>>,
+    concrete_functions: ResolvedReferenceMap<Arc<Function>>,
     pub isa: Arc<dyn TargetIsa>,
 }
 
@@ -509,9 +507,8 @@ impl Declarations {
         Ok(Some(layout))
     }
 
-    #[deprecated]
     pub fn get_function(&mut self, reference: &Reference) -> Option<&Arc<Function>> {
-        self.concrete_functions.get(&reference, &self.unresolved)
+        self.concrete_functions.get(reference, &self.unresolved)
     }
 
     pub fn make_generic_arguments(&mut self, function_id: Id) -> Vec<Reference> {

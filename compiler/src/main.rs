@@ -129,7 +129,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
-    let input = include_str!("../../examples/sort.m");
+    let input = include_str!("../../examples/input.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
         Err(error) => {
@@ -201,13 +201,6 @@ fn main() {
     FunctionCompiler::new(main_ref)
         .compile_all(&mut declarations, &mut context)
         .unwrap_or_else(|error| panic!("{error:?}"));
-
-    dbg!(declarations
-        .concrete_functions
-        .map
-        .iter()
-        .map(|(k, v)| (v.signature().symbol.clone()))
-        .collect_vec());
 
     context.module.finalize_definitions().unwrap();
 

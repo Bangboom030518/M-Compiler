@@ -68,15 +68,19 @@ impl MSignature {
             signature.params = self
                 .parameters
                 .iter()
-                .map(|type_ref| -> Result<_, Error> {
-                    let layout = declarations.insert_layout_initialised(type_ref)?;
+                .filter_map(|type_ref| {
+                    let layout = match declarations.insert_layout_initialised(type_ref) {
+                        Ok(layout) => layout,
+                        Err(err) => return Some(Err(err)),
+                    };
 
                     match layout {
-                        primitive @ Layout::Primitive(_) => {
-                            Ok(AbiParam::new(primitive.cranelift_type(&declarations.isa)))
-                        }
+                        Layout::Primitive(PrimitiveKind::Void) => None,
+                        primitive @ Layout::Primitive(_) => Some(Ok(AbiParam::new(
+                            primitive.cranelift_type(&declarations.isa),
+                        ))),
                         Layout::Struct(_) | Layout::Array(_) => {
-                            Ok(AbiParam::new(declarations.isa.pointer_type()))
+                            Some(Ok(AbiParam::new(declarations.isa.pointer_type())))
                         }
                     }
                 })

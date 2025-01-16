@@ -8,8 +8,8 @@ use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::Module;
 use itertools::Itertools;
-use parser::expression::IntrinsicOperator;
-use parser::PrimitiveKind;
+use parser::expression::{self, IntrinsicOperator};
+use parser::{Primitive, PrimitiveKind};
 use tokenizer::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,7 +108,11 @@ where
                 return Ok(BranchStatus::Finished);
             }
         }
-        self.expression(expression.unwrap_or_else(|| todo!("void blocks")))
+
+        match expression {
+            Some(expression) => self.expression(expression),
+            None => Ok(BranchStatus::Continue(todo!("voidz"))),
+        }
     }
 
     fn translate_if(
@@ -181,6 +185,20 @@ where
         type_ref: &Reference,
         span: Span,
     ) -> Result<BranchStatus<Value>, Error> {
+        let input_type_ref = binary.left.type_ref.clone();
+        let Layout::Primitive(input_type) = self
+            .declarations
+            .insert_layout_initialised(&input_type_ref)?
+        else {
+            return Err(Error {
+                span,
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Number,
+                    found: input_type_ref,
+                },
+            });
+        };
+
         let BranchStatus::Continue(left) = self.load_primitive(binary.left)? else {
             return Ok(BranchStatus::Finished);
         };
@@ -189,66 +207,31 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        let Layout::Primitive(input_type) = layout else {
+        if matches!(binary.operator, IntrinsicOperator::Cmp(_))
+            && layout != &Layout::Primitive(PrimitiveKind::Bool)
+        {
             return Err(Error {
                 span,
                 kind: errors::Kind::TypeConstraintViolation {
-                    constraint: todo!(),
+                    constraint: errors::TypeConstraint::Bool,
                     found: type_ref.clone(),
                 },
             });
-        };
-
-        let Layout::Primitive(output_type) = layout else {
-            return Err(Error {
-                span,
-                kind: errors::Kind::TypeConstraintViolation {
-                    constraint: todo!(),
-                    found: type_ref.clone(),
-                },
-            });
-        };
+        }
 
         let value = match binary.operator {
             IntrinsicOperator::Add if input_type.is_integer() => {
                 self.builder.ins().iadd(left, right)
             }
             IntrinsicOperator::Add if input_type.is_float() => self.builder.ins().fadd(left, right),
-            IntrinsicOperator::Add => {
-                return Err(Error {
-                    span,
-                    kind: errors::Kind::TypeConstraintViolation {
-                        constraint: errors::TypeConstraint::Number,
-                        found: type_ref.clone(),
-                    },
-                })
-            }
             IntrinsicOperator::Sub if input_type.is_integer() => {
                 self.builder.ins().isub(left, right)
             }
             IntrinsicOperator::Sub if input_type.is_float() => self.builder.ins().fsub(left, right),
-            IntrinsicOperator::Sub => {
-                return Err(Error {
-                    span,
-                    kind: errors::Kind::TypeConstraintViolation {
-                        constraint: errors::TypeConstraint::Number,
-                        found: type_ref.clone(),
-                    },
-                })
-            }
             IntrinsicOperator::Mul if input_type.is_integer() => {
                 self.builder.ins().imul(left, right)
             }
             IntrinsicOperator::Mul if input_type.is_float() => self.builder.ins().fmul(left, right),
-            IntrinsicOperator::Mul => {
-                return Err(Error {
-                    span,
-                    kind: errors::Kind::TypeConstraintViolation {
-                        constraint: errors::TypeConstraint::Number,
-                        found: type_ref.clone(),
-                    },
-                })
-            }
             IntrinsicOperator::Div if input_type.is_signed_integer() => {
                 self.builder.ins().sdiv(left, right)
             }
@@ -256,15 +239,6 @@ where
                 self.builder.ins().udiv(left, right)
             }
             IntrinsicOperator::Div if input_type.is_float() => self.builder.ins().fdiv(left, right),
-            IntrinsicOperator::Div => {
-                return Err(Error {
-                    span,
-                    kind: errors::Kind::TypeConstraintViolation {
-                        constraint: errors::TypeConstraint::Number,
-                        found: type_ref.clone(),
-                    },
-                })
-            }
             IntrinsicOperator::Cmp(operator) if input_type.is_signed_integer() => self
                 .builder
                 .ins()
@@ -274,15 +248,16 @@ where
                     .ins()
                     .icmp(operator.unsigned_intcc(), left, right)
             }
-            IntrinsicOperator::Cmp(operator) if input_type.is_float() => {
-                self.builder.ins().fcmp(operator.floatcc(), left, right)
-            }
-            IntrinsicOperator::Cmp(_) => {
+            IntrinsicOperator::Sub
+            | IntrinsicOperator::Add
+            | IntrinsicOperator::Mul
+            | IntrinsicOperator::Div
+            | IntrinsicOperator::Cmp(_) => {
                 return Err(Error {
-                    span,
+                    span: todo!("argument span"),
                     kind: errors::Kind::TypeConstraintViolation {
                         constraint: errors::TypeConstraint::Number,
-                        found: type_ref.clone(),
+                        found: input_type_ref,
                     },
                 })
             }
@@ -609,7 +584,7 @@ where
 
     fn integer_const(
         &mut self,
-        value: u128,
+        value: u64,
         layout: &Layout,
         type_ref: &Reference,
         span: Span,
@@ -629,7 +604,6 @@ where
             PrimitiveKind::I16 | PrimitiveKind::U16 => types::I16,
             PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
             PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
-            PrimitiveKind::I128 | PrimitiveKind::U128 => todo!("chonky intz"),
             PrimitiveKind::USize => self.declarations.isa.pointer_type(),
             _ => {
                 return Err(Error {
@@ -681,7 +655,9 @@ where
                         },
                     });
                 }
-                BranchStatus::Continue(self.iconst(bool.into()))
+                let value = self.iconst(bool.into());
+                let size = layout.size(self.declarations)?;
+                BranchStatus::Continue(self.put_in_stack_slot(value, size))
             }
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
@@ -774,6 +750,15 @@ where
 
                 // TODO: strictness: lengths must be usize?
                 self.integer_const(length.into(), &layout?, &type_ref, span)?
+            }
+            hir::Expression::SizeOf(reference) => {
+                let size = self
+                    .declarations
+                    .insert_layout_initialised(&reference)?
+                    .size(&mut self.declarations)?;
+
+                // TODO: strictness: sizes must be usize?
+                self.integer_const(size.into(), &layout?, &type_ref, span)?
             }
             hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };
