@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::declarations::{Declarations, Reference};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
 use crate::layout::Layout;
@@ -10,12 +8,31 @@ use cranelift_module::Module;
 use itertools::Itertools;
 use parser::expression::{self, IntrinsicOperator};
 use parser::{Primitive, PrimitiveKind};
+use std::sync::Arc;
 use tokenizer::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BranchStatus<T> {
     Finished,
     Continue(T),
+}
+
+impl BranchStatus<()> {
+    fn map_none<T>(self) -> BranchStatus<Option<T>> {
+        match self {
+            Self::Finished => BranchStatus::Finished,
+            Self::Continue(_) => BranchStatus::Continue(None),
+        }
+    }
+}
+
+impl<T> BranchStatus<T> {
+    fn map_some(self) -> BranchStatus<Option<T>> {
+        match self {
+            Self::Finished => BranchStatus::Finished,
+            Self::Continue(value) => BranchStatus::Continue(Some(value)),
+        }
+    }
 }
 
 pub struct Translator<'a, M> {
@@ -57,13 +74,12 @@ where
     pub fn statement(&mut self, statement: hir::Statement) -> Result<BranchStatus<()>, Error> {
         match statement {
             hir::Statement::Assignment(assignment) => {
+                let type_ref = assignment.left.type_ref.clone();
                 let BranchStatus::Continue(left) = self.expression(assignment.left)? else {
                     return Ok(BranchStatus::Finished);
                 };
 
-                let layout = self
-                    .declarations
-                    .insert_layout_initialised(&assignment.right.type_ref)?;
+                let layout = self.declarations.insert_layout_initialised(&type_ref)?;
                 let size = layout.size(self.declarations)?;
                 let size = self.iconst(size);
 
@@ -71,12 +87,14 @@ where
                     return Ok(BranchStatus::Finished);
                 };
 
-                self.builder.call_memmove(
-                    self.declarations.isa.frontend_config(),
-                    left,
-                    right,
-                    size,
-                );
+                if layout != Layout::Primitive(PrimitiveKind::Void) {
+                    self.builder.call_memmove(
+                        self.declarations.isa.frontend_config(),
+                        left.expect("value should be non-void"),
+                        right.expect("value should be non-void"),
+                        size,
+                    );
+                }
             }
             hir::Statement::Expression(expression) => {
                 if self.expression(expression)? == BranchStatus::Finished {
@@ -86,10 +104,16 @@ where
             hir::Statement::Let(variable, expression) => {
                 self.builder
                     .declare_var(variable.into(), self.declarations.isa.pointer_type());
-                let BranchStatus::Continue(expression) = self.expression(expression)? else {
+                let layout = self
+                    .declarations
+                    .insert_layout_initialised(&expression.type_ref);
+                let BranchStatus::Continue(value) = self.expression(expression)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                self.builder.def_var(variable.into(), expression);
+                if layout? != Layout::Primitive(PrimitiveKind::Void) {
+                    self.builder
+                        .def_var(variable.into(), value.expect("value should be non-void"));
+                }
             }
         };
 
@@ -102,7 +126,7 @@ where
             statements,
             expression,
         }: hir::Block,
-    ) -> Result<BranchStatus<Value>, Error> {
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         for statement in statements {
             if self.statement(statement)? == BranchStatus::Finished {
                 return Ok(BranchStatus::Finished);
@@ -111,7 +135,7 @@ where
 
         match expression {
             Some(expression) => self.expression(expression),
-            None => Ok(BranchStatus::Continue(todo!("voidz"))),
+            None => Ok(BranchStatus::Continue(None)),
         }
     }
 
@@ -122,7 +146,10 @@ where
             then_branch,
             else_branch,
         }: hir::If,
-    ) -> Result<BranchStatus<Value>, Error> {
+        layout: &Layout,
+        span: Span,
+        found: &Reference,
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         let condition_type = self
             .declarations
             .insert_layout_initialised(&condition.type_ref)?;
@@ -148,16 +175,26 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        self.builder
-            .ins()
-            .brif(condition, then_block, &[], else_block, &[]);
+        self.builder.ins().brif(
+            condition.expect("value should be non-void"),
+            then_block,
+            &[],
+            else_block,
+            &[],
+        );
 
         self.builder.switch_to_block(then_block);
         self.builder.seal_block(then_block);
         match self.block(then_branch)? {
             BranchStatus::Finished => {}
             BranchStatus::Continue(value) => {
-                self.builder.ins().jump(merge_block, &[value]);
+                let result: &[_] = if layout == &Layout::Primitive(PrimitiveKind::Void) {
+                    &[]
+                } else {
+                    &[value.expect("value should be non-void")]
+                };
+
+                self.builder.ins().jump(merge_block, result);
             }
         };
 
@@ -166,16 +203,26 @@ where
         match self.block(else_branch)? {
             BranchStatus::Finished => {}
             BranchStatus::Continue(value) => {
-                self.builder.ins().jump(merge_block, &[value]);
+                let result: &[_] = if layout == &Layout::Primitive(PrimitiveKind::Void) {
+                    &[]
+                } else {
+                    &[value.expect("value should be non-void")]
+                };
+
+                self.builder.ins().jump(merge_block, result);
             }
         };
 
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
 
-        Ok(BranchStatus::Continue(
-            self.builder.block_params(merge_block)[0],
-        ))
+        if layout == &Layout::Primitive(PrimitiveKind::Void) {
+            Ok(BranchStatus::Continue(None))
+        } else {
+            Ok(BranchStatus::Continue(Some(
+                self.builder.block_params(merge_block)[0],
+            )))
+        }
     }
 
     fn binary_intrinsic(
@@ -190,6 +237,16 @@ where
             .declarations
             .insert_layout_initialised(&input_type_ref)?
         else {
+            return Err(Error {
+                span,
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::Number,
+                    found: input_type_ref,
+                },
+            });
+        };
+
+        if input_type == PrimitiveKind::Void {
             return Err(Error {
                 span,
                 kind: errors::Kind::TypeConstraintViolation {
@@ -218,6 +275,9 @@ where
                 },
             });
         }
+
+        let left = left.expect("value should be non-void");
+        let right = right.expect("value should be non-void");
 
         let value = match binary.operator {
             IntrinsicOperator::Add if input_type.is_integer() => {
@@ -271,7 +331,7 @@ where
         &mut self,
         access: hir::FieldAccess,
         layout: &Layout,
-    ) -> Result<BranchStatus<Value>, Error> {
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         let struct_layout = self
             .declarations
             .insert_layout_initialised(&access.expression.type_ref)?;
@@ -298,10 +358,15 @@ where
             self.declarations.isa.pointer_type(),
             Imm64::new(offset.into()),
         );
-
-        Ok(BranchStatus::Continue(
-            self.builder.ins().iadd(value, offset),
-        ))
+        if layout == &Layout::Primitive(PrimitiveKind::Void) {
+            Ok(BranchStatus::Continue(None))
+        } else {
+            Ok(BranchStatus::Continue(Some(
+                self.builder
+                    .ins()
+                    .iadd(value.expect("value should be non-void"), offset),
+            )))
+        }
     }
 
     fn constructor(
@@ -329,12 +394,14 @@ where
             let offset = struct_layout
                 .fields
                 .get(&field)
-                .expect("field doesn't exist")
+                .expect("field should exist")
                 .offset;
             let layout = self
                 .declarations
                 .insert_layout_initialised(&expression.type_ref)?;
-
+            if layout == Layout::Primitive(PrimitiveKind::Void) {
+                continue;
+            }
             let size = layout.size(self.declarations)?;
             let size = self.iconst(size);
 
@@ -345,14 +412,18 @@ where
                 BranchStatus::Finished => return Ok(BranchStatus::Finished),
             };
 
-            self.builder
-                .call_memmove(self.declarations.isa.frontend_config(), addr, value, size);
+            self.builder.call_memmove(
+                self.declarations.isa.frontend_config(),
+                addr,
+                value.expect("value should be non-void"),
+                size,
+            );
         }
 
         Ok(BranchStatus::Continue(addr))
     }
 
-    fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Value>, Error> {
+    fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Option<Value>>, Error> {
         let (declaration, generics) =
             if let hir::Expression::Generixed(generixed) = call.callable.value {
                 let hir::Expression::GlobalAccess(declaration) = generixed.expression.value else {
@@ -379,10 +450,19 @@ where
 
         let mut arguments = Vec::new();
         for expression in call.arguments {
+            let layout = self
+                .declarations
+                .insert_layout_initialised(&expression.type_ref)?;
+
             let BranchStatus::Continue(value) = self.load_primitive(expression)? else {
                 return Ok(BranchStatus::Finished);
             };
-            arguments.push(value);
+
+            if layout == Layout::Primitive(PrimitiveKind::Void) {
+                continue;
+            }
+
+            arguments.push(value.expect("value should be non-void"));
         }
 
         let return_layout = self
@@ -422,13 +502,7 @@ where
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
 
         if return_layout == Layout::Primitive(PrimitiveKind::Void) {
-            // TODO: What????
-            let value = self
-                .builder
-                .ins()
-                .iconst(self.module.isa().pointer_type(), 0);
-
-            Ok(BranchStatus::Continue(value))
+            Ok(BranchStatus::Continue(None))
         } else {
             let value = self.builder.inst_results(call)[0];
             let value = if return_layout.is_aggregate() {
@@ -437,7 +511,7 @@ where
                 let size = return_layout.size(self.declarations)?;
                 self.put_in_stack_slot(value, size)
             };
-            Ok(BranchStatus::Continue(value))
+            Ok(BranchStatus::Continue(Some(value)))
         }
     }
 
@@ -462,13 +536,17 @@ where
     fn load_primitive(
         &mut self,
         expression: hir::Typed<hir::Expression>,
-    ) -> Result<BranchStatus<Value>, Error> {
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         let layout = self
             .declarations
             .insert_layout_initialised(&expression.type_ref)?;
 
         let BranchStatus::Continue(value) = self.expression(expression)? else {
             return Ok(BranchStatus::Finished);
+        };
+
+        let Some(value) = value else {
+            return Ok(BranchStatus::Continue(None));
         };
 
         let value = if layout.is_aggregate() {
@@ -482,20 +560,21 @@ where
             )
         };
 
-        Ok(BranchStatus::Continue(value))
+        Ok(BranchStatus::Continue(Some(value)))
     }
 
-    fn store(&mut self, store: hir::Store, span: Span) -> Result<BranchStatus<Value>, Error> {
+    fn store(&mut self, store: hir::Store) -> Result<BranchStatus<()>, Error> {
         let layout = self
             .declarations
             .insert_layout_initialised(&store.pointer.type_ref)?;
+
         if layout != Layout::Primitive(PrimitiveKind::USize) {
-            return Err(Error {
+            return Err(errors::Error {
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::Address,
                     found: store.pointer.type_ref,
                 },
-                span,
+                span: store.pointer.span,
             });
         }
 
@@ -503,20 +582,32 @@ where
             .declarations
             .insert_layout_initialised(&store.expression.type_ref)?;
 
-        if layout.is_aggregate() {
-            todo!("store aggregates")
-        } else {
-            let BranchStatus::Continue(pointer) = self.load_primitive(store.pointer)? else {
-                return Ok(BranchStatus::Finished);
-            };
-            let BranchStatus::Continue(expression) = self.load_primitive(store.expression)? else {
-                return Ok(BranchStatus::Finished);
-            };
-            self.builder
-                .ins()
-                .store(MemFlags::new(), expression, pointer, Offset32::new(0));
-            Ok(BranchStatus::Continue(self.iconst(0)))
+        if layout == Layout::Primitive(PrimitiveKind::Void) || layout.is_aggregate() {
+            return Err(errors::Error {
+                kind: errors::Kind::TypeConstraintViolation {
+                    constraint: errors::TypeConstraint::StorableOrLoadable,
+                    found: store.expression.type_ref,
+                },
+                span: store.expression.span,
+            });
         }
+
+        let BranchStatus::Continue(pointer) = self.load_primitive(store.pointer)? else {
+            return Ok(BranchStatus::Finished);
+        };
+
+        let pointer = pointer.expect("pointer translated as void in store");
+
+        let BranchStatus::Continue(expression) = self.load_primitive(store.expression)? else {
+            return Ok(BranchStatus::Finished);
+        };
+
+        let expression = expression.expect("stored primitive translated as void");
+
+        self.builder
+            .ins()
+            .store(MemFlags::new(), expression, pointer, Offset32::new(0));
+        Ok(BranchStatus::Continue(()))
     }
 
     fn string_const(
@@ -637,13 +728,13 @@ where
             type_ref,
             span,
         }: hir::Typed<hir::Expression>,
-    ) -> Result<BranchStatus<Value>, Error> {
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         let layout = self.declarations.insert_layout_initialised(&type_ref);
 
         let value = match expression {
-            hir::Expression::IntegerConst(int) => {
-                self.integer_const(int, &layout?, &type_ref, span)?
-            }
+            hir::Expression::IntegerConst(int) => self
+                .integer_const(int, &layout?, &type_ref, span)?
+                .map_some(),
             hir::Expression::BoolConst(bool) => {
                 let layout = layout?;
                 if layout != Layout::Primitive(PrimitiveKind::Bool) {
@@ -657,7 +748,7 @@ where
                 }
                 let value = self.iconst(bool.into());
                 let size = layout.size(self.declarations)?;
-                BranchStatus::Continue(self.put_in_stack_slot(value, size))
+                BranchStatus::Continue(Some(self.put_in_stack_slot(value, size)))
             }
             hir::Expression::FloatConst(float) => {
                 let value = match layout? {
@@ -681,37 +772,56 @@ where
                     }
                 };
 
-                BranchStatus::Continue(value)
+                BranchStatus::Continue(Some(value))
             }
-            hir::Expression::StringConst(string) => {
-                self.string_const(&string, &layout?, &type_ref, span)?
-            }
+            hir::Expression::StringConst(string) => self
+                .string_const(&string, &layout?, &type_ref, span)?
+                .map_some(),
             hir::Expression::Addr(inner) => {
                 layout?;
                 let BranchStatus::Continue(value) = self.expression(*inner)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                BranchStatus::Continue(
+
+                let Some(value) = value else {
+                    return Err(errors::Error {
+                        span,
+                        kind: errors::Kind::TypeConstraintViolation {
+                            constraint: errors::TypeConstraint::NotVoid,
+                            found: type_ref,
+                        },
+                    });
+                };
+
+                BranchStatus::Continue(Some(
                     self.put_in_stack_slot(value, self.declarations.isa.pointer_bytes().into()),
-                )
+                ))
             }
             hir::Expression::Load(inner) => {
-                if layout?.is_aggregate() {
-                    todo!("loading structs")
-                } else {
-                    self.load_primitive(*inner)?
+                let layout = layout?;
+                if layout == Layout::Primitive(PrimitiveKind::Void) || layout.is_aggregate() {
+                    return Err(errors::Error {
+                        kind: errors::Kind::TypeConstraintViolation {
+                            constraint: errors::TypeConstraint::StorableOrLoadable,
+                            found: inner.type_ref,
+                        },
+                        span: inner.span,
+                    });
                 }
+                self.load_primitive(*inner)?
             }
-            hir::Expression::Store(store) => self.store(*store, span)?,
-            hir::Expression::BinaryIntrinsic(binary) => {
-                self.binary_intrinsic(*binary, &layout?, &type_ref, span)?
-            }
-            hir::Expression::If(r#if) => self.translate_if(*r#if)?,
+            hir::Expression::Store(store) => self.store(*store)?.map_none(),
+            hir::Expression::BinaryIntrinsic(binary) => self
+                .binary_intrinsic(*binary, &layout?, &type_ref, span)?
+                .map_some(),
+            hir::Expression::If(r#if) => self.translate_if(*r#if, &layout?, span, &type_ref)?,
             hir::Expression::FieldAccess(access) => {
                 // TODO: ignore layout?
                 self.field_access(*access, &layout?)?
             }
-            hir::Expression::Constructor(constructor) => self.constructor(constructor, &layout?)?,
+            hir::Expression::Constructor(constructor) => {
+                self.constructor(constructor, &layout?)?.map_some()
+            }
             hir::Expression::Return(expression) => {
                 let layout = self
                     .declarations
@@ -730,18 +840,26 @@ where
                     self.builder.call_memcpy(
                         self.declarations.isa.frontend_config(),
                         return_param,
-                        value,
+                        value.expect("value should be non-void"),
                         size,
                     );
                     self.builder.ins().return_(&[return_param]);
+                } else if layout == Layout::Primitive(PrimitiveKind::Void) {
+                    self.builder.ins().return_(&[]);
                 } else {
-                    self.builder.ins().return_(&[value]);
+                    self.builder
+                        .ins()
+                        .return_(&[value.expect("value should be non-void")]);
                 }
 
                 return Ok(BranchStatus::Finished);
             }
             hir::Expression::LocalAccess(variable) => {
-                BranchStatus::Continue(self.builder.use_var(variable.into()))
+                if layout? == Layout::Primitive(PrimitiveKind::Void) {
+                    BranchStatus::Continue(None)
+                } else {
+                    BranchStatus::Continue(Some(self.builder.use_var(variable.into())))
+                }
             }
             hir::Expression::Call(call) => self.call(*call)?,
             hir::Expression::Generixed(_) => todo!("generixed"),
@@ -750,6 +868,7 @@ where
 
                 // TODO: strictness: lengths must be usize?
                 self.integer_const(length.into(), &layout?, &type_ref, span)?
+                    .map_some()
             }
             hir::Expression::SizeOf(reference) => {
                 let size = self
@@ -759,6 +878,7 @@ where
 
                 // TODO: strictness: sizes must be usize?
                 self.integer_const(size.into(), &layout?, &type_ref, span)?
+                    .map_some()
             }
             hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };

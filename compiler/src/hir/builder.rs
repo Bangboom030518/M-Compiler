@@ -1,11 +1,13 @@
 use super::{Store, Typed};
 use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::hir::{BinaryIntrinsic, Expression};
+use crate::layout::Layout;
 use crate::{declarations, errors, function, hir, Error};
 use cranelift::prelude::*;
 use itertools::Itertools;
 use parser::expression::control_flow::If;
 use parser::expression::{IntrinsicCall, IntrinsicOperator};
+use parser::PrimitiveKind;
 use std::collections::HashMap;
 use std::iter;
 use tokenizer::{AsSpanned, Span, Spanned};
@@ -35,6 +37,9 @@ enum Constraint {
         expected_length: u32,
         array_type: Reference,
     },
+    VoidExpression {
+        expression: hir::Typed<hir::Expression>,
+    },
 }
 
 impl Constraint {
@@ -63,9 +68,7 @@ impl Constraint {
                         },
                     })?;
 
-                declarations
-                    .unresolved
-                    .check_expression_type(expression, &field.type_ref)?;
+                declarations.check_expression_type(expression, &field.type_ref)?;
             }
             Self::ArrayLength {
                 expected_length,
@@ -80,6 +83,10 @@ impl Constraint {
                     .unresolved
                     .check_length(*expected_length, array_type.length)?;
             }
+            Self::VoidExpression { expression } => {
+                let void = declarations.unresolved.void();
+                declarations.check_expression_type(expression, &void)?;
+            }
         };
         Ok(true)
     }
@@ -91,7 +98,7 @@ pub struct Builder<'a> {
     return_type: Reference,
     variables: HashMap<VariableId, Reference>,
     local_scopes: Vec<HashMap<String, Variable>>,
-    struct_constraints: Vec<Constraint>,
+    constraints: Vec<Constraint>,
     new_variable_index: usize,
     body: &'a [Spanned<parser::Statement>],
 }
@@ -118,7 +125,7 @@ impl<'a> Builder<'a> {
             return_type: function.signature.return_type.clone(),
             local_scopes: vec![scope],
             body: &function.body,
-            struct_constraints: Vec::new(),
+            constraints: Vec::new(),
         }
     }
 
@@ -128,7 +135,7 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|statement| self.statement(statement.as_ref()))
             .collect::<Result<_, _>>()?;
-        let mut constraints = self.struct_constraints;
+        let mut constraints = self.constraints;
         while !constraints.is_empty() {
             let mut checked = Vec::with_capacity(constraints.len());
             for (index, constraint) in constraints.iter().enumerate() {
@@ -161,7 +168,6 @@ impl<'a> Builder<'a> {
                 let left = self.expression(left.as_ref())?;
                 let right = self.expression(right.as_ref())?;
                 self.declarations
-                    .unresolved
                     .check_expression_type(&right, &left.type_ref)?;
                 Ok(hir::Statement::Assignment(hir::Assignment::new(
                     left, right,
@@ -176,7 +182,6 @@ impl<'a> Builder<'a> {
                     .insert(statement.ident.value.0.clone(), variable);
                 let expression = self.expression(statement.expression.as_ref())?;
                 self.declarations
-                    .unresolved
                     .check_expression_type(&expression, &type_ref)?;
                 self.variables.insert(variable.into(), type_ref);
                 Ok(hir::Statement::Let(variable.into(), expression))
@@ -253,7 +258,7 @@ impl<'a> Builder<'a> {
             .iter()
             .map(|(ident, expression)| {
                 let expression = self.expression(expression.as_ref())?;
-                self.struct_constraints.push(Constraint::StructField {
+                self.constraints.push(Constraint::StructField {
                     struct_type: struct_type.clone(),
                     field: ident.clone(),
                     expression: expression.clone(),
@@ -281,7 +286,6 @@ impl<'a> Builder<'a> {
                 let left = self.expression(left.as_ref().as_ref())?;
                 let right = self.expression(right.as_ref().as_ref())?;
                 self.declarations
-                    .unresolved
                     .check_expression_type(&right, &left.type_ref)?;
                 let type_ref = if matches!(operator, IntrinsicOperator::Cmp(_)) {
                     self.declarations.unresolved.create_type_ref()
@@ -306,7 +310,6 @@ impl<'a> Builder<'a> {
 
                 let expression = self.expression(expression.as_ref().as_ref())?;
                 self.declarations
-                    .unresolved
                     .check_expression_type(&expression, &expected)?;
                 Ok(expression)
             }
@@ -401,12 +404,10 @@ impl<'a> Builder<'a> {
         }
         for (parameter, argument) in iter::zip(&signature.parameters, &arguments) {
             self.declarations
-                .unresolved
                 .check_expression_type(argument, parameter)?;
         }
 
         self.declarations
-            .unresolved
             .check_expression_type(&call_expression, &signature.return_type)?;
         Ok(call_expression)
     }
@@ -426,7 +427,7 @@ impl<'a> Builder<'a> {
                 parser::Literal::String(string) => {
                     let expression = Expression::StringConst(string.clone())
                         .typed(self.declarations, expression.span);
-                    self.struct_constraints.push(Constraint::ArrayLength {
+                    self.constraints.push(Constraint::ArrayLength {
                         expected_length: string.len() as u32,
                         array_type: expression.type_ref.clone(),
                     });
@@ -440,7 +441,6 @@ impl<'a> Builder<'a> {
             parser::Expression::Return(inner) => {
                 let inner = self.expression(inner.expression.as_ref())?;
                 self.declarations
-                    .unresolved
                     .check_expression_type(&inner, &self.return_type)?;
                 Ok(hir::Expression::Return(Box::new(inner))
                     .typed(self.declarations, expression.span))
@@ -466,15 +466,22 @@ impl<'a> Builder<'a> {
                     else_branch: else_branch.clone(),
                 }))
                 .typed(self.declarations, expression.span);
+
                 if let Some(sub_expression) = then_branch.expression {
                     self.declarations
-                        .unresolved
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
+                } else {
+                    self.constraints.push(Constraint::VoidExpression {
+                        expression: expression.clone(),
+                    })
                 }
                 if let Some(sub_expression) = else_branch.expression {
                     self.declarations
-                        .unresolved
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
+                } else {
+                    self.constraints.push(Constraint::VoidExpression {
+                        expression: expression.clone(),
+                    })
                 }
                 Ok(expression)
             }
@@ -489,7 +496,7 @@ impl<'a> Builder<'a> {
                     field: field.clone(),
                 }))
                 .typed(self.declarations, expression.span);
-                self.struct_constraints.push(Constraint::StructField {
+                self.constraints.push(Constraint::StructField {
                     struct_type: struct_expression.type_ref,
                     field: field.clone(),
                     expression: field_access.clone(),

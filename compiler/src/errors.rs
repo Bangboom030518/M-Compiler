@@ -7,6 +7,16 @@ pub struct Error {
     pub kind: Kind,
 }
 
+impl Error {
+    #[must_use]
+    pub fn message(self, input: &str) -> String {
+        let start = self.span.start.saturating_sub(5);
+        let end = (self.span.end + 5).min(input.len());
+        let range = input.get(start..end).expect("span should be in range");
+        format!("Error in '{range}': {:?}", self.kind)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeclarationConstraint {
     Length,
@@ -20,10 +30,12 @@ pub enum TypeConstraint {
     Integer,
     Float,
     Address,
+    StorableOrLoadable,
     Bool,
     Array,
     Struct,
     Number,
+    NotVoid,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

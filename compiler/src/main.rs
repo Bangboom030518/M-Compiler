@@ -200,7 +200,7 @@ fn main() {
 
     FunctionCompiler::new(main_ref)
         .compile_all(&mut declarations, &mut context)
-        .unwrap_or_else(|error| panic!("{error:?}"));
+        .unwrap_or_else(|error| panic!("{}", error.message(input)));
 
     context.module.finalize_definitions().unwrap();
 

@@ -8,21 +8,22 @@ fn Bool true()
 	@true()
 end
 
-// fn Void sus()
-	
-// end
-
 fn UInt8 sus(Void a)
 	0
 end
 
+fn Void void()
+	@assert_type(0, UInt8)
+end
+
 fn UInt32 main()
 	// @assert_type(0, Void)
-	sus(if true() then
-	end)
-	if true() then
-		true()
-	end
+	// sus(if true() then
+	// end)
+	// if true() then
+	// 	let x = true()
+	// end
+	void()
 
 	// if true() then
 	// 	@assert_type(0, UInt8)

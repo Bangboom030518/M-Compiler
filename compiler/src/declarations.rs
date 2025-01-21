@@ -3,11 +3,11 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::Ident;
+use parser::{Ident, PrimitiveKind};
 use std::collections::HashMap;
 use std::iter;
-use std::sync::Arc;
-use tokenizer::{AsSpanned, Spanned};
+use std::sync::{Arc, OnceLock};
+use tokenizer::{AsSpanned, Span, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
@@ -52,6 +52,7 @@ enum Declaration {
     Resolved(parser::Declaration, ScopeId),
     Alias(Reference),
     Length(u32),
+    UnknownVoid,
 }
 
 #[derive(Debug)]
@@ -114,51 +115,6 @@ impl UnresolvedDeclarations {
             .collect()
     }
 
-    fn assert_equivalent(&mut self, expected: &Reference, found: &Reference) -> Result<(), Error> {
-        if !self.is_initialised(found.id) {
-            self.initialise(found.id, Declaration::Alias(expected.clone()));
-            return Ok(());
-        } else if !self.is_initialised(expected.id) {
-            self.initialise(expected.id, Declaration::Alias(found.clone()));
-            return Ok(());
-        }
-
-        if expected.id == found.id {
-            if expected.generics.len() != found.generics.len() {
-                return Err(Error {
-                    span: todo!(),
-                    kind: errors::Kind::MismatchedGenericArguments {
-                        arguments: found.generics.len(),
-                        parameters: expected.generics.len(),
-                        declaration: todo!("is this error internal"),
-                    },
-                });
-            }
-            for (expected, found) in iter::zip(&expected.generics, &found.generics) {
-                self.assert_equivalent(expected, found)?;
-            }
-            return Ok(());
-        }
-
-        Err(Error {
-            kind: errors::Kind::MismatchedTypes {
-                expected: expected.clone(),
-                found: found.clone(),
-            },
-            span: todo!(),
-        })
-    }
-
-    pub fn check_expression_type(
-        &mut self,
-        expression: &Typed<hir::Expression>,
-        expected: &Reference,
-    ) -> Result<(), Error> {
-        let expected = self.resolve(expected);
-        let found = self.resolve(&expression.type_ref);
-        self.assert_equivalent(&expected, &found)
-    }
-
     pub fn lookup(&self, ident: &Spanned<Ident>, scope: ScopeId) -> Result<Id, Error> {
         self.scopes[scope.0]
             .get(&ident.value.0)
@@ -208,7 +164,7 @@ impl UnresolvedDeclarations {
 
         match declaration {
             Declaration::Length(length) => Ok(Some(*length)),
-            Declaration::Resolved(..) => Err(Error {
+            Declaration::Resolved(..) | Declaration::UnknownVoid => Err(Error {
                 span: todo!(),
                 kind: errors::Kind::DeclarationConstraintViolation {
                     constraint: errors::DeclarationConstraint::Length,
@@ -267,7 +223,7 @@ impl UnresolvedDeclarations {
         };
 
         match declaration {
-            Declaration::Resolved(..) => reference,
+            Declaration::Resolved(..) | Declaration::UnknownVoid => reference,
             Declaration::Length(_) => {
                 assert!(reference.generics.is_empty(), "generics passed to a length");
                 reference
@@ -337,6 +293,9 @@ impl UnresolvedDeclarations {
             self.store[index]
         );
         self.store[index] = Some(declaration);
+    }
+    pub fn void(&mut self) -> Reference {
+        self.create(Declaration::UnknownVoid).to_type_ref()
     }
 }
 
@@ -416,6 +375,7 @@ impl Declarations {
         let (declaration, parent_scope) = match layout {
             Declaration::Resolved(declaration, scope) => (declaration, scope),
             Declaration::Alias(reference) => return self.insert_layout(&reference),
+            Declaration::UnknownVoid => return Ok(Some(Layout::Primitive(PrimitiveKind::Void))),
             Declaration::Length(_) => {
                 return Err(Error {
                     span: todo!(),
@@ -587,6 +547,68 @@ impl Declarations {
             .insert(&reference, Arc::new(function), &self.unresolved);
 
         Ok(())
+    }
+    fn assert_equivalent(
+        &mut self,
+        expected: &Reference,
+        found: &Reference,
+        span: Span,
+    ) -> Result<(), Error> {
+        if !self.unresolved.is_initialised(found.id) {
+            self.unresolved
+                .initialise(found.id, Declaration::Alias(expected.clone()));
+            return Ok(());
+        } else if !self.unresolved.is_initialised(expected.id) {
+            self.unresolved
+                .initialise(expected.id, Declaration::Alias(found.clone()));
+            return Ok(());
+        }
+
+        if expected.id == found.id {
+            if expected.generics.len() != found.generics.len() {
+                return Err(Error {
+                    span: todo!(),
+                    kind: errors::Kind::MismatchedGenericArguments {
+                        arguments: found.generics.len(),
+                        parameters: expected.generics.len(),
+                        declaration: todo!("is this error internal"),
+                    },
+                });
+            }
+            for (expected, found) in iter::zip(&expected.generics, &found.generics) {
+                // TODO: span me!
+                self.assert_equivalent(expected, found, 0..0)?;
+            }
+            return Ok(());
+        }
+
+        if let (Some(expected), Some(found)) =
+            (self.insert_layout(expected)?, self.insert_layout(found)?)
+        {
+            if expected == Layout::Primitive(PrimitiveKind::Void)
+                && found == Layout::Primitive(PrimitiveKind::Void)
+            {
+                return Ok(());
+            }
+        }
+
+        Err(Error {
+            kind: errors::Kind::MismatchedTypes {
+                expected: expected.clone(),
+                found: found.clone(),
+            },
+            span,
+        })
+    }
+
+    pub fn check_expression_type(
+        &mut self,
+        expression: &Typed<hir::Expression>,
+        expected: &Reference,
+    ) -> Result<(), Error> {
+        let expected = self.unresolved.resolve(expected);
+        let found = self.unresolved.resolve(&expression.type_ref);
+        self.assert_equivalent(&expected, &found, expression.span.clone())
     }
 }
 
