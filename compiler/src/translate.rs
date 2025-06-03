@@ -1,13 +1,13 @@
 use crate::declarations::{Declarations, Reference};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
+use crate::hir::Typed;
 use crate::layout::Layout;
 use crate::{errors, hir, Error, FunctionCompiler};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::prelude::*;
 use cranelift_module::Module;
-use itertools::Itertools;
-use parser::expression::{self, IntrinsicOperator};
-use parser::{Primitive, PrimitiveKind};
+use parser::expression::IntrinsicOperator;
+use parser::PrimitiveKind;
 use std::sync::Arc;
 use tokenizer::Span;
 
@@ -50,7 +50,7 @@ where
         self.builder.finalize();
     }
 
-    pub fn new(
+    pub const fn new(
         builder: cranelift::prelude::FunctionBuilder<'a>,
         declarations: &'a mut Declarations,
         context: &'a mut M,
@@ -115,7 +115,7 @@ where
                         .def_var(variable.into(), value.expect("value should be non-void"));
                 }
             }
-        };
+        }
 
         Ok(BranchStatus::Continue(()))
     }
@@ -168,8 +168,10 @@ where
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
 
-        self.builder
-            .append_block_param(merge_block, self.declarations.isa.pointer_type());
+        if layout != &Layout::Primitive(PrimitiveKind::Void) {
+            self.builder
+                .append_block_param(merge_block, self.declarations.isa.pointer_type());
+        }
 
         let BranchStatus::Continue(condition) = self.load_primitive(condition)? else {
             return Ok(BranchStatus::Finished);
@@ -196,7 +198,7 @@ where
 
                 self.builder.ins().jump(merge_block, result);
             }
-        };
+        }
 
         self.builder.switch_to_block(else_block);
         self.builder.seal_block(else_block);
@@ -211,7 +213,7 @@ where
 
                 self.builder.ins().jump(merge_block, result);
             }
-        };
+        }
 
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
@@ -254,7 +256,7 @@ where
                     found: input_type_ref,
                 },
             });
-        };
+        }
 
         let BranchStatus::Continue(left) = self.load_primitive(binary.left)? else {
             return Ok(BranchStatus::Finished);
@@ -679,7 +681,7 @@ where
         layout: &Layout,
         type_ref: &Reference,
         span: Span,
-    ) -> Result<BranchStatus<Value>, Error> {
+    ) -> Result<BranchStatus<Option<Value>>, Error> {
         let Layout::Primitive(primitive) = layout else {
             return Err(Error {
                 span,
@@ -696,6 +698,7 @@ where
             PrimitiveKind::I32 | PrimitiveKind::U32 => types::I32,
             PrimitiveKind::I64 | PrimitiveKind::U64 => types::I64,
             PrimitiveKind::USize => self.declarations.isa.pointer_type(),
+            PrimitiveKind::Void => return Ok(BranchStatus::Continue(None)),
             _ => {
                 return Err(Error {
                     span,
@@ -715,10 +718,10 @@ where
             })?,
         );
 
-        Ok(BranchStatus::Continue(self.put_in_stack_slot(
+        Ok(BranchStatus::Continue(Some(self.put_in_stack_slot(
             value,
             primitive.size(self.declarations.isa.pointer_bytes().into()),
-        )))
+        ))))
     }
 
     fn expression(
@@ -732,9 +735,9 @@ where
         let layout = self.declarations.insert_layout_initialised(&type_ref);
 
         let value = match expression {
-            hir::Expression::IntegerConst(int) => self
-                .integer_const(int, &layout?, &type_ref, span)?
-                .map_some(),
+            hir::Expression::IntegerConst(int) => {
+                self.integer_const(int, &layout?, &type_ref, span)?
+            }
             hir::Expression::BoolConst(bool) => {
                 let layout = layout?;
                 if layout != Layout::Primitive(PrimitiveKind::Bool) {
@@ -868,17 +871,15 @@ where
 
                 // TODO: strictness: lengths must be usize?
                 self.integer_const(length.into(), &layout?, &type_ref, span)?
-                    .map_some()
             }
             hir::Expression::SizeOf(reference) => {
                 let size = self
                     .declarations
                     .insert_layout_initialised(&reference)?
-                    .size(&mut self.declarations)?;
+                    .size(self.declarations)?;
 
                 // TODO: strictness: sizes must be usize?
                 self.integer_const(size.into(), &layout?, &type_ref, span)?
-                    .map_some()
             }
             hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };

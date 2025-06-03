@@ -3,7 +3,7 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::{Ident, PrimitiveKind};
+use parser::{Ident, Primitive, PrimitiveKind};
 use std::collections::HashMap;
 use std::iter;
 use std::sync::{Arc, OnceLock};
@@ -48,7 +48,7 @@ impl Function {
 }
 
 #[derive(Clone, Debug)]
-enum Declaration {
+pub enum Declaration {
     Resolved(parser::Declaration, ScopeId),
     Alias(Reference),
     Length(u32),
@@ -89,7 +89,7 @@ impl<V> ResolvedReferenceMap<V> {
     }
 }
 pub struct UnresolvedDeclarations {
-    store: Vec<Option<Declaration>>,
+    pub store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
 }
 
@@ -134,7 +134,13 @@ impl UnresolvedDeclarations {
     ) -> Result<Reference, Error> {
         let id = self.lookup(&r#type.name, scope)?;
         let generics = self.build_generics(&r#type.generics.value.0, scope)?;
-        Ok(Reference { id, generics })
+        let reference = Reference { id, generics };
+        let alias = self.create(Declaration::Alias(reference));
+
+        Ok(Reference {
+            id: alias,
+            generics: Vec::new(),
+        })
     }
 
     /// Gets the declaration at `Id`, returning `None` if the declaration is uninitialised
@@ -294,6 +300,7 @@ impl UnresolvedDeclarations {
         );
         self.store[index] = Some(declaration);
     }
+
     pub fn void(&mut self) -> Reference {
         self.create(Declaration::UnknownVoid).to_type_ref()
     }
@@ -548,6 +555,13 @@ impl Declarations {
 
         Ok(())
     }
+
+    fn is_void(&mut self, reference: &Reference) -> Result<Option<bool>, Error> {
+        Ok(self
+            .insert_layout(reference)?
+            .map(|layout| layout == Layout::Primitive(PrimitiveKind::Void)))
+    }
+
     fn assert_equivalent(
         &mut self,
         expected: &Reference,
@@ -564,6 +578,34 @@ impl Declarations {
             return Ok(());
         }
 
+        if let (Some(expected), Some(found)) =
+            (self.insert_layout(expected)?, self.insert_layout(found)?)
+        {
+            if expected == Layout::Primitive(PrimitiveKind::Void)
+                && found == Layout::Primitive(PrimitiveKind::Void)
+            {
+                return Ok(());
+            }
+        }
+
+        // TODO: what if its a void but its still a secret locked away from the light???
+        if self.is_void(expected)?.unwrap_or_default() {
+            assert!(
+                self.unresolved.store[found.id.0]
+                    .as_ref()
+                    .is_some_and(|decl| matches!(decl, Declaration::Alias(_))),
+                "tried to overwrite non-alias declaration as void: found '{:?}'",
+                self.unresolved.store[found.id.0]
+            );
+
+            self.unresolved.store[found.id.0] = Some(Declaration::Alias(expected.clone()));
+            // TODO: call again?
+            return Ok(());
+        }
+
+        let expected = self.unresolved.resolve(expected);
+        let found = self.unresolved.resolve(found);
+
         if expected.id == found.id {
             if expected.generics.len() != found.generics.len() {
                 return Err(Error {
@@ -575,21 +617,13 @@ impl Declarations {
                     },
                 });
             }
+
             for (expected, found) in iter::zip(&expected.generics, &found.generics) {
                 // TODO: span me!
                 self.assert_equivalent(expected, found, 0..0)?;
             }
-            return Ok(());
-        }
 
-        if let (Some(expected), Some(found)) =
-            (self.insert_layout(expected)?, self.insert_layout(found)?)
-        {
-            if expected == Layout::Primitive(PrimitiveKind::Void)
-                && found == Layout::Primitive(PrimitiveKind::Void)
-            {
-                return Ok(());
-            }
+            return Ok(());
         }
 
         Err(Error {
@@ -606,9 +640,9 @@ impl Declarations {
         expression: &Typed<hir::Expression>,
         expected: &Reference,
     ) -> Result<(), Error> {
-        let expected = self.unresolved.resolve(expected);
-        let found = self.unresolved.resolve(&expression.type_ref);
-        self.assert_equivalent(&expected, &found, expression.span.clone())
+        // let expected = self.unresolved.resolve(expected);
+        // let found = self.unresolved.resolve(&expression.type_ref);
+        self.assert_equivalent(&expected, &expression.type_ref, expression.span.clone())
     }
 }
 

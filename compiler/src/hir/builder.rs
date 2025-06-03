@@ -1,13 +1,11 @@
 use super::{Store, Typed};
 use crate::declarations::{Declarations, Reference, ScopeId};
 use crate::hir::{BinaryIntrinsic, Expression};
-use crate::layout::Layout;
 use crate::{declarations, errors, function, hir, Error};
 use cranelift::prelude::*;
 use itertools::Itertools;
 use parser::expression::control_flow::If;
 use parser::expression::{IntrinsicCall, IntrinsicOperator};
-use parser::PrimitiveKind;
 use std::collections::HashMap;
 use std::iter;
 use tokenizer::{AsSpanned, Span, Spanned};
@@ -87,7 +85,7 @@ impl Constraint {
                 let void = declarations.unresolved.void();
                 declarations.check_expression_type(expression, &void)?;
             }
-        };
+        }
         Ok(true)
     }
 }
@@ -150,6 +148,7 @@ impl<'a> Builder<'a> {
                 constraints.remove(index);
             }
         }
+
         Ok(body)
     }
 
@@ -473,15 +472,16 @@ impl<'a> Builder<'a> {
                 } else {
                     self.constraints.push(Constraint::VoidExpression {
                         expression: expression.clone(),
-                    })
+                    });
                 }
+
                 if let Some(sub_expression) = else_branch.expression {
                     self.declarations
                         .check_expression_type(&expression, &sub_expression.type_ref)?;
                 } else {
                     self.constraints.push(Constraint::VoidExpression {
                         expression: expression.clone(),
-                    })
+                    });
                 }
                 Ok(expression)
             }

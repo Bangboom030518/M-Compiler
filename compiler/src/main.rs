@@ -206,6 +206,6 @@ fn main() {
 
     let code = context.module.get_finalized_function(main_func_id);
     println!("Compilation finished! Running compiled function...");
-    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> *const u8>(code) };
+    let main = unsafe { std::mem::transmute::<*const u8, unsafe fn() -> u8>(code) };
     unsafe { main() };
 }

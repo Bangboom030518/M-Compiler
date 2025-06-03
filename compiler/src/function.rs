@@ -270,7 +270,7 @@ impl Internal {
             let variable = Variable::new(0);
             builder.declare_var(variable, declarations.isa.pointer_type());
             builder.def_var(variable, param);
-        };
+        }
 
         let names = self
             .signature
