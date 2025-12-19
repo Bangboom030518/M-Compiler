@@ -1,19 +1,38 @@
 use crate::declarations::Reference;
+use ariadne::{Color, ColorGenerator, Fmt, Label, Report, ReportKind, Source};
 use tokenizer::Span;
+
+// struct ContextualSpan {
+//     row: usize,
+//     column: usize,
+// }
+
+// impl ContextualSpan {
+//     fn new(span: Span, input: &str) -> Self {}
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error {
-    pub span: Span,
     pub kind: Kind,
+    pub span: Span,
 }
 
 impl Error {
     #[must_use]
-    pub fn message(self, input: &str) -> String {
-        let start = self.span.start.saturating_sub(5);
-        let end = (self.span.end + 5).min(input.len());
-        let range = input.get(start..end).expect("span should be in range");
-        format!("Error in '{range}': {:?}", self.kind)
+    pub const fn new(kind: Kind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    #[must_use]
+    pub fn print(self, input: &str, filename: &str) {
+        Report::build(ReportKind::Error, (filename, self.span.clone()))
+            .with_code(67)
+            .with_message("Oop noob alert!".to_string())
+            .with_label(Label::new((filename, self.span)).with_message(self.kind.message()))
+            .with_note("You're a bit of a silly billy :)".to_string())
+            .finish()
+            .print(("input.m", Source::from(input)))
+            .unwrap();
     }
 }
 
@@ -83,4 +102,10 @@ pub enum Kind {
         parent_struct: Reference,
         fields: Vec<String>,
     },
+}
+
+impl Kind {
+    pub fn message(&self) -> String {
+        format!("{self:?}")
+    }
 }

@@ -55,16 +55,15 @@ impl Constraint {
                     return Ok(false);
                 };
                 let struct_type = struct_type.expect_struct()?;
-                let field = struct_type
-                    .fields
-                    .get(&field.value.0)
-                    .ok_or_else(|| Error {
-                        span: field.span.clone(),
-                        kind: errors::Kind::FieldNotFound {
+                let field = struct_type.fields.get(&field.value.0).ok_or_else(|| {
+                    Error::new(
+                        errors::Kind::FieldNotFound {
                             parent_struct: struct_type_ref.clone(),
                             field: field.value.0.clone(),
                         },
-                    })?;
+                        field.span.clone(),
+                    )
+                })?;
 
                 declarations.check_expression_type(expression, &field.type_ref)?;
             }

@@ -4,6 +4,7 @@ use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokenizer::Span;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -21,6 +22,7 @@ pub struct Struct {
 pub struct Array {
     pub length: declarations::Id,
     pub element_type: declarations::Reference,
+    pub generics_span: Span,
 }
 
 impl Array {
@@ -28,7 +30,7 @@ impl Array {
         let element_type = declarations.insert_layout_initialised(&self.element_type)?;
         let length = declarations
             .unresolved
-            .get_initialised_length(self.length)?;
+            .get_initialised_length(self.length, &self.generics_span)?;
         let length = u32::try_from(length).map_err(|_| Error {
             span: todo!(),
             kind: errors::Kind::LengthTooBig,

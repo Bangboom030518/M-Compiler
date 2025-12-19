@@ -637,7 +637,7 @@ where
         let length = self
             .declarations
             .unresolved
-            .get_initialised_length(array.length)?;
+            .get_initialised_length(array.length, &span)?;
         let element_type = self
             .declarations
             .insert_layout_initialised(&array.element_type)?;
@@ -867,7 +867,10 @@ where
             hir::Expression::Call(call) => self.call(*call)?,
             hir::Expression::Generixed(_) => todo!("generixed"),
             hir::Expression::GlobalAccess(id) => {
-                let length = self.declarations.unresolved.get_initialised_length(id)?;
+                let length = self
+                    .declarations
+                    .unresolved
+                    .get_initialised_length(id, &span)?;
 
                 // TODO: strictness: lengths must be usize?
                 self.integer_const(length.into(), &layout?, &type_ref, span)?

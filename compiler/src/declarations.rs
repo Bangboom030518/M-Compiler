@@ -156,9 +156,9 @@ impl UnresolvedDeclarations {
         self.get(id).is_some()
     }
 
-    pub fn get_initialised_length(&self, id: Id) -> Result<u32, Error> {
+    pub fn get_initialised_length(&self, id: Id, span: &Span) -> Result<u32, Error> {
         self.get_length(id)?.ok_or_else(|| Error {
-            span: todo!(),
+            span: span.clone(),
             kind: errors::Kind::CannotInferType,
         })
     }
@@ -432,6 +432,7 @@ impl Declarations {
             }
             parser::Declaration::Primitive(primitive) => Layout::Primitive(primitive.kind.value),
             parser::Declaration::Array(array) => {
+                let generics_span = array.generics.span.clone();
                 let scope = self.unresolved.create_generic_scope(
                     array.generics,
                     reference.generics.clone(),
@@ -455,6 +456,7 @@ impl Declarations {
                 Layout::Array(Array {
                     length,
                     element_type,
+                    generics_span,
                 })
             }
             parser::Declaration::Union(_) => todo!("unions"),

@@ -74,3 +74,5 @@ fn UInt32 main()
 	bubble_sort(coconut)
     0
 end
+
+//# vim: commentstring=//%s tabstop=4 shiftwidth=4

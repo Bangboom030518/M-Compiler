@@ -6,11 +6,13 @@ edition = "2021"
 [dependencies]
 parser = { path = "../parser" }
 tokenizer = { path = "../tokenizer" }
-thiserror = { workspace = true }
-cranelift = { workspace = true }
-cranelift-jit = { workspace = true }
-cranelift-module = { workspace = true }
-cranelift-native = { workspace = true }
-cranelift-reader = { workspace = true }
-itertools = { workspace = true }
+thiserror.workspace = true
+cranelift.workspace = true
+cranelift-jit.workspace = true
+cranelift-module.workspace = true
+cranelift-native.workspace = true
+cranelift-reader.workspace = true
+itertools.workspace = true
+miette.workspace = true
 ahash.workspace = true
+ariadne = "0.6"

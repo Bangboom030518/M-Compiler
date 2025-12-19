@@ -183,8 +183,8 @@ impl Internal {
                 Ok(r#type
                     .value
                     .ok_or_else(|| Error {
-                        span: r#type.span.clone(),
                         kind: errors::Kind::MissingParameterType,
+                        span: r#type.span.clone(),
                     })?
                     .spanned(r#type.span))
             })
@@ -193,9 +193,11 @@ impl Internal {
         let return_type = function
             .return_type
             .value
-            .ok_or_else(|| Error {
-                span: function.return_type.span.clone(),
-                kind: errors::Kind::MissingReturnType,
+            .ok_or_else(|| {
+                Error::new(
+                    errors::Kind::MissingReturnType,
+                    function.return_type.span.clone(),
+                )
             })?
             .spanned(function.return_type.span);
 

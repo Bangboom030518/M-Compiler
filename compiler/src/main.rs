@@ -129,6 +129,7 @@ fn main() {
     {
         std::fs::write("function-ir.clif", "").unwrap();
     }
+    let filename = "input.m";
     let input = include_str!("../../examples/input.m");
     let declarations = match parser::parse_file(input) {
         Ok(x) => x,
@@ -200,7 +201,10 @@ fn main() {
 
     FunctionCompiler::new(main_ref)
         .compile_all(&mut declarations, &mut context)
-        .unwrap_or_else(|error| panic!("{}", error.message(input)));
+        .unwrap_or_else(|error| {
+            error.print(input, filename);
+            std::process::exit(67)
+        });
 
     context.module.finalize_definitions().unwrap();
 
