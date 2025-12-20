@@ -380,7 +380,7 @@ impl Declarations {
             .transpose()
             .ok_or_else(|| Error {
                 kind: errors::Kind::CannotInferType,
-                span: todo!(),
+                span: type_reference.span.clone(),
             })?
     }
 
@@ -399,7 +399,7 @@ impl Declarations {
             Declaration::UnknownVoid => return Ok(Some(Layout::Primitive(PrimitiveKind::Void))),
             Declaration::Length(_) => {
                 return Err(Error {
-                    span: todo!(),
+                    span: reference.span.clone(),
                     kind: errors::Kind::DeclarationConstraintViolation {
                         constraint: errors::DeclarationConstraint::Type,
                         found: reference.clone(),
