@@ -96,7 +96,7 @@ pub enum Expression {
 
 impl Expression {
     pub fn typed(self, declarations: &mut Declarations, span: Span) -> Typed<Self> {
-        Typed::new(self, declarations.unresolved.create_type_ref(), span)
+        Typed::new(self, declarations.unresolved.create_type_ref(&span))
     }
 }
 
@@ -104,15 +104,14 @@ impl Expression {
 pub struct Typed<T> {
     pub value: T,
     pub type_ref: Reference,
-    pub span: Span,
 }
 
 impl<T> Typed<T> {
-    pub const fn new(value: T, type_ref: Reference, span: Span) -> Self {
-        Self {
-            value,
-            type_ref,
-            span,
-        }
+    pub fn span(&self) -> Span {
+        self.type_ref.span.clone()
+    }
+
+    pub const fn new(value: T, type_ref: Reference) -> Self {
+        Self { value, type_ref }
     }
 }

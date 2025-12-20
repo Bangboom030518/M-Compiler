@@ -36,11 +36,9 @@ impl MSignature {
     ) -> Result<Self, Error> {
         let parameters = parameters
             .iter()
-            .map(|parameter| declarations.unresolved.lookup_type(&parameter.value, scope))
+            .map(|parameter| declarations.unresolved.lookup_type(&parameter, scope))
             .collect::<Result<Vec<_>, Error>>()?;
-        let return_type = declarations
-            .unresolved
-            .lookup_type(&return_type.value, scope)?;
+        let return_type = declarations.unresolved.lookup_type(&return_type, scope)?;
 
         Ok(Self {
             parameters,

@@ -3,20 +3,22 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use parser::{Ident, Primitive, PrimitiveKind};
+use itertools::Itertools;
+use parser::{Ident, PrimitiveKind};
 use std::collections::HashMap;
 use std::iter;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tokenizer::{AsSpanned, Span, Spanned};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Id(usize);
 
 impl Id {
-    pub const fn to_type_ref(self) -> Reference {
+    pub fn to_type_ref(self, span: &Span) -> Reference {
         Reference {
             id: self,
             generics: Vec::new(),
+            span: span.clone(),
         }
     }
 }
@@ -30,6 +32,7 @@ pub const TOP_LEVEL_SCOPE: ScopeId = ScopeId(0);
 pub struct Reference {
     pub id: Id,
     pub generics: Vec<Reference>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,11 +108,16 @@ impl UnresolvedDeclarations {
                 parser::GenericArgument::Literal(length) => Ok(Reference {
                     id: self.create(Declaration::Length(*length)),
                     generics: Vec::new(),
+                    span: generic.span.clone(),
                 }),
                 parser::GenericArgument::Type(r#type) => {
                     let id = self.lookup(&r#type.name, scope)?;
                     let generics = self.build_generics(&r#type.generics.value.0, scope)?;
-                    Ok(Reference { id, generics })
+                    Ok(Reference {
+                        id,
+                        generics,
+                        span: generic.span.clone(),
+                    })
                 }
             })
             .collect()
@@ -129,16 +137,21 @@ impl UnresolvedDeclarations {
 
     pub fn lookup_type(
         &mut self,
-        r#type: &parser::Type,
+        r#type: &Spanned<parser::Type>,
         scope: ScopeId,
     ) -> Result<Reference, Error> {
-        let id = self.lookup(&r#type.name, scope)?;
-        let generics = self.build_generics(&r#type.generics.value.0, scope)?;
-        let reference = Reference { id, generics };
+        let id = self.lookup(&r#type.value.name, scope)?;
+        let generics = self.build_generics(&r#type.value.generics.value.0, scope)?;
+        let reference = Reference {
+            id,
+            generics,
+            span: r#type.span.clone(),
+        };
         let alias = self.create(Declaration::Alias(reference));
 
         Ok(Reference {
             id: alias,
+            span: r#type.span.clone(),
             generics: Vec::new(),
         })
     }
@@ -171,10 +184,10 @@ impl UnresolvedDeclarations {
         match declaration {
             Declaration::Length(length) => Ok(Some(*length)),
             Declaration::Resolved(..) | Declaration::UnknownVoid => Err(Error {
-                span: todo!(),
+                span: todo!("span for lengths"),
                 kind: errors::Kind::DeclarationConstraintViolation {
                     constraint: errors::DeclarationConstraint::Length,
-                    found: id.to_type_ref(),
+                    found: id.to_type_ref(todo!("span for lengths")),
                 },
             }),
             Declaration::Alias(alias) => {
@@ -195,8 +208,8 @@ impl UnresolvedDeclarations {
         }
     }
 
-    pub fn check_length(&mut self, expected: u32, found: Id) -> Result<(), Error> {
-        let found = self.resolve(&found.to_type_ref()).id;
+    pub fn check_length(&mut self, expected: u32, found: Spanned<Id>) -> Result<(), Error> {
+        let found = self.resolve(&found.value.to_type_ref(&found.span)).id;
         if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
@@ -221,6 +234,7 @@ impl UnresolvedDeclarations {
 
         let reference = Reference {
             generics,
+            span: reference.span.clone(),
             id: reference.id,
         };
 
@@ -288,8 +302,8 @@ impl UnresolvedDeclarations {
         Id(self.store.len() - 1)
     }
 
-    pub fn create_type_ref(&mut self) -> Reference {
-        self.create_uninitialised().to_type_ref()
+    pub fn create_type_ref(&mut self, span: &Span) -> Reference {
+        self.create_uninitialised().to_type_ref(span)
     }
 
     fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
@@ -301,8 +315,8 @@ impl UnresolvedDeclarations {
         self.store[index] = Some(declaration);
     }
 
-    pub fn void(&mut self) -> Reference {
-        self.create(Declaration::UnknownVoid).to_type_ref()
+    pub fn void(&mut self, span: &Span) -> Reference {
+        self.create(Declaration::UnknownVoid).to_type_ref(span)
     }
 }
 
@@ -405,9 +419,7 @@ impl Declarations {
                 let mut offset = 0;
                 let mut layout_fields = HashMap::new();
                 for field in &ast_struct.fields {
-                    let type_ref = self
-                        .unresolved
-                        .lookup_type(&field.value.r#type.value, scope)?;
+                    let type_ref = self.unresolved.lookup_type(&field.value.r#type, scope)?;
                     layout_fields.insert(
                         field.value.name.value.0.clone(),
                         layout::Field {
@@ -439,9 +451,7 @@ impl Declarations {
                     parent_scope,
                 )?;
 
-                let element_type = self
-                    .unresolved
-                    .lookup_type(&array.element_type.value, scope)?;
+                let element_type = self.unresolved.lookup_type(&array.element_type, scope)?;
                 let length = match array.length.value {
                     parser::Length::Ident(ident) => {
                         let id = self
@@ -486,19 +496,24 @@ impl Declarations {
             .get(function_id)
             .unwrap_or_else(|| todo!("internal error?"));
 
-        let len = match declaration {
+        let spans = match declaration {
             Declaration::Resolved(declaration, _) => match declaration {
-                parser::Declaration::Function(function) => {
-                    function.generic_parameters.value.generics.len()
-                }
-                parser::Declaration::ExternFunction(_) => 0,
+                parser::Declaration::Function(function) => function
+                    .generic_parameters
+                    .value
+                    .generics
+                    .iter()
+                    .map(|generic| generic.span.clone())
+                    .collect(),
+                parser::Declaration::ExternFunction(_) => Vec::new(),
                 _ => todo!(),
             },
             _ => todo!(),
         };
 
-        (0..len)
-            .map(|_| self.unresolved.create_type_ref())
+        spans
+            .into_iter()
+            .map(|span| self.unresolved.create_type_ref(&span))
             .collect()
     }
 
@@ -564,12 +579,7 @@ impl Declarations {
             .map(|layout| layout == Layout::Primitive(PrimitiveKind::Void)))
     }
 
-    fn assert_equivalent(
-        &mut self,
-        expected: &Reference,
-        found: &Reference,
-        span: Span,
-    ) -> Result<(), Error> {
+    fn assert_equivalent(&mut self, expected: &Reference, found: &Reference) -> Result<(), Error> {
         if !self.unresolved.is_initialised(found.id) {
             self.unresolved
                 .initialise(found.id, Declaration::Alias(expected.clone()));
@@ -621,8 +631,7 @@ impl Declarations {
             }
 
             for (expected, found) in iter::zip(&expected.generics, &found.generics) {
-                // TODO: span me!
-                self.assert_equivalent(expected, found, 0..0)?;
+                self.assert_equivalent(expected, found)?;
             }
 
             return Ok(());
@@ -633,7 +642,7 @@ impl Declarations {
                 expected: expected.clone(),
                 found: found.clone(),
             },
-            span,
+            span: found.span,
         })
     }
 
@@ -644,7 +653,7 @@ impl Declarations {
     ) -> Result<(), Error> {
         // let expected = self.unresolved.resolve(expected);
         // let found = self.unresolved.resolve(&expression.type_ref);
-        self.assert_equivalent(&expected, &expression.type_ref, expression.span.clone())
+        self.assert_equivalent(&expected, &expression.type_ref)
     }
 }
 

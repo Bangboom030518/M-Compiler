@@ -147,7 +147,6 @@ where
             else_branch,
         }: hir::If,
         layout: &Layout,
-        span: Span,
         found: &Reference,
     ) -> Result<BranchStatus<Option<Value>>, Error> {
         let condition_type = self
@@ -156,7 +155,7 @@ where
 
         if condition_type != Layout::Primitive(PrimitiveKind::Bool) {
             return Err(Error {
-                span: condition.span,
+                span: condition.span(),
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::Bool,
                     found: condition.type_ref,
@@ -232,8 +231,8 @@ where
         binary: hir::BinaryIntrinsic,
         layout: &Layout,
         type_ref: &Reference,
-        span: Span,
     ) -> Result<BranchStatus<Value>, Error> {
+        let span = type_ref.span.clone();
         let input_type_ref = binary.left.type_ref.clone();
         let Layout::Primitive(input_type) = self
             .declarations
@@ -426,6 +425,7 @@ where
     }
 
     fn call(&mut self, call: hir::Call) -> Result<BranchStatus<Option<Value>>, Error> {
+        let callable_span = call.callable.span();
         let (declaration, generics) =
             if let hir::Expression::Generixed(generixed) = call.callable.value {
                 let hir::Expression::GlobalAccess(declaration) = generixed.expression.value else {
@@ -439,6 +439,7 @@ where
         let reference = Reference {
             id: declaration,
             generics,
+            span: callable_span,
         };
 
         self.declarations.insert_function(&reference)?;
@@ -571,12 +572,13 @@ where
             .insert_layout_initialised(&store.pointer.type_ref)?;
 
         if layout != Layout::Primitive(PrimitiveKind::USize) {
+            let span = store.pointer.span();
             return Err(errors::Error {
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::Address,
                     found: store.pointer.type_ref,
                 },
-                span: store.pointer.span,
+                span,
             });
         }
 
@@ -585,12 +587,13 @@ where
             .insert_layout_initialised(&store.expression.type_ref)?;
 
         if layout == Layout::Primitive(PrimitiveKind::Void) || layout.is_aggregate() {
+            let span = store.expression.span();
             return Err(errors::Error {
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::StorableOrLoadable,
                     found: store.expression.type_ref,
                 },
-                span: store.expression.span,
+                span,
             });
         }
 
@@ -617,7 +620,6 @@ where
         string: &str,
         layout: &Layout,
         type_ref: &Reference,
-        span: Span,
     ) -> Result<BranchStatus<Value>, Error> {
         let data = self
             .module
@@ -626,7 +628,7 @@ where
 
         let Layout::Array(array) = layout else {
             return Err(Error {
-                span,
+                span: type_ref.span.clone(),
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::String,
                     found: type_ref.clone(),
@@ -637,13 +639,13 @@ where
         let length = self
             .declarations
             .unresolved
-            .get_initialised_length(array.length, &span)?;
+            .get_initialised_length(array.length, &type_ref.span)?;
         let element_type = self
             .declarations
             .insert_layout_initialised(&array.element_type)?;
         if length != bytes.len() as u32 {
             return Err(Error {
-                span,
+                span: type_ref.span.clone(),
                 kind: errors::Kind::MismatchedLengths {
                     expected: length,
                     found: bytes.len() as u32,
@@ -652,7 +654,7 @@ where
         }
         if element_type != Layout::Primitive(PrimitiveKind::U8) {
             return Err(Error {
-                span,
+                span: type_ref.span.clone(),
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::String,
                     found: type_ref.clone(),
@@ -680,11 +682,10 @@ where
         value: u64,
         layout: &Layout,
         type_ref: &Reference,
-        span: Span,
     ) -> Result<BranchStatus<Option<Value>>, Error> {
         let Layout::Primitive(primitive) = layout else {
             return Err(Error {
-                span,
+                span: type_ref.span.clone(),
                 kind: errors::Kind::TypeConstraintViolation {
                     constraint: errors::TypeConstraint::Integer,
                     found: type_ref.clone(),
@@ -701,7 +702,7 @@ where
             PrimitiveKind::Void => return Ok(BranchStatus::Continue(None)),
             _ => {
                 return Err(Error {
-                    span,
+                    span: type_ref.span.clone(),
                     kind: errors::Kind::TypeConstraintViolation {
                         constraint: errors::TypeConstraint::Integer,
                         found: type_ref.clone(),
@@ -712,9 +713,8 @@ where
 
         let value = self.builder.ins().iconst(
             cranelift_type,
-            i64::try_from(value).map_err(|_| Error {
-                span,
-                kind: errors::Kind::IntegerLiteralTooBig,
+            i64::try_from(value).map_err(|_| {
+                Error::new(errors::Kind::IntegerLiteralTooBig, type_ref.span.clone())
             })?,
         );
 
@@ -726,28 +726,27 @@ where
 
     fn expression(
         &mut self,
-        hir::Typed {
-            value: expression,
-            type_ref,
-            span,
-        }: hir::Typed<hir::Expression>,
+        expression: hir::Typed<hir::Expression>,
     ) -> Result<BranchStatus<Option<Value>>, Error> {
-        let layout = self.declarations.insert_layout_initialised(&type_ref);
+        let span = expression.span();
+        let layout = self
+            .declarations
+            .insert_layout_initialised(&expression.type_ref);
 
-        let value = match expression {
+        let value = match expression.value {
             hir::Expression::IntegerConst(int) => {
-                self.integer_const(int, &layout?, &type_ref, span)?
+                self.integer_const(int, &layout?, &expression.type_ref)?
             }
             hir::Expression::BoolConst(bool) => {
                 let layout = layout?;
                 if layout != Layout::Primitive(PrimitiveKind::Bool) {
-                    return Err(Error {
-                        span,
-                        kind: errors::Kind::TypeConstraintViolation {
+                    return Err(Error::new(
+                        errors::Kind::TypeConstraintViolation {
                             constraint: errors::TypeConstraint::Bool,
-                            found: type_ref,
+                            found: expression.type_ref,
                         },
-                    });
+                        span,
+                    ));
                 }
                 let value = self.iconst(bool.into());
                 let size = layout.size(self.declarations)?;
@@ -765,20 +764,20 @@ where
                         self.put_in_stack_slot(value, 8)
                     }
                     _ => {
-                        return Err(Error {
-                            span,
-                            kind: errors::Kind::TypeConstraintViolation {
+                        return Err(Error::new(
+                            errors::Kind::TypeConstraintViolation {
                                 constraint: errors::TypeConstraint::Float,
-                                found: type_ref,
+                                found: expression.type_ref,
                             },
-                        })
+                            span,
+                        ))
                     }
                 };
 
                 BranchStatus::Continue(Some(value))
             }
             hir::Expression::StringConst(string) => self
-                .string_const(&string, &layout?, &type_ref, span)?
+                .string_const(&string, &layout?, &expression.type_ref)?
                 .map_some(),
             hir::Expression::Addr(inner) => {
                 layout?;
@@ -787,13 +786,13 @@ where
                 };
 
                 let Some(value) = value else {
-                    return Err(errors::Error {
-                        span,
-                        kind: errors::Kind::TypeConstraintViolation {
+                    return Err(errors::Error::new(
+                        errors::Kind::TypeConstraintViolation {
                             constraint: errors::TypeConstraint::NotVoid,
-                            found: type_ref,
+                            found: expression.type_ref,
                         },
-                    });
+                        span,
+                    ));
                 };
 
                 BranchStatus::Continue(Some(
@@ -806,18 +805,20 @@ where
                     return Err(errors::Error {
                         kind: errors::Kind::TypeConstraintViolation {
                             constraint: errors::TypeConstraint::StorableOrLoadable,
-                            found: inner.type_ref,
+                            found: inner.type_ref.clone(),
                         },
-                        span: inner.span,
+                        span: inner.span(),
                     });
                 }
                 self.load_primitive(*inner)?
             }
             hir::Expression::Store(store) => self.store(*store)?.map_none(),
             hir::Expression::BinaryIntrinsic(binary) => self
-                .binary_intrinsic(*binary, &layout?, &type_ref, span)?
+                .binary_intrinsic(*binary, &layout?, &expression.type_ref)?
                 .map_some(),
-            hir::Expression::If(r#if) => self.translate_if(*r#if, &layout?, span, &type_ref)?,
+            hir::Expression::If(r#if) => {
+                self.translate_if(*r#if, &layout?, &expression.type_ref)?
+            }
             hir::Expression::FieldAccess(access) => {
                 // TODO: ignore layout?
                 self.field_access(*access, &layout?)?
@@ -873,7 +874,7 @@ where
                     .get_initialised_length(id, &span)?;
 
                 // TODO: strictness: lengths must be usize?
-                self.integer_const(length.into(), &layout?, &type_ref, span)?
+                self.integer_const(length.into(), &layout?, &expression.type_ref)?
             }
             hir::Expression::SizeOf(reference) => {
                 let size = self
@@ -882,7 +883,7 @@ where
                     .size(self.declarations)?;
 
                 // TODO: strictness: sizes must be usize?
-                self.integer_const(size.into(), &layout?, &type_ref, span)?
+                self.integer_const(size.into(), &layout?, &expression.type_ref)?
             }
             hir::Expression::AssertType(inner) => self.expression(*inner)?,
         };

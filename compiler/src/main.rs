@@ -182,12 +182,13 @@ fn main() {
         .expect("no main function");
     let main_ref = declarations::Reference {
         id: main_ref,
+        span: 0..0, // TODO: figure out
         generics: Vec::new(),
     };
 
     declarations
         .insert_function(&main_ref)
-        .expect("main to work");
+        .expect("main didn't work");
 
     let function = declarations
         .get_function(&main_ref)

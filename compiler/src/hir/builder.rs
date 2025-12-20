@@ -71,6 +71,7 @@ impl Constraint {
                 expected_length,
                 array_type,
             } => {
+                let span = array_type.span.clone();
                 let array_type = declarations.insert_layout(array_type)?;
                 let Some(array_type) = array_type else {
                     return Ok(false);
@@ -78,10 +79,10 @@ impl Constraint {
                 let array_type = array_type.expect_array()?;
                 declarations
                     .unresolved
-                    .check_length(*expected_length, array_type.length)?;
+                    .check_length(*expected_length, array_type.length.spanned(span))?;
             }
             Self::VoidExpression { expression } => {
-                let void = declarations.unresolved.void();
+                let void = declarations.unresolved.void(&expression.span());
                 declarations.check_expression_type(expression, &void)?;
             }
         }
@@ -161,6 +162,7 @@ impl<'a> Builder<'a> {
         &mut self,
         statement: Spanned<&parser::Statement>,
     ) -> Result<hir::Statement, Error> {
+        let span = statement.span.clone();
         match statement.value {
             parser::Statement::Assignment(parser::Assignment { left, right }) => {
                 let left = self.expression(left.as_ref())?;
@@ -173,7 +175,7 @@ impl<'a> Builder<'a> {
             }
             parser::Statement::Let(statement) => {
                 let variable = self.create_variable();
-                let type_ref = self.declarations.unresolved.create_type_ref();
+                let type_ref = self.declarations.unresolved.create_type_ref(&span);
                 self.local_scopes
                     .last_mut()
                     .expect("Must always have a scope")
@@ -203,7 +205,6 @@ impl<'a> Builder<'a> {
             return Ok(Typed::new(
                 Expression::LocalAccess(variable),
                 type_ref.clone(),
-                ident.span.clone(),
             ));
         }
 
@@ -249,7 +250,7 @@ impl<'a> Builder<'a> {
         let struct_type = self
             .declarations
             .unresolved
-            .lookup_type(&constructor.r#type.value, self.scope)?;
+            .lookup_type(&constructor.r#type, self.scope)?;
 
         let fields = constructor
             .fields
@@ -268,7 +269,6 @@ impl<'a> Builder<'a> {
         Ok(Typed::new(
             Expression::Constructor(hir::Constructor(fields)),
             struct_type,
-            span,
         ))
     }
 
@@ -286,7 +286,7 @@ impl<'a> Builder<'a> {
                 self.declarations
                     .check_expression_type(&right, &left.type_ref)?;
                 let type_ref = if matches!(operator, IntrinsicOperator::Cmp(_)) {
-                    self.declarations.unresolved.create_type_ref()
+                    self.declarations.unresolved.create_type_ref(&span)
                 } else {
                     left.type_ref.clone()
                 };
@@ -297,14 +297,13 @@ impl<'a> Builder<'a> {
                         operator: *operator,
                     })),
                     type_ref,
-                    span,
                 ))
             }
             IntrinsicCall::AssertType(expression, r#type) => {
                 let expected = self
                     .declarations
                     .unresolved
-                    .lookup_type(&r#type.value, self.scope)?;
+                    .lookup_type(&r#type, self.scope)?;
 
                 let expression = self.expression(expression.as_ref().as_ref())?;
                 self.declarations
@@ -324,7 +323,7 @@ impl<'a> Builder<'a> {
                 let reference = self
                     .declarations
                     .unresolved
-                    .lookup_type(&r#type.value, self.scope)?;
+                    .lookup_type(&r#type, self.scope)?;
 
                 Ok(Expression::SizeOf(reference).typed(self.declarations, span))
             }
@@ -370,6 +369,7 @@ impl<'a> Builder<'a> {
             }
             _ => todo!("func ref"),
         };
+        let callable_span = callable.span();
 
         let call_expression = hir::Expression::Call(Box::new(hir::Call {
             callable,
@@ -380,6 +380,7 @@ impl<'a> Builder<'a> {
         let func_reference = Reference {
             id: declaration,
             generics,
+            span: callable_span,
         };
 
         self.declarations.insert_function(&func_reference)?;
