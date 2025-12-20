@@ -8,6 +8,6 @@ end
 
 fn UInt32 main()
 	print_int(add(2, 2)) // this errors (mismatched types)
-	print_int(add[UInt32](2, 2)) // this works!
+	// print_int(add[UInt32](2, 2)) // this works!
 	0
 end

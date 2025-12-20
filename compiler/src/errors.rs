@@ -1,5 +1,5 @@
 use crate::declarations::Reference;
-use ariadne::{Color, ColorGenerator, Fmt, Label, Report, ReportKind, Source};
+use ariadne::{Color, ColorGenerator, Fmt, Label, Report, ReportBuilder, ReportKind, Source};
 use tokenizer::Span;
 
 // struct ContextualSpan {
@@ -24,14 +24,12 @@ impl Error {
     }
 
     pub fn print(self, input: &str, filename: &str) {
-        Report::build(ReportKind::Error, (filename, self.span.clone()))
-            .with_code(67)
+        Report::build(ReportKind::Error, (filename, 0..input.len()))
             .with_message("Oop noob alert!".to_string())
-            .with_label(Label::new((filename, self.span)).with_message(self.kind.message()))
-            .with_note("You're a bit of a silly billy :)".to_string())
+            .with_labels(self.kind.labels(filename, self.span))
             .finish()
             .print(("input.m", Source::from(input)))
-            .unwrap();
+            .expect("malformed error report");
     }
 }
 
@@ -106,5 +104,20 @@ pub enum Kind {
 impl Kind {
     pub fn message(&self) -> String {
         format!("{self:?}")
+    }
+
+    fn labels<'a>(&self, filename: &'a str, span: Span) -> Vec<Label<(&'a str, Span)>> {
+        match self {
+            Self::MismatchedTypes { expected, found } => {
+                dbg!(&expected.span); // malformed span
+                dbg!(&found.span);
+                vec![
+                    Label::new((filename, span)).with_message("mismatched types"),
+                    Label::new((filename, expected.span.clone())).with_message("expected this"),
+                    Label::new((filename, found.span.clone())).with_message("found this"),
+                ]
+            }
+            _ => vec![Label::new((filename, span)).with_message(format!("{self:?}"))],
+        }
     }
 }
