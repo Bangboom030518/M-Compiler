@@ -366,7 +366,7 @@ impl Declarations {
             .transpose()
             .ok_or_else(|| Error {
                 kind: errors::Kind::CannotInferType,
-                span: 0..0, // TODO: don't ignore error in translate
+                span: todo!(),
             })?
     }
 

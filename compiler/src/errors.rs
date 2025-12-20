@@ -23,7 +23,6 @@ impl Error {
         Self { kind, span }
     }
 
-    #[must_use]
     pub fn print(self, input: &str, filename: &str) {
         Report::build(ReportKind::Error, (filename, self.span.clone()))
             .with_code(67)
