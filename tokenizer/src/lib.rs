@@ -1,4 +1,5 @@
 #![feature(iter_collect_into)]
+use ariadne::Color;
 use itertools::Itertools;
 
 macro_rules! define_token_enums {
@@ -91,6 +92,67 @@ define_token_enums!(
 );
 
 pub type Span = std::ops::Range<usize>;
+
+impl Token {
+    fn is_keyword(&self) -> bool {
+        matches!(
+            self,
+            Token::Struct
+                | Token::Union
+                | Token::Function
+                | Token::Type
+                | Token::If
+                | Token::Else
+                | Token::Let
+                | Token::Return
+                | Token::End
+                | Token::Then
+                | Token::While
+                | Token::Do
+        )
+    }
+
+    fn is_operator(&self) -> bool {
+        matches!(
+            self,
+            Self::Exponent
+                | Self::Assignment
+                | Self::Plus
+                | Self::Minus
+                | Self::Multiply
+                | Self::Divide
+                | Self::Remainder
+                | Self::Equal
+                | Self::NotEqual
+                | Self::GreaterThan
+                | Self::LessThan
+                | Self::LessThanOrEqual
+                | Self::Bang
+                | Self::GreaterThanOrEqual
+        )
+    }
+    pub fn is_parenthisis(&self) -> bool {
+        matches!(
+            self,
+            Self::OpenParen | Self::CloseParen | Self::OpenSquareParen | Self::CloseSquareParen
+        )
+    }
+
+    pub fn is_punctuation(&self) -> bool {
+        matches!(self, Self::At | Self::Dot | Self::Comma)
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            Self::String(_) | Self::Char(_) => Color::Green,
+            Self::Integer(_) | Self::Float(_) => Color::Red,
+            Self::Ident(_) => Color::Yellow,
+            _ if self.is_keyword() => Color::Blue,
+            _ if self.is_operator() => Color::Magenta,
+            _ => Color::Primary,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spanned<T> {

@@ -11,3 +11,4 @@ fn UInt32 main()
 	// print_int(add[UInt32](2, 2)) // this works!
 	0
 end
+

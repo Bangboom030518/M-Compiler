@@ -5,7 +5,6 @@ use cranelift::prelude::*;
 use cranelift_module::Module;
 use declarations::{Declarations, Function, Reference};
 pub use errors::Error;
-use itertools::Itertools;
 use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;

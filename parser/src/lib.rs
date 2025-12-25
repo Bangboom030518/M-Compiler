@@ -63,7 +63,7 @@ pub fn parse_file(input: &str) -> Result<HashMap<String, Declaration>, ParseErro
                 declarations.insert(declaration.value.name().to_string(), declaration.value);
                 if parser.peek_token_if(TokenType::Eoi).is_ok() {
                     return Ok(declarations);
-                };
+                }
             }
             Err(error) => return Err(parser.parse_error(error)),
         }

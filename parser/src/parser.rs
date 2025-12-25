@@ -186,8 +186,9 @@ impl Parser {
         Ok(token)
     }
 
-    pub(crate) const fn empty_span(&self) -> tokenizer::Span {
-        self.position..self.position
+    pub(crate) fn empty_span(&self) -> tokenizer::Span {
+        let position = self.tokens[self.position - 1].span.end;
+        position..position
     }
 
     special!(take_string, peek_string, String, String);

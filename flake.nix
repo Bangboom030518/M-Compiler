@@ -25,21 +25,13 @@
           _module.args.pkgs = import inputs.nixpkgs {
             inherit system;
             overlays = [
-              (
-                _: super:
-                let
-                  pkgs = fenix.inputs.nixpkgs.legacyPackages.${super.system};
-                in
-                fenix.overlays.default pkgs pkgs
-              )
+              fenix.overlays.default
             ];
           };
 
           devShells.default = pkgs.mkShell {
             nativeBuildInputs = [ toolchain ];
-            packages = [
-              pkgs.rust-analyzer-nightly
-            ];
+            env.RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
           };
         };
     };

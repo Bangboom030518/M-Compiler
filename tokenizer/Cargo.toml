@@ -7,4 +7,5 @@ edition = "2021"
 itertools = { workspace = true }
 bitfields = { path = "../bitfields" }
 ahash.workspace = true
+ariadne.workspace = true
 

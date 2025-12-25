@@ -15,4 +15,4 @@ cranelift-reader.workspace = true
 itertools.workspace = true
 miette.workspace = true
 ahash.workspace = true
-ariadne = "0.6"
+ariadne.workspace = true

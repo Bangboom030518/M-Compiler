@@ -1,15 +1,6 @@
 use crate::declarations::Reference;
-use ariadne::{Color, ColorGenerator, Fmt, Label, Report, ReportBuilder, ReportKind, Source};
+use ariadne::{Label, Report, ReportKind, Source};
 use tokenizer::Span;
-
-// struct ContextualSpan {
-//     row: usize,
-//     column: usize,
-// }
-
-// impl ContextualSpan {
-//     fn new(span: Span, input: &str) -> Self {}
-// }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error {
@@ -109,8 +100,6 @@ impl Kind {
     fn labels<'a>(&self, filename: &'a str, span: Span) -> Vec<Label<(&'a str, Span)>> {
         match self {
             Self::MismatchedTypes { expected, found } => {
-                dbg!(&expected.span); // malformed span
-                dbg!(&found.span);
                 vec![
                     Label::new((filename, span)).with_message("mismatched types"),
                     Label::new((filename, expected.span.clone())).with_message("expected this"),
