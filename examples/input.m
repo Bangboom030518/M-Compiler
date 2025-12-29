@@ -7,7 +7,7 @@ fn[T] T add(T a, T b)
 end
 
 fn UInt32 main()
-	print_int(add(2, 2)) // this errors (mismatched types)
+	print_int(add(2, @assert_type(2, UInt32))) // this errors (mismatched types)
 	// print_int(add[UInt32](2, 2)) // this works!
 	0
 end

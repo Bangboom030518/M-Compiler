@@ -16,7 +16,7 @@ impl Error {
 
     pub fn print(self, input: &str, filename: &str) {
         Report::build(ReportKind::Error, (filename, 0..input.len()))
-            .with_message("Oop noob alert!".to_string())
+            .with_message(self.kind.message())
             .with_labels(self.kind.labels(filename, self.span))
             .finish()
             .print(("input.m", Source::from(input)))
@@ -94,14 +94,16 @@ pub enum Kind {
 
 impl Kind {
     pub fn message(&self) -> String {
-        format!("{self:?}")
+        match self {
+            Self::MismatchedTypes { .. } => "mismatched types".to_string(),
+            _ => format!("{self:?}"),
+        }
     }
 
     fn labels<'a>(&self, filename: &'a str, span: Span) -> Vec<Label<(&'a str, Span)>> {
         match self {
             Self::MismatchedTypes { expected, found } => {
                 vec![
-                    Label::new((filename, span)).with_message("mismatched types"),
                     Label::new((filename, expected.span.clone())).with_message("expected this"),
                     Label::new((filename, found.span.clone())).with_message("found this"),
                 ]

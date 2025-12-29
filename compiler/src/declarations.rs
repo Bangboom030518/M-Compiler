@@ -3,7 +3,6 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
-use itertools::Itertools;
 use parser::{Ident, PrimitiveKind};
 use std::collections::HashMap;
 use std::iter;
@@ -31,7 +30,7 @@ pub const TOP_LEVEL_SCOPE: ScopeId = ScopeId(0);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Reference {
     pub id: Id,
-    pub generics: Vec<Reference>,
+    pub generics: Vec<Self>,
     pub span: Span,
 }
 
@@ -209,13 +208,14 @@ impl UnresolvedDeclarations {
     }
 
     pub fn check_length(&mut self, expected: u32, found: Spanned<Id>) -> Result<(), Error> {
-        let found = self.resolve(&found.value.to_type_ref(&found.span)).id;
+        let span = found.span;
+        let found = self.resolve(&found.value.to_type_ref(&span)).id;
         if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
             } else {
                 Err(Error {
-                    span: todo!(),
+                    span: span.clone(),
                     kind: errors::Kind::MismatchedLengths { expected, found },
                 })
             }
@@ -548,7 +548,7 @@ impl Declarations {
                 //     reference.generics.len(),
                 //     function.generic_parameters.value.generics.len()
                 // );
-
+                dbg!(&reference.generics);
                 Function::Internal(function::Internal::new(
                     function.clone(),
                     self,
@@ -618,6 +618,9 @@ impl Declarations {
         let expected = self.unresolved.resolve(expected);
         let found = self.unresolved.resolve(found);
 
+        dbg!(&self.unresolved.get(expected.id));
+        dbg!(&self.unresolved.get(found.id));
+
         if expected.id == found.id {
             if expected.generics.len() != found.generics.len() {
                 return Err(Error {
@@ -651,9 +654,7 @@ impl Declarations {
         expression: &Typed<hir::Expression>,
         expected: &Reference,
     ) -> Result<(), Error> {
-        // let expected = self.unresolved.resolve(expected);
-        // let found = self.unresolved.resolve(&expression.type_ref);
-        self.assert_equivalent(&expected, &expression.type_ref)
+        self.assert_equivalent(expected, &expression.type_ref)
     }
 }
 
