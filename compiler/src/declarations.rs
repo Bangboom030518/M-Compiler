@@ -13,10 +13,11 @@ use tokenizer::{AsSpanned, Span, Spanned};
 pub struct Id(usize);
 
 impl Id {
-    pub fn to_type_ref(self, span: &Span) -> Reference {
-        Reference {
+    #[deprecated = "use `SpannedReference.from_id` instead"]
+    pub fn to_type_ref(self, span: &Span) -> SpannedReference {
+        SpannedReference {
             id: self,
-            generics: Vec::new(),
+            generics: Vec::new().spanned(span.end..span.end),
             span: span.clone(),
         }
     }
@@ -27,11 +28,40 @@ pub struct ScopeId(usize);
 
 pub const TOP_LEVEL_SCOPE: ScopeId = ScopeId(0);
 
+#[derive(Clone, Debug)]
+pub struct SpannedReference {
+    pub id: Id,
+    pub generics: Spanned<Vec<Self>>,
+    pub span: Span,
+}
+
+impl SpannedReference {
+    pub fn from_id(id: Id, span: &Span) -> Self {
+        Self {
+            id,
+            generics: Vec::new().spanned(span.end..span.end),
+            span: span.clone(),
+        }
+    }
+
+    pub fn despan(&self) -> Reference {
+        Reference {
+            id: self.id,
+            generics: self
+                .generics
+                .value
+                .iter()
+                .cloned()
+                .map(|reference| reference.despan())
+                .collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Reference {
     pub id: Id,
     pub generics: Vec<Self>,
-    pub span: Span,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,28 +128,30 @@ pub struct UnresolvedDeclarations {
 impl UnresolvedDeclarations {
     pub fn build_generics(
         &mut self,
-        generics: &[Spanned<parser::GenericArgument>],
+        generics: &Spanned<parser::GenericArguments>,
         scope: ScopeId,
-    ) -> Result<Vec<Reference>, Error> {
-        generics
+    ) -> Result<Spanned<Vec<SpannedReference>>, Error> {
+        let result = generics
+            .value
+            .0
             .iter()
             .map(|generic| match generic.as_ref().value {
-                parser::GenericArgument::Literal(length) => Ok(Reference {
-                    id: self.create(Declaration::Length(*length)),
-                    generics: Vec::new(),
-                    span: generic.span.clone(),
-                }),
+                parser::GenericArgument::Literal(length) => Ok(SpannedReference::from_id(
+                    self.create(Declaration::Length(*length)),
+                    &generic.span,
+                )),
                 parser::GenericArgument::Type(r#type) => {
                     let id = self.lookup(&r#type.name, scope)?;
-                    let generics = self.build_generics(&r#type.generics.value.0, scope)?;
-                    Ok(Reference {
+                    let generics = self.build_generics(&r#type.generics, scope)?;
+                    Ok(SpannedReference {
                         id,
                         generics,
                         span: generic.span.clone(),
                     })
                 }
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(result.spanned(generics.span.clone()))
     }
 
     pub fn lookup(&self, ident: &Spanned<Ident>, scope: ScopeId) -> Result<Id, Error> {
@@ -140,8 +172,8 @@ impl UnresolvedDeclarations {
         scope: ScopeId,
     ) -> Result<Reference, Error> {
         let id = self.lookup(&r#type.value.name, scope)?;
-        let generics = self.build_generics(&r#type.value.generics.value.0, scope)?;
-        let reference = Reference {
+        let generics = self.build_generics(&r#type.value.generics, scope)?;
+        let reference = SpannedReference {
             id,
             generics,
             span: r#type.span.clone(),
