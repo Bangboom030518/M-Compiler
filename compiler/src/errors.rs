@@ -1,8 +1,8 @@
-use crate::declarations::Reference;
+use crate::declarations::SpannedReference;
 use ariadne::{Label, Report, ReportKind, Source};
 use tokenizer::Span;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Error {
     pub kind: Kind,
     pub span: Span,
@@ -45,18 +45,18 @@ pub enum TypeConstraint {
     NotVoid,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Kind {
     DeclarationNotFound {
         ident: String,
     },
     FieldNotFound {
-        parent_struct: Reference,
+        parent_struct: SpannedReference,
         field: String,
     },
     MismatchedTypes {
-        expected: Reference,
-        found: Reference,
+        expected: SpannedReference,
+        found: SpannedReference,
     },
     MismatchedLengths {
         expected: u32,
@@ -80,14 +80,14 @@ pub enum Kind {
     IntegerLiteralTooBig,
     TypeConstraintViolation {
         constraint: TypeConstraint,
-        found: Reference,
+        found: SpannedReference,
     },
     DeclarationConstraintViolation {
         constraint: DeclarationConstraint,
-        found: Reference,
+        found: SpannedReference,
     },
     MissingStructFields {
-        parent_struct: Reference,
+        parent_struct: SpannedReference,
         fields: Vec<String>,
     },
 }

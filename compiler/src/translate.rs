@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, Reference};
+use crate::declarations::{Declarations, Reference, SpannedReference};
 use crate::function::AGGREGATE_PARAM_VARIABLE;
 use crate::hir::Typed;
 use crate::layout::Layout;
@@ -87,7 +87,7 @@ where
                     return Ok(BranchStatus::Finished);
                 };
 
-                if layout != Layout::Primitive(PrimitiveKind::Void) {
+                if !layout.is_void() {
                     self.builder.call_memmove(
                         self.declarations.isa.frontend_config(),
                         left.expect("value should be non-void"),
@@ -110,7 +110,7 @@ where
                 let BranchStatus::Continue(value) = self.expression(expression)? else {
                     return Ok(BranchStatus::Finished);
                 };
-                if layout? != Layout::Primitive(PrimitiveKind::Void) {
+                if !layout?.is_void() {
                     self.builder
                         .def_var(variable.into(), value.expect("value should be non-void"));
                 }
@@ -153,7 +153,7 @@ where
             .declarations
             .insert_layout_initialised(&condition.type_ref)?;
 
-        if condition_type != Layout::Primitive(PrimitiveKind::Bool) {
+        if !condition_type.is_bool() {
             return Err(Error {
                 span: condition.span(),
                 kind: errors::Kind::TypeConstraintViolation {
@@ -167,7 +167,7 @@ where
         let else_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
 
-        if layout != &Layout::Primitive(PrimitiveKind::Void) {
+        if !layout.is_void() {
             self.builder
                 .append_block_param(merge_block, self.declarations.isa.pointer_type());
         }
@@ -189,7 +189,7 @@ where
         match self.block(then_branch)? {
             BranchStatus::Finished => {}
             BranchStatus::Continue(value) => {
-                let result: &[_] = if layout == &Layout::Primitive(PrimitiveKind::Void) {
+                let result: &[_] = if layout.is_void() {
                     &[]
                 } else {
                     &[value.expect("value should be non-void")]
@@ -204,7 +204,7 @@ where
         match self.block(else_branch)? {
             BranchStatus::Finished => {}
             BranchStatus::Continue(value) => {
-                let result: &[_] = if layout == &Layout::Primitive(PrimitiveKind::Void) {
+                let result: &[_] = if layout.is_void() {
                     &[]
                 } else {
                     &[value.expect("value should be non-void")]
@@ -217,7 +217,7 @@ where
         self.builder.switch_to_block(merge_block);
         self.builder.seal_block(merge_block);
 
-        if layout == &Layout::Primitive(PrimitiveKind::Void) {
+        if layout.is_void() {
             Ok(BranchStatus::Continue(None))
         } else {
             Ok(BranchStatus::Continue(Some(
@@ -230,7 +230,7 @@ where
         &mut self,
         binary: hir::BinaryIntrinsic,
         layout: &Layout,
-        type_ref: &Reference,
+        type_ref: &SpannedReference,
     ) -> Result<BranchStatus<Value>, Error> {
         let span = type_ref.span.clone();
         let input_type_ref = binary.left.type_ref.clone();
@@ -265,9 +265,7 @@ where
             return Ok(BranchStatus::Finished);
         };
 
-        if matches!(binary.operator, IntrinsicOperator::Cmp(_))
-            && layout != &Layout::Primitive(PrimitiveKind::Bool)
-        {
+        if matches!(binary.operator, IntrinsicOperator::Cmp(_)) && !layout.is_bool() {
             return Err(Error {
                 span,
                 kind: errors::Kind::TypeConstraintViolation {
@@ -359,7 +357,7 @@ where
             self.declarations.isa.pointer_type(),
             Imm64::new(offset.into()),
         );
-        if layout == &Layout::Primitive(PrimitiveKind::Void) {
+        if layout.is_void() {
             Ok(BranchStatus::Continue(None))
         } else {
             Ok(BranchStatus::Continue(Some(
@@ -400,7 +398,7 @@ where
             let layout = self
                 .declarations
                 .insert_layout_initialised(&expression.type_ref)?;
-            if layout == Layout::Primitive(PrimitiveKind::Void) {
+            if layout.is_void() {
                 continue;
             }
             let size = layout.size(self.declarations)?;
@@ -461,7 +459,7 @@ where
                 return Ok(BranchStatus::Finished);
             };
 
-            if layout == Layout::Primitive(PrimitiveKind::Void) {
+            if layout.is_void() {
                 continue;
             }
 
@@ -504,7 +502,7 @@ where
 
         let call = self.builder.ins().call(func_ref, arguments.as_slice());
 
-        if return_layout == Layout::Primitive(PrimitiveKind::Void) {
+        if return_layout.is_void() {
             Ok(BranchStatus::Continue(None))
         } else {
             let value = self.builder.inst_results(call)[0];
@@ -571,7 +569,7 @@ where
             .declarations
             .insert_layout_initialised(&store.pointer.type_ref)?;
 
-        if layout != Layout::Primitive(PrimitiveKind::USize) {
+        if !layout.is_usize() {
             let span = store.pointer.span();
             return Err(errors::Error {
                 kind: errors::Kind::TypeConstraintViolation {
@@ -586,7 +584,7 @@ where
             .declarations
             .insert_layout_initialised(&store.expression.type_ref)?;
 
-        if layout == Layout::Primitive(PrimitiveKind::Void) || layout.is_aggregate() {
+        if layout.is_void() || layout.is_aggregate() {
             let span = store.expression.span();
             return Err(errors::Error {
                 kind: errors::Kind::TypeConstraintViolation {
@@ -652,7 +650,7 @@ where
                 },
             });
         }
-        if element_type != Layout::Primitive(PrimitiveKind::U8) {
+        if !element_type.is_u8() {
             return Err(Error {
                 span: type_ref.span.clone(),
                 kind: errors::Kind::TypeConstraintViolation {
@@ -739,7 +737,7 @@ where
             }
             hir::Expression::BoolConst(bool) => {
                 let layout = layout?;
-                if layout != Layout::Primitive(PrimitiveKind::Bool) {
+                if !layout.is_bool() {
                     return Err(Error::new(
                         errors::Kind::TypeConstraintViolation {
                             constraint: errors::TypeConstraint::Bool,
@@ -801,7 +799,7 @@ where
             }
             hir::Expression::Load(inner) => {
                 let layout = layout?;
-                if layout == Layout::Primitive(PrimitiveKind::Void) || layout.is_aggregate() {
+                if layout.is_void() || layout.is_aggregate() {
                     return Err(errors::Error {
                         kind: errors::Kind::TypeConstraintViolation {
                             constraint: errors::TypeConstraint::StorableOrLoadable,
@@ -848,7 +846,7 @@ where
                         size,
                     );
                     self.builder.ins().return_(&[return_param]);
-                } else if layout == Layout::Primitive(PrimitiveKind::Void) {
+                } else if layout.is_void() {
                     self.builder.ins().return_(&[]);
                 } else {
                     self.builder
@@ -859,7 +857,7 @@ where
                 return Ok(BranchStatus::Finished);
             }
             hir::Expression::LocalAccess(variable) => {
-                if layout? == Layout::Primitive(PrimitiveKind::Void) {
+                if layout?.is_void() {
                     BranchStatus::Continue(None)
                 } else {
                     BranchStatus::Continue(Some(self.builder.use_var(variable.into())))

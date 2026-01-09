@@ -1,4 +1,4 @@
-use crate::declarations::{self, Declarations, Reference};
+use crate::declarations::{self, Declarations, Reference, SpannedReference};
 pub use builder::Builder;
 use builder::VariableId;
 use parser::expression::IntrinsicOperator;
@@ -6,13 +6,13 @@ use tokenizer::{Span, Spanned};
 
 pub mod builder;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Block {
     pub statements: Vec<Statement>,
     pub expression: Option<Typed<Expression>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Assignment {
     pub left: Typed<Expression>,
     pub right: Typed<Expression>,
@@ -24,55 +24,55 @@ impl Assignment {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Typed<Expression>),
     Assignment(Assignment),
     Let(VariableId, Typed<Expression>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct BinaryIntrinsic {
     pub left: Typed<Expression>,
     pub right: Typed<Expression>,
     pub operator: IntrinsicOperator,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct If {
     pub condition: Typed<Expression>,
     pub then_branch: Block,
     pub else_branch: Block,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Call {
     pub callable: Typed<Expression>,
     pub arguments: Vec<Typed<Expression>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Constructor(pub Vec<(String, Typed<Expression>)>);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct FieldAccess {
     pub expression: Typed<Expression>,
     pub field: Spanned<parser::Ident>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Store {
     pub pointer: Typed<Expression>,
     pub expression: Typed<Expression>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Generixed {
     pub expression: Typed<Expression>,
     pub generics: Vec<Reference>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     IntegerConst(u64),
     FloatConst(f64),
@@ -100,10 +100,10 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Typed<T> {
     pub value: T,
-    pub type_ref: Reference,
+    pub type_ref: SpannedReference,
 }
 
 impl<T> Typed<T> {
@@ -111,7 +111,7 @@ impl<T> Typed<T> {
         self.type_ref.span.clone()
     }
 
-    pub const fn new(value: T, type_ref: Reference) -> Self {
+    pub const fn new(value: T, type_ref: SpannedReference) -> Self {
         Self { value, type_ref }
     }
 }

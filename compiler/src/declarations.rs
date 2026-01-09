@@ -3,6 +3,7 @@ use crate::layout::{self, Array, Layout};
 use crate::{errors, function, Error};
 use cranelift::codegen::ir::immediates::Offset32;
 use cranelift::codegen::isa::TargetIsa;
+use itertools::Itertools;
 use parser::{Ident, PrimitiveKind};
 use std::collections::HashMap;
 use std::iter;
@@ -82,7 +83,7 @@ impl Function {
 #[derive(Clone, Debug)]
 pub enum Declaration {
     Resolved(parser::Declaration, ScopeId),
-    Alias(Reference),
+    Alias(SpannedReference),
     Length(u32),
     UnknownVoid,
 }
@@ -170,7 +171,7 @@ impl UnresolvedDeclarations {
         &mut self,
         r#type: &Spanned<parser::Type>,
         scope: ScopeId,
-    ) -> Result<Reference, Error> {
+    ) -> Result<SpannedReference, Error> {
         let id = self.lookup(&r#type.value.name, scope)?;
         let generics = self.build_generics(&r#type.value.generics, scope)?;
         let reference = SpannedReference {
@@ -180,11 +181,7 @@ impl UnresolvedDeclarations {
         };
         let alias = self.create(Declaration::Alias(reference));
 
-        Ok(Reference {
-            id: alias,
-            span: r#type.span.clone(),
-            generics: Vec::new(),
-        })
+        Ok(SpannedReference::from_id(alias, &r#type.span))
     }
 
     /// Gets the declaration at `Id`, returning `None` if the declaration is uninitialised
@@ -218,20 +215,20 @@ impl UnresolvedDeclarations {
                 span: todo!("span for lengths"),
                 kind: errors::Kind::DeclarationConstraintViolation {
                     constraint: errors::DeclarationConstraint::Length,
-                    found: id.to_type_ref(todo!("span for lengths")),
+                    found: SpannedReference::from_id(id, todo!("span for lengths")),
                 },
             }),
             Declaration::Alias(alias) => {
-                let reference = self.resolve(alias);
+                let reference = self.resolve(&alias.despan());
                 if reference.generics.is_empty() {
                     self.get_length(reference.id)
                 } else {
                     Err(Error {
-                        span: todo!(),
+                        span: alias.span.clone(),
                         kind: errors::Kind::MismatchedGenericArguments {
                             arguments: reference.generics.len(),
                             parameters: 0,
-                            declaration: todo!(),
+                            declaration: todo!("find generic parameters span"),
                         },
                     })
                 }
@@ -241,7 +238,12 @@ impl UnresolvedDeclarations {
 
     pub fn check_length(&mut self, expected: u32, found: Spanned<Id>) -> Result<(), Error> {
         let span = found.span;
-        let found = self.resolve(&found.value.to_type_ref(&span)).id;
+        let found = self
+            .resolve(&Reference {
+                id: found.value,
+                generics: Vec::new(),
+            })
+            .id;
         if let Some(found) = self.get_length(found)? {
             if found == expected {
                 Ok(())
@@ -266,7 +268,6 @@ impl UnresolvedDeclarations {
 
         let reference = Reference {
             generics,
-            span: reference.span.clone(),
             id: reference.id,
         };
 
@@ -282,7 +283,7 @@ impl UnresolvedDeclarations {
             }
             Declaration::Alias(alias) => {
                 assert!(reference.generics.is_empty(), "generics passed to an alias");
-                self.resolve(alias)
+                self.resolve(&alias.despan())
             }
         }
     }
@@ -296,20 +297,21 @@ impl UnresolvedDeclarations {
     pub fn create_generic_scope(
         &mut self,
         parameters: Spanned<parser::generic::Parameters>,
-        arguments: Vec<Reference>,
+        arguments: Spanned<Vec<SpannedReference>>,
         parameter_scope: ScopeId,
     ) -> Result<ScopeId, Error> {
-        if arguments.len() != parameters.value.generics.len() {
+        if arguments.value.len() != parameters.value.generics.len() {
             return Err(Error {
-                span: todo!(),
+                span: arguments.span,
                 kind: errors::Kind::MismatchedGenericArguments {
-                    arguments: arguments.len(),
+                    arguments: arguments.value.len(),
                     parameters: parameters.value.generics.len(),
                     declaration: parameters.span,
                 },
             });
         }
-        let generics = iter::zip(parameters.value.generics, arguments)
+
+        let generics = iter::zip(parameters.value.generics, arguments.value)
             .map(|(parameter, argument)| {
                 (
                     parameter.value.name.value.0,
@@ -317,6 +319,7 @@ impl UnresolvedDeclarations {
                 )
             })
             .collect();
+
         Ok(self.create_scope(TopLevelScope {
             declarations: generics,
             parent: Some(parameter_scope),
@@ -334,8 +337,8 @@ impl UnresolvedDeclarations {
         Id(self.store.len() - 1)
     }
 
-    pub fn create_type_ref(&mut self, span: &Span) -> Reference {
-        self.create_uninitialised().to_type_ref(span)
+    pub fn create_type_ref(&mut self, span: &Span) -> SpannedReference {
+        SpannedReference::from_id(self.create_uninitialised(), span)
     }
 
     fn initialise(&mut self, Id(index): Id, declaration: Declaration) {
@@ -347,8 +350,8 @@ impl UnresolvedDeclarations {
         self.store[index] = Some(declaration);
     }
 
-    pub fn void(&mut self, span: &Span) -> Reference {
-        self.create(Declaration::UnknownVoid).to_type_ref(span)
+    pub fn void(&mut self, span: &Span) -> SpannedReference {
+        SpannedReference::from_id(self.create(Declaration::UnknownVoid), span)
     }
 }
 
@@ -406,7 +409,7 @@ impl Declarations {
     /// if type is uninitialised
     pub fn insert_layout_initialised(
         &mut self,
-        type_reference: &Reference,
+        type_reference: &SpannedReference,
     ) -> Result<Layout, Error> {
         self.insert_layout(type_reference)
             .transpose()
@@ -416,8 +419,8 @@ impl Declarations {
             })?
     }
 
-    pub fn insert_layout(&mut self, reference: &Reference) -> Result<Option<Layout>, Error> {
-        if let Some(layout) = self.layouts.get(reference, &self.unresolved) {
+    pub fn insert_layout(&mut self, reference: &SpannedReference) -> Result<Option<Layout>, Error> {
+        if let Some(layout) = self.layouts.get(&reference.despan(), &self.unresolved) {
             return Ok(Some(layout.clone()));
         }
 
@@ -457,7 +460,7 @@ impl Declarations {
                         layout::Field {
                             type_ref: type_ref.clone(),
                             offset: Offset32::new(i32::try_from(offset).map_err(|_| Error {
-                                span: todo!(),
+                                span: type_ref.span,
                                 kind: errors::Kind::StructTooBig,
                             })?),
                         },
@@ -605,13 +608,11 @@ impl Declarations {
         Ok(())
     }
 
-    fn is_void(&mut self, reference: &Reference) -> Result<Option<bool>, Error> {
-        Ok(self
-            .insert_layout(reference)?
-            .map(|layout| layout == Layout::Primitive(PrimitiveKind::Void)))
-    }
-
-    fn assert_equivalent(&mut self, expected: &Reference, found: &Reference) -> Result<(), Error> {
+    fn assert_equivalent(
+        &mut self,
+        expected: &SpannedReference,
+        found: &SpannedReference,
+    ) -> Result<(), Error> {
         if !self.unresolved.is_initialised(found.id) {
             self.unresolved
                 .initialise(found.id, Declaration::Alias(expected.clone()));
@@ -625,15 +626,17 @@ impl Declarations {
         if let (Some(expected), Some(found)) =
             (self.insert_layout(expected)?, self.insert_layout(found)?)
         {
-            if expected == Layout::Primitive(PrimitiveKind::Void)
-                && found == Layout::Primitive(PrimitiveKind::Void)
-            {
+            if expected.is_void() && found.is_void() {
                 return Ok(());
             }
         }
 
         // TODO: what if its a void but its still a secret locked away from the light???
-        if self.is_void(expected)?.unwrap_or_default() {
+        if self
+            .insert_layout(expected)?
+            .map(|layout| layout.is_void())
+            .unwrap_or_default()
+        {
             assert!(
                 self.unresolved.store[found.id.0]
                     .as_ref()
@@ -684,7 +687,7 @@ impl Declarations {
     pub fn check_expression_type(
         &mut self,
         expression: &Typed<hir::Expression>,
-        expected: &Reference,
+        expected: &SpannedReference,
     ) -> Result<(), Error> {
         self.assert_equivalent(expected, &expression.type_ref)
     }

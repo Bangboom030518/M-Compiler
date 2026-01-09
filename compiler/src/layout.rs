@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokenizer::Span;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Field {
-    pub type_ref: declarations::Reference,
+    pub type_ref: declarations::SpannedReference,
     pub offset: Offset32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Struct {
     pub fields: HashMap<String, Field>,
     pub size: u32,
@@ -40,7 +40,7 @@ impl Array {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Layout {
     Struct(Struct),
     Primitive(parser::PrimitiveKind),
@@ -48,6 +48,22 @@ pub enum Layout {
 }
 
 impl Layout {
+    pub fn is_void(&self) -> bool {
+        matches!(self, Self::Primitive(parser::PrimitiveKind::Void))
+    }
+
+    pub fn is_u8(&self) -> bool {
+        matches!(self, Self::Primitive(parser::PrimitiveKind::U8))
+    }
+
+    pub fn is_usize(&self) -> bool {
+        matches!(self, Self::Primitive(parser::PrimitiveKind::USize))
+    }
+
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Self::Primitive(parser::PrimitiveKind::Bool))
+    }
+
     pub fn size(&self, declarations: &mut Declarations) -> Result<u32, Error> {
         let size = match self {
             Self::Primitive(primitive) => {
