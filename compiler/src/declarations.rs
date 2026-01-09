@@ -65,7 +65,7 @@ pub struct Reference {
     pub generics: Vec<Self>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Function {
     Internal(function::Internal),
     External(function::External),
@@ -121,6 +121,7 @@ impl<V> ResolvedReferenceMap<V> {
         }
     }
 }
+
 pub struct UnresolvedDeclarations {
     pub store: Vec<Option<Declaration>>,
     scopes: Vec<TopLevelScope>,
@@ -259,35 +260,6 @@ impl UnresolvedDeclarations {
         }
     }
 
-    pub fn resolve(&self, reference: &Reference) -> Reference {
-        let generics = reference
-            .generics
-            .iter()
-            .map(|generic| self.resolve(generic))
-            .collect();
-
-        let reference = Reference {
-            generics,
-            id: reference.id,
-        };
-
-        let Some(declaration) = self.get(reference.id) else {
-            return reference;
-        };
-
-        match declaration {
-            Declaration::Resolved(..) | Declaration::UnknownVoid => reference,
-            Declaration::Length(_) => {
-                assert!(reference.generics.is_empty(), "generics passed to a length");
-                reference
-            }
-            Declaration::Alias(alias) => {
-                assert!(reference.generics.is_empty(), "generics passed to an alias");
-                self.resolve(&alias.despan())
-            }
-        }
-    }
-
     fn create_scope(&mut self, scope: TopLevelScope) -> ScopeId {
         let id = self.scopes.len();
         self.scopes.push(scope);
@@ -352,6 +324,70 @@ impl UnresolvedDeclarations {
 
     pub fn void(&mut self, span: &Span) -> SpannedReference {
         SpannedReference::from_id(self.create(Declaration::UnknownVoid), span)
+    }
+}
+
+#[derive(Debug)]
+pub struct ReferenceChain {
+    pub concrete: SpannedReference,
+    /// aliases in order of closeness to concrete reference
+    pub aliases: Vec<SpannedReference>,
+}
+
+impl ReferenceChain {
+    pub fn concrete(concrete: SpannedReference) -> Self {
+        Self {
+            concrete,
+            aliases: Vec::new(),
+        }
+    }
+}
+
+impl UnresolvedDeclarations {
+    pub fn resolve(&self, reference: &SpannedReference) -> ReferenceChain {
+        let generics = reference
+            .generics
+            .value
+            .iter()
+            .map(|generic| {
+                // TODO: alias chain gets GULP GULP GULP'd by /dev/null :(
+                self.resolve(generic).concrete
+            })
+            .collect_vec()
+            .spanned(reference.generics.span.clone());
+
+        let reference = SpannedReference {
+            generics,
+            id: reference.id,
+            span: reference.span.clone(),
+        };
+
+        let Some(declaration) = self.get(reference.id) else {
+            return ReferenceChain::concrete(reference);
+        };
+
+        match declaration {
+            Declaration::Resolved(..) | Declaration::UnknownVoid => {
+                ReferenceChain::concrete(reference)
+            }
+            Declaration::Length(_) => {
+                assert!(
+                    reference.generics.value.is_empty(),
+                    "generics passed to a length"
+                );
+                ReferenceChain::concrete(reference)
+            }
+            Declaration::Alias(alias) => {
+                assert!(
+                    reference.generics.value.is_empty(),
+                    "generics passed to an alias"
+                );
+
+                let mut chain = self.resolve(&alias);
+                chain.aliases.push(reference);
+                chain
+            }
+        }
     }
 }
 
@@ -517,7 +553,7 @@ impl Declarations {
         };
 
         self.layouts
-            .insert(reference, layout.clone(), &self.unresolved);
+            .insert(&reference.despan(), layout.clone(), &self.unresolved);
         Ok(Some(layout))
     }
 
@@ -525,7 +561,7 @@ impl Declarations {
         self.concrete_functions.get(reference, &self.unresolved)
     }
 
-    pub fn make_generic_arguments(&mut self, function_id: Id) -> Vec<Reference> {
+    pub fn make_generic_arguments(&mut self, function_id: Id) -> Vec<SpannedReference> {
         let declaration = self
             .unresolved
             .get(function_id)
@@ -552,8 +588,9 @@ impl Declarations {
             .collect()
     }
 
-    pub fn insert_function(&mut self, reference: &Reference) -> Result<(), Error> {
-        let reference = self.unresolved.resolve(reference);
+    pub fn insert_function(&mut self, reference: &SpannedReference) -> Result<(), Error> {
+        let unresolved = reference.clone();
+        let reference = self.unresolved.resolve(&reference.despan());
 
         if self.get_function(&reference).is_some() {
             return Ok(());
@@ -566,10 +603,10 @@ impl Declarations {
 
         let Declaration::Resolved(declaration, scope) = declaration else {
             return Err(Error {
-                span: todo!(),
+                span: unresolved.span.clone(),
                 kind: errors::Kind::DeclarationConstraintViolation {
                     constraint: errors::DeclarationConstraint::Function,
-                    found: reference.clone(),
+                    found: unresolved,
                 },
             });
         };
@@ -593,10 +630,10 @@ impl Declarations {
             }
             _ => {
                 return Err(Error {
-                    span: todo!(),
+                    span: unresolved.span.clone(),
                     kind: errors::Kind::DeclarationConstraintViolation {
                         constraint: errors::DeclarationConstraint::Function,
-                        found: reference.clone(),
+                        found: unresolved,
                     },
                 })
             }
@@ -650,8 +687,8 @@ impl Declarations {
             return Ok(());
         }
 
-        let expected = self.unresolved.resolve(expected);
-        let found = self.unresolved.resolve(found);
+        let expected = self.unresolved.resolve(&expected.despan());
+        let found = self.unresolved.resolve(&found.despan());
 
         dbg!(&self.unresolved.get(expected.id));
         dbg!(&self.unresolved.get(found.id));

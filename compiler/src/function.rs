@@ -1,4 +1,4 @@
-use crate::declarations::{Declarations, Reference, ScopeId};
+use crate::declarations::{Declarations, Reference, ScopeId, SpannedReference};
 use crate::layout::Layout;
 use crate::translate::{BranchStatus, Translator};
 use crate::{errors, CraneliftContext, Error};
@@ -11,10 +11,10 @@ use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 use tokenizer::{AsSpanned, Spanned};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct MSignature {
-    pub parameters: Vec<Reference>,
-    pub return_type: Reference,
+    pub parameters: Vec<SpannedReference>,
+    pub return_type: SpannedReference,
     pub name: Spanned<parser::Ident>,
     pub symbol: String,
     pub scope: ScopeId,
@@ -107,7 +107,7 @@ impl MSignature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct External {
     pub signature: MSignature,
 }
@@ -138,7 +138,7 @@ impl External {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Internal {
     pub signature: MSignature,
     pub parameter_names: Vec<Spanned<parser::Ident>>,

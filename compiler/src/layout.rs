@@ -18,10 +18,10 @@ pub struct Struct {
     pub size: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Array {
-    pub length: declarations::Id,
-    pub element_type: declarations::Reference,
+    pub length: Spanned<declarations::Id>,
+    pub element_type: declarations::SpannedReference,
     pub generics_span: Span,
 }
 
@@ -32,7 +32,7 @@ impl Array {
             .unresolved
             .get_initialised_length(self.length, &self.generics_span)?;
         let length = u32::try_from(length).map_err(|_| Error {
-            span: todo!(),
+            span: self.length.span,
             kind: errors::Kind::LengthTooBig,
         })?;
         let size = element_type.size(declarations)? * length;

@@ -434,7 +434,7 @@ where
                 todo!("func ref")
             };
 
-        let reference = Reference {
+        let reference = SpannedReference {
             id: declaration,
             generics,
             span: callable_span,
